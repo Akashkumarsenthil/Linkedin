@@ -1,0 +1,926 @@
+{
+	"info": {
+		"_postman_id": "linkedin-agentic-ai-platform",
+		"name": "LinkedIn Agentic AI Platform",
+		"description": "Complete API collection for the LinkedIn Agentic AI Platform.\n\nCovers all 7 microservices:\n- Profile Service (Members)\n- Recruiter Service\n- Job Service\n- Application Service\n- Messaging Service\n- Connection Service\n- Analytics Service\n- AI Agent Service\n\n**Setup:** Import this collection and the environment file. Set the `base_url` variable to your API endpoint (default: http://localhost:8000).",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Root Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						}
+					}
+				},
+				{
+					"name": "Detailed Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Profile Service (Members)",
+			"description": "Member profile CRUD and search operations.",
+			"item": [
+				{
+					"name": "Create Member",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john.doe@example.com\",\n    \"phone\": \"+1-555-0100\",\n    \"location_city\": \"San Jose\",\n    \"location_state\": \"California\",\n    \"location_country\": \"USA\",\n    \"headline\": \"Senior Software Engineer at Google\",\n    \"about\": \"Passionate about building scalable distributed systems with 8+ years of experience.\",\n    \"experience\": [{\"title\": \"Senior SWE\", \"company\": \"Google\", \"years\": 3}, {\"title\": \"SWE\", \"company\": \"Meta\", \"years\": 2}],\n    \"education\": [{\"degree\": \"MS Computer Science\", \"school\": \"Stanford University\", \"year\": 2020}],\n    \"skills\": [\"Python\", \"Java\", \"Kubernetes\", \"AWS\", \"Kafka\", \"FastAPI\"],\n    \"resume_text\": \"Senior Software Engineer with 8+ years of experience in Python, Java, and cloud technologies. Led a team of 5 engineers at Google working on distributed systems using Kubernetes and AWS. MS in Computer Science from Stanford University (2020). Skills: Python, Java, Kubernetes, Docker, AWS, GCP, FastAPI, PostgreSQL, Kafka, Microservices.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/create",
+							"host": ["{{base_url}}"],
+							"path": ["members", "create"]
+						}
+					}
+				},
+				{
+					"name": "Get Member",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/get",
+							"host": ["{{base_url}}"],
+							"path": ["members", "get"]
+						}
+					}
+				},
+				{
+					"name": "Update Member",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 1,\n    \"headline\": \"Staff Software Engineer at Google | System Design Expert\",\n    \"skills\": [\"Python\", \"Java\", \"Kubernetes\", \"AWS\", \"Kafka\", \"FastAPI\", \"System Design\"]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/update",
+							"host": ["{{base_url}}"],
+							"path": ["members", "update"]
+						}
+					}
+				},
+				{
+					"name": "Delete Member",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 99999\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/delete",
+							"host": ["{{base_url}}"],
+							"path": ["members", "delete"]
+						}
+					}
+				},
+				{
+					"name": "Search Members (by keyword)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"keyword\": \"engineer\",\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/search",
+							"host": ["{{base_url}}"],
+							"path": ["members", "search"]
+						}
+					}
+				},
+				{
+					"name": "Search Members (by skill + location)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"skill\": \"Python\",\n    \"location\": \"San Jose\",\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/search",
+							"host": ["{{base_url}}"],
+							"path": ["members", "search"]
+						}
+					}
+				},
+				{
+					"name": "Create Member (Duplicate Email - Error)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"Jane\",\n    \"last_name\": \"Doe\",\n    \"email\": \"john.doe@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/members/create",
+							"host": ["{{base_url}}"],
+							"path": ["members", "create"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Recruiter Service",
+			"description": "Recruiter/Employer admin management.",
+			"item": [
+				{
+					"name": "Create Recruiter",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"first_name\": \"Sarah\",\n    \"last_name\": \"Johnson\",\n    \"email\": \"sarah.johnson@techcorp.com\",\n    \"phone\": \"+1-555-0200\",\n    \"company_name\": \"TechCorp Inc.\",\n    \"company_industry\": \"Technology\",\n    \"company_size\": \"1000-5000\",\n    \"role\": \"senior_recruiter\",\n    \"access_level\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/recruiters/create",
+							"host": ["{{base_url}}"],
+							"path": ["recruiters", "create"]
+						}
+					}
+				},
+				{
+					"name": "Get Recruiter",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recruiter_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/recruiters/get",
+							"host": ["{{base_url}}"],
+							"path": ["recruiters", "get"]
+						}
+					}
+				},
+				{
+					"name": "Update Recruiter",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recruiter_id\": 1,\n    \"role\": \"talent_director\",\n    \"access_level\": \"admin\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/recruiters/update",
+							"host": ["{{base_url}}"],
+							"path": ["recruiters", "update"]
+						}
+					}
+				},
+				{
+					"name": "Delete Recruiter",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recruiter_id\": 99999\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/recruiters/delete",
+							"host": ["{{base_url}}"],
+							"path": ["recruiters", "delete"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Job Service",
+			"description": "Job posting CRUD, search, close, and save operations.",
+			"item": [
+				{
+					"name": "Create Job Posting",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recruiter_id\": 1,\n    \"title\": \"Senior Backend Engineer\",\n    \"description\": \"We are looking for an experienced backend engineer to join our platform team. You will design and build scalable microservices handling millions of requests per day.\",\n    \"seniority_level\": \"Senior\",\n    \"employment_type\": \"Full-time\",\n    \"location\": \"San Francisco, CA\",\n    \"work_mode\": \"hybrid\",\n    \"skills_required\": [\"Python\", \"FastAPI\", \"PostgreSQL\", \"Kafka\", \"Docker\"],\n    \"salary_min\": 150000,\n    \"salary_max\": 220000\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/create",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "create"]
+						}
+					}
+				},
+				{
+					"name": "Get Job Posting",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/get",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "get"]
+						}
+					}
+				},
+				{
+					"name": "Update Job Posting",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"salary_min\": 160000,\n    \"salary_max\": 240000,\n    \"description\": \"Updated: We are looking for an experienced backend engineer with strong system design skills.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/update",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "update"]
+						}
+					}
+				},
+				{
+					"name": "Search Jobs (keyword + location)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"keyword\": \"engineer\",\n    \"location\": \"San Francisco\",\n    \"employment_type\": \"Full-time\",\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/search",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "search"]
+						}
+					}
+				},
+				{
+					"name": "Search Jobs (remote + skills filter)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"work_mode\": \"remote\",\n    \"skills\": [\"Python\", \"Kafka\"],\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/search",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "search"]
+						}
+					}
+				},
+				{
+					"name": "Close Job Posting",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/close",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "close"]
+						}
+					}
+				},
+				{
+					"name": "Jobs by Recruiter",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"recruiter_id\": 1,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/byRecruiter",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "byRecruiter"]
+						}
+					}
+				},
+				{
+					"name": "Save Job",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 1,\n    \"job_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/jobs/save",
+							"host": ["{{base_url}}"],
+							"path": ["jobs", "save"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Application Service",
+			"description": "Job application submission, status management, and recruiter notes.",
+			"item": [
+				{
+					"name": "Submit Application",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"member_id\": 1,\n    \"resume_text\": \"Experienced software engineer with expertise in Python, FastAPI, Kafka, and distributed systems. 8+ years of experience building scalable backend platforms.\",\n    \"cover_letter\": \"I am excited to apply for the Senior Backend Engineer position. My experience at Google building distributed systems aligns perfectly with your requirements.\",\n    \"answers\": {\"years_experience\": \"8+\", \"willing_to_relocate\": \"yes\", \"visa_status\": \"US Citizen\"}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/submit",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "submit"]
+						}
+					}
+				},
+				{
+					"name": "Get Application",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"application_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/get",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "get"]
+						}
+					}
+				},
+				{
+					"name": "Applications by Job (Recruiter View)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/byJob",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "byJob"]
+						}
+					}
+				},
+				{
+					"name": "Applications by Member (Member View)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 1,\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/byMember",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "byMember"]
+						}
+					}
+				},
+				{
+					"name": "Update Application Status",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"application_id\": 1,\n    \"status\": \"reviewing\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/updateStatus",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "updateStatus"]
+						}
+					}
+				},
+				{
+					"name": "Add Recruiter Note",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"application_id\": 1,\n    \"note\": \"Strong candidate with relevant experience. Skills match well with our tech stack. Schedule for technical interview next week.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/addNote",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "addNote"]
+						}
+					}
+				},
+				{
+					"name": "Submit Duplicate Application (Error)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"member_id\": 1,\n    \"resume_text\": \"Same application again\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/submit",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "submit"]
+						}
+					}
+				},
+				{
+					"name": "Apply to Closed Job (Error)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"member_id\": 2,\n    \"resume_text\": \"Trying to apply to closed job\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/applications/submit",
+							"host": ["{{base_url}}"],
+							"path": ["applications", "submit"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Messaging Service",
+			"description": "Messaging threads and message operations.",
+			"item": [
+				{
+					"name": "Open Thread",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"participant_ids\": [\n        {\"user_id\": 1, \"user_type\": \"member\"},\n        {\"user_id\": 1, \"user_type\": \"recruiter\"}\n    ],\n    \"subject\": \"Regarding the Senior Backend Engineer position\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/threads/open",
+							"host": ["{{base_url}}"],
+							"path": ["threads", "open"]
+						}
+					}
+				},
+				{
+					"name": "Get Thread",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"thread_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/threads/get",
+							"host": ["{{base_url}}"],
+							"path": ["threads", "get"]
+						}
+					}
+				},
+				{
+					"name": "Threads by User",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": 1,\n    \"user_type\": \"member\",\n    \"page\": 1,\n    \"page_size\": 10\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/threads/byUser",
+							"host": ["{{base_url}}"],
+							"path": ["threads", "byUser"]
+						}
+					}
+				},
+				{
+					"name": "Send Message",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"thread_id\": 1,\n    \"sender_id\": 1,\n    \"sender_type\": \"member\",\n    \"message_text\": \"Hi Sarah, I wanted to follow up on my application for the Senior Backend Engineer role. I'm very interested in the position and would love to discuss how my experience with distributed systems could benefit the team.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/messages/send",
+							"host": ["{{base_url}}"],
+							"path": ["messages", "send"]
+						}
+					}
+				},
+				{
+					"name": "Send Reply (Recruiter)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"thread_id\": 1,\n    \"sender_id\": 1,\n    \"sender_type\": \"recruiter\",\n    \"message_text\": \"Hi John, thanks for reaching out! We were very impressed with your application. Would you be available for a technical interview next Tuesday at 2pm PST?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/messages/send",
+							"host": ["{{base_url}}"],
+							"path": ["messages", "send"]
+						}
+					}
+				},
+				{
+					"name": "List Messages in Thread",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"thread_id\": 1,\n    \"page\": 1,\n    \"page_size\": 50\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/messages/list",
+							"host": ["{{base_url}}"],
+							"path": ["messages", "list"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Connection Service",
+			"description": "Connection request management and mutual connections.",
+			"item": [
+				{
+					"name": "Send Connection Request",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requester_id\": 1,\n    \"receiver_id\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/request",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "request"]
+						}
+					}
+				},
+				{
+					"name": "Accept Connection",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"connection_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/accept",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "accept"]
+						}
+					}
+				},
+				{
+					"name": "Reject Connection",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"connection_id\": 2\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/reject",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "reject"]
+						}
+					}
+				},
+				{
+					"name": "List Connections",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": 1,\n    \"page\": 1,\n    \"page_size\": 20\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/list",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "list"]
+						}
+					}
+				},
+				{
+					"name": "Mutual Connections",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"user_id\": 1,\n    \"other_id\": 3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/mutual",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "mutual"]
+						}
+					}
+				},
+				{
+					"name": "Self-Connection (Error)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"requester_id\": 1,\n    \"receiver_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/connections/request",
+							"host": ["{{base_url}}"],
+							"path": ["connections", "request"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Analytics Service",
+			"description": "Event ingestion, job analytics, and member dashboard.",
+			"item": [
+				{
+					"name": "Ingest Event",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"event_type\": \"job.viewed\",\n    \"actor_id\": \"42\",\n    \"entity_type\": \"job\",\n    \"entity_id\": \"101\",\n    \"payload\": {\"source\": \"search_results\", \"session_id\": \"abc123\"}\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/events/ingest",
+							"host": ["{{base_url}}"],
+							"path": ["events", "ingest"]
+						}
+					}
+				},
+				{
+					"name": "Top Jobs by Applications",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"metric\": \"applications\",\n    \"limit\": 10,\n    \"window_days\": 30\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/jobs/top",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "jobs", "top"]
+						}
+					}
+				},
+				{
+					"name": "Top Jobs by Views",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"metric\": \"views\",\n    \"limit\": 5,\n    \"window_days\": 90\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/jobs/top",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "jobs", "top"]
+						}
+					}
+				},
+				{
+					"name": "Job Application Funnel",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"window_days\": 30\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/funnel",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "funnel"]
+						}
+					}
+				},
+				{
+					"name": "Geographic Distribution",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"window_days\": 90\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/geo",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "geo"]
+						}
+					}
+				},
+				{
+					"name": "Member Dashboard Metrics",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"member_id\": 1\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/member/dashboard",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "member", "dashboard"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "AI Agent Service",
+			"description": "Agentic AI workflows: resume parsing, job matching, candidate analysis, and human-in-the-loop approval.",
+			"item": [
+				{
+					"name": "Parse Resume (Standalone)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"resume_text\": \"John Doe | Senior Software Engineer | john@example.com | +1-555-0100\\n\\n8+ years of experience in Python, Java, and cloud technologies. Led a team of 5 engineers at Google working on distributed systems using Kubernetes and AWS. Previously at Meta building real-time data pipelines with Kafka and Spark. MS in Computer Science from Stanford University (2018).\\n\\nSkills: Python, Java, Kubernetes, Docker, AWS, GCP, FastAPI, PostgreSQL, Kafka, Microservices, System Design, CI/CD, Terraform.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/parse-resume",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "parse-resume"]
+						}
+					}
+				},
+				{
+					"name": "Match Candidate to Job (Standalone)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_data\": {\n        \"job_id\": 1,\n        \"title\": \"Senior Backend Engineer\",\n        \"skills_required\": [\"Python\", \"FastAPI\", \"Kafka\", \"Docker\", \"AWS\"],\n        \"location\": \"San Francisco, CA\",\n        \"work_mode\": \"hybrid\",\n        \"seniority_level\": \"Senior\"\n    },\n    \"candidate_data\": {\n        \"member_id\": 1,\n        \"skills\": [\"Python\", \"FastAPI\", \"Docker\", \"AWS\", \"Kubernetes\", \"Java\"],\n        \"location_city\": \"San Jose\",\n        \"location_state\": \"California\"\n    }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/match",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "match"]
+						}
+					}
+				},
+				{
+					"name": "Analyze Candidates (Full Workflow)",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"job_id\": 1,\n    \"top_n\": 5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/analyze-candidates",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "analyze-candidates"]
+						}
+					}
+				},
+				{
+					"name": "Get AI Task Status",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"task_id\": \"<paste_task_id_here>\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/task-status",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "task-status"]
+						}
+					}
+				},
+				{
+					"name": "Approve AI Output",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"task_id\": \"<paste_task_id_here>\",\n    \"approved\": true,\n    \"feedback\": \"Looks good! Please proceed with sending outreach to the top 3 candidates.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/approve",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "approve"]
+						}
+					}
+				},
+				{
+					"name": "Reject AI Output",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"task_id\": \"<paste_task_id_here>\",\n    \"approved\": false,\n    \"feedback\": \"The shortlist doesn't look right. Please re-analyze with stronger emphasis on Kafka experience.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/approve",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "approve"]
+						}
+					}
+				},
+				{
+					"name": "List All AI Tasks",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/tasks/list",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "tasks", "list"]
+						}
+					}
+				}
+			]
+		}
+	]
+}
