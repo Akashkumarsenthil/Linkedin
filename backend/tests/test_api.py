@@ -36,7 +36,10 @@ def test_health(client: TestClient):
     assert data.get("status") in ("healthy", "degraded")
     svc = data.get("services", {})
     assert svc.get("api") is True
-    assert "mongodb" in svc
+    assert svc.get("mongodb") is True, (
+        "MongoDB ping failed — use MONGO_PORT=27018 with this repo’s docker-compose "
+        "and ensure nothing else is bound to that port."
+    )
 
 
 @pytest.mark.integration
