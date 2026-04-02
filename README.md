@@ -12,282 +12,183 @@
 <h1 align="center">🔗 LinkedIn Agentic AI Platform</h1>
 
 <p align="center">
-  <strong>A distributed LinkedIn-style platform with microservices, Kafka event streaming, Redis caching, and AI-driven hiring workflows powered by local LLMs.</strong>
-</p>
-
-<p align="center">
-  <em>Built for DATA236 · San Jose State University</em>
+  <em>DATA236 · San Jose State University</em>
 </p>
 
 ---
 
-## 📑 Table of Contents
+## What is this?
 
-- [✨ Project Overview](#-project-overview)
-- [🏗️ System Architecture](#️-system-architecture)
-- [🛠️ Tech Stack](#️-tech-stack)
-- [📂 Repository Structure](#-repository-structure)
-- [🚀 Getting Started](#-getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Step 1: Clone the Repository](#step-1-clone-the-repository)
-  - [Step 2: Start Infrastructure](#step-2-start-infrastructure)
-  - [Step 3: Configure Environment](#step-3-configure-environment)
-  - [Step 4: Set Up Python Environment](#step-4-set-up-python-environment)
-  - [Step 5: Seed the Database](#step-5-seed-the-database)
-  - [Step 6: Start the Backend](#step-6-start-the-backend)
-  - [Step 7: Start the Frontend](#step-7-start-the-frontend)
-- [📡 API Documentation](#-api-documentation)
-- [🤖 Agentic AI Workflows](#-agentic-ai-workflows)
-- [🧪 Running Tests](#-running-tests)
-- [✅ Verifying Everything Works](#-verifying-everything-works)
-- [⚠️ Troubleshooting & Challenges](#️-troubleshooting--challenges)
-- [🏛️ Backend Service Architecture](#️-backend-service-architecture)
-- [📊 Kafka Event Topics](#-kafka-event-topics)
-- [💡 Development Notes](#-development-notes)
-- [👥 Team & Attribution](#-team--attribution)
+We built a LinkedIn-style platform from scratch — not just a simple CRUD app, but a properly distributed system with event streaming, caching, and an AI layer that can actually parse resumes and match candidates to jobs.
+
+The backend is a **FastAPI** monolith with clean service boundaries, talking to **MySQL** for relational data, **MongoDB** for event logs and AI traces, **Redis** for caching, and **Apache Kafka** for async event processing. On top of all that, we added an AI agent powered by a local **Ollama** LLM that handles the hiring workflow end-to-end — from parsing a resume to generating outreach messages for recruiters.
+
+There's also a small **React** frontend to exercise the APIs, but the real meat is in the backend and infrastructure.
 
 ---
 
-## ✨ Project Overview
+## What's inside
 
-This platform models the core functionality of LinkedIn as a **distributed, event-driven system** — not just a CRUD monolith. Every meaningful action (a job being posted, an application submitted, a connection accepted) flows through **Apache Kafka** as a domain event, enabling real-time analytics, asynchronous processing, and system-wide observability.
-
-On top of the traditional services, we built an **Agentic AI layer** — a multi-step AI workflow that uses a local **Ollama LLM** (with graceful regex fallback) to:
-
-1. 📄 **Parse resumes** and extract structured data (skills, experience, education)
-2. 🎯 **Match candidates** to jobs using a weighted scoring algorithm
-3. ✉️ **Generate personalized outreach** messages for recruiters
-4. 👤 **Human-in-the-loop approval** before any action is taken
-
-### What Makes This Different
-
-| Feature | Description |
-|---------|-------------|
-| **Event-Driven Architecture** | Every state change publishes to Kafka — not just for logging, but for real processing |
-| **Idempotent Consumers** | Kafka consumer uses MongoDB to deduplicate events, ensuring at-least-once safety |
-| **Redis Query Caching** | Member profiles and job searches are cached with 60–300s TTL, invalidated on writes |
-| **Multi-Step AI Agent** | Supervisor pattern: parse → match → rank → outreach, with WebSocket progress streaming |
-| **Human-in-the-Loop** | AI output requires recruiter approval before any recruiter-facing action |
-| **Graceful Degradation** | Every AI skill falls back to heuristics when Ollama is unavailable |
+| Layer | What it does |
+|-------|-------------|
+| **REST API** | 8 services — members, recruiters, jobs, applications, messages, connections, analytics, AI agents |
+| **MySQL** | All the transactional stuff — profiles, job postings, applications, messages |
+| **MongoDB** | Event logs, Kafka consumer deduplication, AI agent traces |
+| **Redis** | Caches search results and member profiles so we're not hammering MySQL |
+| **Kafka** | Every important action fires an event — `job.created`, `application.submitted`, etc. |
+| **Ollama** | Local LLM for resume parsing and candidate matching. Falls back to regex if Ollama isn't running |
+| **React Frontend** | Health dashboard, job/member search, AI parse demo |
 
 ---
 
-## 🏗️ System Architecture
+## How it all fits together
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                           React + Vite Frontend                              │
-│               (Job Search, Member Profiles, AI Dashboard)                    │
-└────────────────────────────────┬─────────────────────────────────────────────┘
-                                 │  HTTP + WebSocket
-┌────────────────────────────────▼─────────────────────────────────────────────┐
-│                          FastAPI Backend (Port 8000)                         │
-│                                                                              │
-│  ┌──────────┐ ┌──────────┐ ┌────────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │ Profile  │ │   Job    │ │Application │ │Messaging │ │   Connection     │ │
-│  │ Service  │ │ Service  │ │  Service   │ │ Service  │ │    Service       │ │
-│  └──────────┘ └──────────┘ └────────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌────────────────────────────────────────────┐   │
-│  │Recruiter │ │Analytics │ │           AI Agent Service                 │   │
-│  │ Service  │ │ Service  │ │  Resume Parser → Job Matcher → Outreach   │   │
-│  └──────────┘ └──────────┘ └────────────────────────────────────────────┘   │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                         Apache Kafka (Event Bus)                             │
-│   Topics: job.* │ application.* │ connection.* │ message.* │ ai.*           │
-├───────────────┬────────────────────────────┬─────────────────────────────────┤
-│    MySQL 8    │        MongoDB 7           │          Redis 7                │
-│ (relational)  │  (events, traces, dedup)   │     (query cache)              │
-└───────────────┴────────────────────────────┴─────────────────────────────────┘
-        ▲                                              ▲
-        │              ┌──────────┐                    │
-        └──────────────│  Ollama  │────────────────────┘
-                       │  (LLM)  │   optional — regex fallback
-                       └──────────┘
+┌─────────────┐     HTTP      ┌──────────────────────────────────────────────┐
+│  React UI   │ ────────────► │  FastAPI Backend                              │
+│  (Vite)     │   /api proxy  │                                              │
+└─────────────┘               │  ┌────────┐ ┌────────┐ ┌────────┐ ┌───────┐ │
+                              │  │Members │ │ Jobs   │ │  Apps  │ │ Msgs  │ │
+                              │  └────────┘ └────────┘ └────────┘ └───────┘ │
+                              │  ┌────────┐ ┌────────┐ ┌──────────────────┐ │
+                              │  │Connect.│ │Analyt. │ │   AI Agents      │ │
+                              │  └────────┘ └────────┘ └──────────────────┘ │
+                              │                                              │
+                              │  MySQL ◄──► Redis cache                     │
+                              │  Mongo ◄── event logs, dedup state          │
+                              │  Kafka ◄── producer + background consumer   │
+                              └──────────────────────────────────────────────┘
+                                       ▲
+                                       │ optional
+                                  ┌────┴────┐
+                                  │ Ollama  │  localhost:11434
+                                  └─────────┘
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Tech stack
 
 ### Backend
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| **Python** | 3.9+ | Core application language |
-| **FastAPI** | 0.115 | Async REST framework with auto-generated OpenAPI docs |
-| **SQLAlchemy** | 2.0 | ORM for MySQL with connection pooling |
-| **Pydantic** | v2 | Request/response validation with rich JSON Schema examples |
-| **aiokafka** | 0.11 | Async Kafka producer and consumer |
-| **Motor** | 3.6 | Async MongoDB driver for event logs and AI traces |
-| **redis-py** | 5.1 | Redis caching with JSON serialization |
-| **httpx** | 0.27 | Async HTTP client for Ollama API calls |
-| **Faker** | 30.x | Synthetic data generation (10K+ records) |
+
+| What | Why we picked it |
+|------|-----------------|
+| **Python 3.9+ / FastAPI** | Async, fast, and auto-generates Swagger docs out of the box |
+| **SQLAlchemy 2** | Solid ORM with connection pooling — handles MySQL well |
+| **Pydantic v2** | Request validation that also generates great OpenAPI examples |
+| **aiokafka** | Async Kafka producer/consumer that plays nice with FastAPI's event loop |
+| **Motor** | Async MongoDB driver — needed for non-blocking event log writes |
+| **redis-py** | Simple caching layer with JSON serialization |
+| **httpx** | Async HTTP client for talking to Ollama |
+| **Faker** | Generates realistic test data — names, emails, skills, company names |
 
 ### Infrastructure
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| **MySQL** | 8.0 | Relational data (members, jobs, applications, messages, connections) |
-| **MongoDB** | 7.0 | Event logs, Kafka consumer idempotency, AI agent traces |
-| **Redis** | 7 (Alpine) | Query caching for search results and member profiles |
-| **Apache Kafka** | 3.7 (KRaft) | Async event streaming — no Zookeeper needed |
-| **Docker Compose** | v2 | Container orchestration for all infrastructure |
 
-### AI & Agent Layer
-| Technology | Purpose |
-|-----------|---------|
-| **Ollama** | Local LLM inference (llama3.2 or any model) |
-| **Resume Parser** | Extracts structured fields from resume text |
-| **Job Matcher** | Weighted scoring: skills (50%), location (20%), seniority (30%) |
-| **Outreach Generator** | Personalized recruiter messages |
-| **Hiring Assistant** | Supervisor agent orchestrating the full workflow |
+| What | Version | Role |
+|------|---------|------|
+| **MySQL** | 8.0 | Main database for all relational entities |
+| **MongoDB** | 7.0 | Event logs + Kafka consumer idempotency tracking |
+| **Redis** | 7 (Alpine) | Query caching — keeps search results warm |
+| **Apache Kafka** | 3.7 (KRaft) | Event streaming — no Zookeeper needed |
+| **Docker Compose** | v2 | Spins up all 4 services with one command |
+
+### AI
+
+| What | Role |
+|------|------|
+| **Ollama** | Runs LLMs locally (we used llama3.2) |
+| **Resume Parser** | Pulls out skills, experience, education from raw text |
+| **Job Matcher** | Scores candidates — 50% skills, 20% location, 30% seniority |
+| **Outreach Generator** | Writes personalized recruiter messages |
 
 ### Frontend
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| **React** | 19 | UI framework |
-| **Vite** | 8 | Build tool and dev server |
-| **TypeScript** | 5.x | Type-safe frontend development |
+
+| What | Role |
+|------|------|
+| **React 19 + Vite** | Quick dev server, proxies API calls to FastAPI |
+| **TypeScript** | Type safety in the frontend |
 
 ---
 
-## 📂 Repository Structure
+## Project structure
 
 ```
-linkedin-agentic-ai/
-├── 📦 docker-compose.yml           # MySQL, MongoDB, Redis, Kafka (all infra)
-├── 📄 .env.example                  # Template — copy to backend/.env
+Linkedin/
+├── docker-compose.yml              # All infrastructure in one file
+├── .env.example                     # Copy this to backend/.env
 │
-├── 🐍 backend/
-│   ├── main.py                      # FastAPI app entry point
-│   ├── config.py                    # Centralized settings (pydantic-settings)
-│   ├── database.py                  # MySQL (SQLAlchemy) + MongoDB (Motor)
-│   ├── cache.py                     # Redis caching layer
-│   ├── kafka_producer.py            # Async Kafka event publisher
-│   ├── kafka_consumer.py            # Idempotent event consumer
-│   ├── requirements.txt             # Python dependencies
-│   ├── seed_data.py                 # Synthetic data generator
+├── backend/
+│   ├── main.py                      # Entry point — registers all routers
+│   ├── config.py                    # Reads settings from .env
+│   ├── database.py                  # MySQL + MongoDB connections
+│   ├── cache.py                     # Redis caching
+│   ├── kafka_producer.py            # Publishes events to Kafka
+│   ├── kafka_consumer.py            # Consumes events (with dedup)
+│   ├── requirements.txt             # pip dependencies
+│   ├── seed_data.py                 # Fills the DB with fake data
 │   │
-│   ├── 📁 models/                   # SQLAlchemy ORM models
-│   │   ├── member.py                #   Members + ProfileViewDaily
-│   │   ├── recruiter.py             #   Recruiter accounts
-│   │   ├── job.py                   #   JobPosting + SavedJob
-│   │   ├── application.py           #   Applications
-│   │   ├── message.py               #   Threads + Messages
-│   │   └── connection.py            #   Connections
-│   │
-│   ├── 📁 schemas/                  # Pydantic request/response schemas
-│   │   ├── member.py, recruiter.py, job.py, application.py
-│   │   ├── message.py, connection.py, analytics.py
-│   │
-│   ├── 📁 routers/                  # API route handlers (8 services)
-│   │   ├── members.py               #   /members/* — CRUD + search
-│   │   ├── recruiters.py            #   /recruiters/* — CRUD
-│   │   ├── jobs.py                  #   /jobs/* — CRUD + search + save
-│   │   ├── applications.py          #   /applications/* — submit + status
-│   │   ├── messages.py              #   /threads/* + /messages/*
-│   │   ├── connections.py           #   /connections/* — request/accept
-│   │   ├── analytics.py             #   /analytics/* + /events/*
-│   │   └── ai_service.py            #   /ai/* — agentic workflows
-│   │
-│   ├── 📁 agents/                   # Agentic AI layer
-│   │   ├── hiring_assistant.py      #   Supervisor agent (orchestrator)
-│   │   ├── resume_parser.py         #   Ollama LLM + regex fallback
-│   │   ├── job_matcher.py           #   Weighted match scoring
-│   │   └── outreach_generator.py    #   Personalized message generation
-│   │
-│   ├── 📁 db/
-│   │   └── init.sql                 #   MySQL schema (auto-loaded by Docker)
-│   │
-│   └── 📁 tests/                    # Pytest integration tests
+│   ├── models/                      # SQLAlchemy ORM
+│   ├── schemas/                     # Pydantic request/response models
+│   ├── routers/                     # 8 API service handlers
+│   ├── agents/                      # AI skills + orchestrator
+│   ├── db/init.sql                  # MySQL schema (Docker loads this)
+│   └── tests/                       # Integration tests
 │
-├── ⚛️ frontend/                     # React + Vite + TypeScript
-│   ├── src/
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── 📮 postman/                      # Postman collection + environment
-│   ├── LinkedIn_Platform_API.postman_collection.json
-│   └── Local.postman_environment.json
-│
-└── 📄 docs/
-    └── openapi.json                 # Static OpenAPI spec
+├── frontend/                        # React + Vite
+├── postman/                         # Postman collection + environment
+└── docs/openapi.json                # Static OpenAPI spec
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting started
 
-### Prerequisites
+### You'll need
 
-Before you begin, make sure you have:
-
-- ✅ **Docker Desktop** (or Docker Engine + Compose plugin) — [Install Docker](https://docs.docker.com/get-docker/)
-- ✅ **Python 3.9+** — [Install Python](https://www.python.org/downloads/)
-- ✅ **Node.js 18+** and npm — [Install Node](https://nodejs.org/)
-- 🔧 *(Optional)* **[Ollama](https://ollama.com/)** — for full LLM-powered AI features
+- **Docker Desktop** — [get it here](https://docs.docker.com/get-docker/)
+- **Python 3.9+** — [download](https://www.python.org/downloads/)
+- **Node.js 18+** — [download](https://nodejs.org/)
+- *(Optional)* **[Ollama](https://ollama.com/)** — only if you want the AI to use a real LLM instead of regex
 
 ---
 
-### Step 1: Clone the Repository
+### 1. Clone it
 
 ```bash
 git clone https://github.com/Akashkumarsenthil/Linkedin.git
 cd Linkedin
 ```
 
----
-
-### Step 2: Start Infrastructure
-
-From the **repo root** (where `docker-compose.yml` lives):
+### 2. Start the infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-This spins up **4 containers**:
-
-| Container | Service | Port |
-|-----------|---------|------|
-| `linkedin-mysql` | MySQL 8.0 | 3306 |
-| `linkedin-mongodb` | MongoDB 7 | 27017 (or 27018 if changed) |
-| `linkedin-redis` | Redis 7 | 6379 |
-| `linkedin-kafka` | Apache Kafka 3.7 (KRaft) | 9092, 9094 |
-
-**Wait for MySQL to be healthy:**
+This brings up MySQL, MongoDB, Redis, and Kafka. Wait until MySQL says "healthy":
 
 ```bash
 docker compose ps
-# linkedin-mysql should show "healthy"
 ```
 
-> 💡 **First run only:** MySQL auto-loads `backend/db/init.sql` to create all tables. If you ever need a fresh database, run `docker compose down -v` to wipe volumes and restart.
+> **First time?** MySQL will automatically create all tables from `backend/db/init.sql`. If you ever want a clean slate, run `docker compose down -v` to wipe the volumes.
 
----
-
-### Step 3: Configure Environment
+### 3. Set up your environment
 
 ```bash
 cp .env.example backend/.env
 ```
 
-The defaults match the Docker Compose configuration. **Key values:**
+The defaults work with the Docker Compose file. Here's what matters:
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `MYSQL_HOST` | `localhost` | |
-| `MYSQL_PORT` | `3306` | |
-| `MYSQL_USER` | `linkedin_user` | |
-| `MYSQL_PASSWORD` | `linkedin_pass` | |
-| `MONGO_PORT` | `27017` | Change to `27018` if you have a local MongoDB on 27017 |
-| `MONGO_USER` | `mongo_user` | |
-| `MONGO_PASSWORD` | `mongo_pass` | |
-| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9094` | Use the **EXTERNAL** listener port |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Only needed if Ollama is installed |
-| `OLLAMA_MODEL` | `llama3.2` | Can be changed to any Ollama model |
+| `MYSQL_*` | `localhost:3306`, user `linkedin_user` | Matches docker-compose |
+| `MONGO_PORT` | `27017` | Change to `27018` if you already have MongoDB running locally |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9094` | This is the external listener port |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Only matters if Ollama is installed |
 
----
-
-### Step 4: Set Up Python Environment
+### 4. Install Python dependencies
 
 ```bash
 cd backend
@@ -296,40 +197,27 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
----
+### 5. Seed the database
 
-### Step 5: Seed the Database
-
-**Quick seed** (for fast testing — ~500 records):
+For a quick test dataset (~500 records):
 
 ```bash
 python seed_data.py --quick --yes
 ```
 
-**Full seed** (10,000+ records — takes a few minutes):
+For the full dataset (10K+ members, jobs, applications, connections):
 
 ```bash
 python seed_data.py --yes
 ```
 
-This generates:
-- 10,000 member profiles with realistic skills, experience, and resume text
-- 500 recruiter accounts across 30+ companies
-- 10,000 job postings with varied skills, locations, and salary ranges
-- 15,000+ job applications with realistic status distribution
-- 20,000 connections between members
-- 2,000 messaging threads with multiple messages each
-- 5,000 saved jobs and 30,000 daily profile view records
-
----
-
-### Step 6: Start the Backend
+### 6. Start the backend
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-You should see:
+You should see something like this:
 
 ```
 ============================================================
@@ -343,13 +231,7 @@ You should see:
 ============================================================
 ```
 
-- 🔗 **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- 📖 **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- ❤️ **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
-
----
-
-### Step 7: Start the Frontend
+### 7. Start the frontend
 
 ```bash
 cd ../frontend
@@ -357,92 +239,77 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). The Vite dev server proxies `/api` → `http://127.0.0.1:8000`.
+Open [http://localhost:5173](http://localhost:5173). The dev server proxies `/api` calls to the backend.
 
 ---
 
-## 📡 API Documentation
+## API docs
 
-### Swagger / OpenAPI
+**Best way to explore the API:** Open [http://localhost:8000/docs](http://localhost:8000/docs) while the server is running. FastAPI generates interactive Swagger docs from all the Pydantic schemas. You can try every endpoint right in the browser.
 
-The best way to explore the API is through the **live Swagger UI** at [http://localhost:8000/docs](http://localhost:8000/docs) while the server is running.
+### Postman
 
-### Postman Collection
-
-We provide a comprehensive Postman collection with **45+ pre-configured requests**:
+We have a full Postman collection with **45+ requests** — happy paths, error cases, the whole thing:
 
 1. Open Postman
 2. Import `postman/LinkedIn_Platform_API.postman_collection.json`
 3. Import `postman/Local.postman_environment.json`
 4. Select the **Local** environment
-5. Start sending requests!
+5. Start testing
 
-The collection is organized by service and includes:
-- ✅ Happy-path workflows
-- ❌ Error case tests (duplicate emails, duplicate applications, self-connections)
-- 📝 Realistic example payloads ready to execute
+### All the endpoints
 
-### API Endpoints Summary
-
-| Service | Endpoints | Description |
-|---------|-----------|-------------|
-| **Profile** | `/members/create`, `get`, `update`, `delete`, `search` | Member CRUD + keyword/skill/location search |
-| **Recruiter** | `/recruiters/create`, `get`, `update`, `delete` | Recruiter account management |
-| **Job** | `/jobs/create`, `get`, `update`, `search`, `close`, `save`, `byRecruiter` | Full job lifecycle |
-| **Application** | `/applications/submit`, `get`, `byJob`, `byMember`, `updateStatus`, `addNote` | Application workflow |
-| **Messaging** | `/threads/open`, `get`, `byUser` · `/messages/send`, `list` | Threaded messaging |
-| **Connection** | `/connections/request`, `accept`, `reject`, `list`, `mutual` | Social connections |
-| **Analytics** | `/events/ingest` · `/analytics/jobs/top`, `funnel`, `geo`, `member/dashboard` | Event tracking + dashboards |
-| **AI Agent** | `/ai/parse-resume`, `match`, `analyze-candidates`, `task-status`, `approve`, `tasks/list` | Agentic AI workflows |
+| Service | Routes | What they do |
+|---------|--------|-------------|
+| **Members** | `/members/create`, `get`, `update`, `delete`, `search` | Profile CRUD + search by keyword, skill, or location |
+| **Recruiters** | `/recruiters/create`, `get`, `update`, `delete` | Recruiter account management |
+| **Jobs** | `/jobs/create`, `get`, `update`, `search`, `close`, `save`, `byRecruiter` | Full job posting lifecycle |
+| **Applications** | `/applications/submit`, `get`, `byJob`, `byMember`, `updateStatus`, `addNote` | Application workflow with status tracking |
+| **Messaging** | `/threads/open`, `get`, `byUser` + `/messages/send`, `list` | Threaded messaging system |
+| **Connections** | `/connections/request`, `accept`, `reject`, `list`, `mutual` | LinkedIn-style connections |
+| **Analytics** | `/events/ingest` + `/analytics/jobs/top`, `funnel`, `geo`, `member/dashboard` | Event tracking and dashboards |
+| **AI Agents** | `/ai/parse-resume`, `match`, `analyze-candidates`, `task-status`, `approve` | The whole AI workflow |
 
 ---
 
-## 🤖 Agentic AI Workflows
+## How the AI agent works
 
-The AI system follows a **Supervisor Agent** pattern with human-in-the-loop approval:
+The AI system follows a supervisor pattern — one orchestrator coordinating three specialized skills, with a human checking the output before anything goes out:
 
 ```
-┌─────────────┐     ┌───────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Recruiter │     │ Resume Parser │     │  Job Matcher │     │   Outreach   │
-│   triggers  │────►│  (Ollama/     │────►│  (weighted   │────►│  Generator   │
-│   analysis  │     │   regex)      │     │   scoring)   │     │  (LLM/       │
-│             │     │               │     │              │     │   template)  │
-└─────────────┘     └───────────────┘     └──────────────┘     └──────────────┘
-                                                                       │
-                                                                       ▼
-                                                              ┌──────────────┐
-                                                              │   Recruiter  │
-                                                              │   Approval   │
-                                                              │  (human in   │
-                                                              │   the loop)  │
-                                                              └──────────────┘
+Recruiter kicks off analysis
+        │
+        ▼
+┌───────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Resume Parser │ ──► │  Job Matcher │ ──► │   Outreach   │
+│ (Ollama or    │     │  (weighted   │     │  Generator   │
+│  regex)       │     │   scoring)   │     │  (LLM or     │
+└───────────────┘     └──────────────┘     │   template)  │
+                                            └──────┬───────┘
+                                                   │
+                                                   ▼
+                                          Recruiter reviews
+                                          and approves/rejects
 ```
 
-**How it works:**
+**The flow:**
 
-1. **`POST /ai/analyze-candidates`** — Kicks off the workflow for a specific job posting
-2. The **Hiring Assistant** (supervisor) orchestrates three skills in sequence
-3. **Resume Parser** extracts structured data from each candidate's resume
-4. **Job Matcher** computes a weighted match score:
-   - Skills overlap: **50%**
-   - Location compatibility: **20%**
-   - Seniority alignment: **30%**
-5. Top candidates are ranked and **outreach drafts** are generated
-6. Results are published to Kafka (`ai.results` topic) and stored in MongoDB
-7. **`POST /ai/approve`** — Recruiter reviews and approves/rejects the output
+1. Hit `POST /ai/analyze-candidates` with a job ID
+2. The Hiring Assistant grabs all candidates and runs them through the pipeline
+3. Resume Parser extracts structured data from each resume
+4. Job Matcher scores them — skills overlap counts for 50%, location for 20%, seniority for 30%
+5. Top candidates get personalized outreach drafts
+6. Everything goes to `POST /ai/approve` where a recruiter approves or rejects
 
-**WebSocket Support:** Connect to `/ai/ws/{task_id}` for real-time progress updates.
+**No Ollama installed?** Totally fine. Every AI skill has a built-in fallback — regex for parsing, pure math for matching, templates for outreach. The API always returns a valid response.
 
-> 💡 **No Ollama? No problem.** Every AI skill has a built-in fallback:
-> - Resume Parser → regex-based extraction
-> - Job Matcher → pure algorithmic scoring (always works)
-> - Outreach Generator → professional template engine
+You can also connect via WebSocket at `/ai/ws/{task_id}` for real-time progress updates.
 
 ---
 
-## 🧪 Running Tests
+## Running tests
 
-With Docker services running and `backend/.env` configured:
+With Docker running and your `.env` set up:
 
 ```bash
 cd backend
@@ -450,112 +317,60 @@ source venv/bin/activate
 pytest tests/ -m integration -v
 ```
 
-Tests validate:
-- `GET /` and `GET /health` endpoints
-- `POST /jobs/search` and `POST /members/search` with database
-- `POST /ai/parse-resume` (works with or without Ollama)
-- MongoDB and Redis connectivity
-
 ---
 
-## ✅ Verifying Everything Works
+## Quick sanity check
 
-After starting the server, run these quick checks:
+After starting the server, try these:
 
 ```bash
-# 1. Health check — all services should be "healthy"
+# Health check
 curl http://localhost:8000/health
 
-# 2. Search jobs
+# Search for jobs
 curl -X POST http://localhost:8000/jobs/search \
   -H "Content-Type: application/json" \
   -d '{"keyword": "engineer", "page": 1, "page_size": 5}'
 
-# 3. AI resume parsing (works without Ollama via regex fallback)
+# Parse a resume (works without Ollama)
 curl -X POST http://localhost:8000/ai/parse-resume \
   -H "Content-Type: application/json" \
-  -d '{"resume_text": "John Doe | Senior SWE | john@test.com | 8 years Python Java AWS"}'
+  -d '{"resume_text": "Jane Smith | Senior SWE | 6 years Python Java AWS Docker"}'
 ```
 
 ---
 
-## ⚠️ Troubleshooting & Challenges
+## Things we ran into (and how we fixed them)
 
-### Challenge 1: MongoDB Authentication Failed
+### MongoDB kept saying "Authentication failed"
 
-**Problem:** The Kafka consumer logs `Authentication failed` when trying to deduplicate events.
+The docker container creates the root user in the `admin` database, but our code was trying to authenticate against the `linkedin` database. We had to add `?authSource=admin` to the connection URL in `config.py`. Took us a while to figure that one out.
 
-**Root Cause:** Docker's `MONGO_INITDB_ROOT_USERNAME` creates the user in the `admin` database, but the MongoDB driver tries to authenticate against the target database (`linkedin`) by default.
+### The Kafka image we wanted didn't exist
 
-**Fix:** We added `?authSource=admin` to the MongoDB connection URL in `config.py`. If you're still seeing this error, check your `backend/.env`:
+We originally planned to use `bitnami/kafka:3.7` but it wasn't available on Docker Hub. Switched to the official `apache/kafka:3.7.0` image instead. The environment variables are slightly different between the two, so we had to adjust the docker-compose config.
 
-```env
-MONGO_USER=mongo_user
-MONGO_PASSWORD=mongo_pass
-```
+### Kafka consumer would hang for 45+ seconds on restart
 
-### Challenge 2: Kafka Image Not Found (Bitnami)
+When the server crashed or was killed abruptly, the consumer would sit there waiting for the old session to expire before it could rejoin the group. We fixed it by setting aggressive timeouts — `session_timeout_ms=10000` and `heartbeat_interval_ms=3000`.
 
-**Problem:** `bitnami/kafka:3.7` was unavailable on Docker Hub during development.
+### Port 27017 was already taken
 
-**Fix:** Switched to the official `apache/kafka:3.7.0` image with proper KRaft-mode environment variables. No Zookeeper required.
+If you have MongoDB installed locally, it's probably already using port 27017. Our Docker container would bind to the same port and either fail or your app would connect to the wrong instance. We documented this in the setup — just change the published port to 27018 in docker-compose.yml.
 
-### Challenge 3: Kafka Consumer Hanging on Restart
+### AI endpoints were slow without Ollama
 
-**Problem:** After an ungraceful shutdown, the Kafka consumer would hang for 45+ seconds waiting for the group session to expire before rebalancing.
+The resume parser was waiting a full 60 seconds for Ollama to respond before falling back to regex. We dropped the timeout to 5 seconds so the fallback kicks in almost instantly. Users don't even notice the difference.
 
-**Fix:** Added aggressive session timeouts to the consumer config:
-```python
-session_timeout_ms=10000,
-heartbeat_interval_ms=3000,
-request_timeout_ms=15000,
-```
+### SQLAlchemy logs "ROLLBACK" on every request
 
-### Challenge 4: Port Conflicts (MongoDB 27017)
-
-**Problem:** Many developers have a local MongoDB installation on port 27017, which conflicts with the Docker container.
-
-**Fix:** If you hit this, change the published port in `docker-compose.yml`:
-```yaml
-ports:
-  - "27018:27017"
-```
-And update `MONGO_PORT=27018` in `backend/.env`.
-
-### Challenge 5: AI Endpoints Timing Out
-
-**Problem:** When Ollama isn't running, the resume parser would wait 60 seconds before falling back to regex.
-
-**Fix:** Reduced the HTTP timeout to 5 seconds so the regex fallback kicks in almost instantly. The user experience is seamless — the API always returns `200` with parsed data.
-
-### Challenge 6: SQLAlchemy ROLLBACK Noise
-
-**Problem:** Every read-only API request shows `ROLLBACK` in the logs, which looks alarming.
-
-**Explanation:** This is **completely normal**. SQLAlchemy uses implicit transactions, and when a session closes without a `commit()`, it emits `ROLLBACK` to clean up. No data is lost.
+This looks scary in the logs but it's completely normal. When you do a read-only query and close the session without calling `commit()`, SQLAlchemy cleans up with a `ROLLBACK`. No data is lost.
 
 ---
 
-## 🏛️ Backend Service Architecture
+## Kafka events
 
-| Module | Responsibility |
-|--------|----------------|
-| `main.py` | App factory, CORS, lifespan (Kafka startup/shutdown), health checks |
-| `config.py` | Centralized settings from environment via pydantic-settings |
-| `database.py` | SQLAlchemy engine + Motor client with connection pooling |
-| `cache.py` | Redis caching layer with JSON serialization and TTL support |
-| `kafka_producer.py` | Async producer with standardized JSON envelope format |
-| `kafka_consumer.py` | Background consumer with MongoDB-backed idempotency |
-| `models/` | SQLAlchemy ORM models with `to_dict()` serialization |
-| `schemas/` | Pydantic v2 schemas with rich examples for Swagger UI |
-| `routers/` | 8 service routers implementing all business logic |
-| `agents/` | 4 AI modules: supervisor + 3 skills (parse, match, outreach) |
-
----
-
-## 📊 Kafka Event Topics
-
-All messages follow a standard JSON envelope:
+Every meaningful action publishes an event to Kafka. They all follow the same format:
 
 ```json
 {
@@ -569,50 +384,37 @@ All messages follow a standard JSON envelope:
 }
 ```
 
-| Topic | Triggered By |
-|-------|-------------|
-| `job.created` | New job posting created |
-| `job.viewed` | Member views a job |
-| `job.saved` | Member saves a job |
+| Topic | When it fires |
+|-------|--------------|
+| `job.created` | New job posted |
+| `job.viewed` | Someone looks at a job |
+| `job.saved` | Someone saves a job |
 | `job.closed` | Recruiter closes a posting |
-| `application.submitted` | New application submitted |
-| `application.statusChanged` | Status updated (reviewing → interview → offer) |
+| `application.submitted` | New application comes in |
+| `application.statusChanged` | Status moves (reviewing → interview → offer) |
 | `message.sent` | New message in a thread |
-| `connection.requested` | Connection request sent |
-| `connection.accepted` | Connection accepted |
-| `ai.requests` | AI workflow triggered |
-| `ai.results` | AI workflow step completed |
+| `connection.requested` | Someone sends a connection request |
+| `connection.accepted` | Connection gets accepted |
+| `ai.requests` | AI workflow starts |
+| `ai.results` | AI workflow completes a step |
 
 ---
 
-## 💡 Development Notes
+## A few notes
 
-- **CORS** is wide open (`*`) for development and class demos. Lock this down for any production deployment.
-- **Kafka consumer** runs inside the API process for simplicity. In production, you'd run separate consumer workers.
-- **`.env` files** are gitignored — always copy from `.env.example` and keep secrets local.
-- **Debug mode** (`DEBUG=True` in config) enables SQLAlchemy query logging. Set to `False` to reduce log noise.
-- **Redis TTL** defaults: member profiles (300s), job searches (60s). Caches are invalidated on create/update/delete operations.
+- **CORS** is wide open for development. You'd want to lock that down before deploying anywhere real.
+- **Kafka consumer** runs inside the API process, which is fine for a class project. In production you'd split it into separate workers.
+- **`.env` files** are gitignored. Always copy from `.env.example`.
+- Set `DEBUG=False` in your `.env` to turn off SQLAlchemy query logging — makes the logs much cleaner.
 
 ---
 
-## 👥 Team & Attribution
+## Team
 
 Built for **DATA236** at **San Jose State University**.
 
-| Role | Focus Area |
-|------|-----------|
-| Backend Architecture | FastAPI services, database design, Kafka integration |
-| AI & Agent Layer | Ollama integration, resume parsing, job matching algorithms |
-| Infrastructure | Docker Compose, MySQL/MongoDB/Redis/Kafka setup |
-| Frontend | React UI, API integration, WebSocket connectivity |
-| Documentation | API docs, Postman collection, README |
-
 ---
 
 <p align="center">
-  <strong>⭐ If this project helped you, give it a star on GitHub!</strong>
-</p>
-
-<p align="center">
-  <em>If this README and the code disagree, trust the code — and update both in the same commit.</em>
+  <em>If the README and the code disagree, trust the code — and fix both in the same commit.</em>
 </p>
