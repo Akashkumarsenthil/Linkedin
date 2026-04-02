@@ -37,8 +37,11 @@ class KafkaEventConsumer:
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
             auto_offset_reset="earliest",
             enable_auto_commit=True,
+            session_timeout_ms=10000,
+            heartbeat_interval_ms=3000,
+            request_timeout_ms=15000,
         )
-        await self.consumer.start()
+        await asyncio.wait_for(self.consumer.start(), timeout=20)
         self._running = True
         logger.info(f"Kafka consumer started. Listening on: {topics}")
 

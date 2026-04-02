@@ -28,32 +28,36 @@ async def ingest_event(req: EventIngest):
     Ingest a tracking event from UI or services.
     Events are stored in MongoDB and published to Kafka for async processing.
     """
-    event_doc = {
-        "event_type": req.event_type,
-        "actor_id": req.actor_id,
-        "entity_type": req.entity_type,
-        "entity_id": req.entity_id,
-        "payload": req.payload or {},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
-    # Store in MongoDB
-    await mongo_db.event_logs.insert_one(event_doc)
-
-    # Publish to Kafka
     try:
-        await kafka_producer.publish(
-            topic=f"events.{req.event_type.replace('.', '_')}",
-            event_type=req.event_type,
-            actor_id=req.actor_id,
-            entity_type=req.entity_type,
-            entity_id=req.entity_id,
-            payload=req.payload or {},
-        )
-    except Exception as e:
-        logger.warning(f"Kafka publish failed for event: {e}")
+        event_doc = {
+            "event_type": req.event_type,
+            "actor_id": req.actor_id,
+            "entity_type": req.entity_type,
+            "entity_id": req.entity_id,
+            "payload": req.payload or {},
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
-    return AnalyticsResponse(success=True, message="Event ingested successfully")
+        # Store in MongoDB (use copy since insert_one adds _id)
+        await mongo_db.event_logs.insert_one(event_doc.copy())
+
+        # Publish to Kafka
+        try:
+            await kafka_producer.publish(
+                topic=f"events.{req.event_type.replace('.', '_')}",
+                event_type=req.event_type,
+                actor_id=req.actor_id,
+                entity_type=req.entity_type,
+                entity_id=req.entity_id,
+                payload=req.payload or {},
+            )
+        except Exception as e:
+            logger.warning(f"Kafka publish failed for event: {e}")
+
+        return AnalyticsResponse(success=True, message="Event ingested successfully")
+    except Exception as e:
+        logger.error(f"Event ingest failed: {e}")
+        return AnalyticsResponse(success=False, message=f"Event ingest failed: {str(e)}")
 
 
 @router.post("/analytics/jobs/top", response_model=AnalyticsResponse, summary="Top jobs by metric")

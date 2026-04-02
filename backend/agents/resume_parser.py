@@ -45,7 +45,7 @@ Resume text:
 {resume_text[:3000]}"""
 
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(
                 f"{settings.OLLAMA_BASE_URL}/api/generate",
                 json={
