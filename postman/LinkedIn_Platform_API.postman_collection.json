@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "linkedin-agentic-ai-platform",
 		"name": "LinkedIn Agentic AI Platform",
-		"description": "Complete API collection for the LinkedIn Agentic AI Platform.\n\nCovers all 7 microservices:\n- Profile Service (Members)\n- Recruiter Service\n- Job Service\n- Application Service\n- Messaging Service\n- Connection Service\n- Analytics Service\n- AI Agent Service\n\n**Setup:** Import this collection and the environment file. Set the `base_url` variable to your API endpoint (default: http://localhost:8000).",
+		"description": "Complete API collection for the LinkedIn Agentic AI Platform.\n\nCovers all 7 microservices:\n- Profile Service (Members)\n- Recruiter Service\n- Job Service\n- Application Service\n- Messaging Service\n- Connection Service\n- Analytics Service\n- AI Agent Service\n\n**Setup:** Import this collection plus `postman/Local.postman_environment.json`, or set the collection variable `base_url` (default http://localhost:8000). Static OpenAPI: `docs/openapi.json`; live docs: `/docs` on the API.",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"variable": [
