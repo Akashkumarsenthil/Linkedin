@@ -10,6 +10,7 @@ from sqlalchemy import or_, and_
 from database import get_db
 from models.connection import Connection
 from models.member import Member
+from auth import require_member, TokenPayload
 from schemas.connection import (
     ConnectionRequest, ConnectionAccept, ConnectionReject, ConnectionList,
     MutualConnections, ConnectionResponse, ConnectionListResponse,
@@ -21,11 +22,18 @@ router = APIRouter(prefix="/connections", tags=["Connection Service"])
 
 
 @router.post("/request", response_model=ConnectionResponse, summary="Send a connection request")
-async def send_connection_request(req: ConnectionRequest, db: Session = Depends(get_db)):
+async def send_connection_request(
+    req: ConnectionRequest,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_member),
+):
     """
     Send a connection request from one member to another.
     Handles: self-connection, duplicate request, and already connected errors.
     """
+    if req.requester_id != current_user.user_id:
+        return ConnectionResponse(success=False, message="Cannot send connection request on behalf of another member")
+
     if req.requester_id == req.receiver_id:
         return ConnectionResponse(success=False, message="Cannot connect with yourself")
 
@@ -81,11 +89,18 @@ async def send_connection_request(req: ConnectionRequest, db: Session = Depends(
 
 
 @router.post("/accept", response_model=ConnectionResponse, summary="Accept a connection request")
-async def accept_connection(req: ConnectionAccept, db: Session = Depends(get_db)):
+async def accept_connection(
+    req: ConnectionAccept,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_member),
+):
     """Accept a pending connection request. Updates both members' connection counts."""
     conn = db.query(Connection).filter(Connection.connection_id == req.connection_id).first()
     if not conn:
         return ConnectionResponse(success=False, message=f"Connection {req.connection_id} not found")
+
+    if conn.receiver_id != current_user.user_id:
+        return ConnectionResponse(success=False, message="Only the connection receiver can accept this request")
 
     if conn.status != "pending":
         return ConnectionResponse(success=False, message=f"Connection is already {conn.status}")
@@ -119,11 +134,18 @@ async def accept_connection(req: ConnectionAccept, db: Session = Depends(get_db)
 
 
 @router.post("/reject", response_model=ConnectionResponse, summary="Reject a connection request")
-async def reject_connection(req: ConnectionReject, db: Session = Depends(get_db)):
+async def reject_connection(
+    req: ConnectionReject,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_member),
+):
     """Reject a pending connection request."""
     conn = db.query(Connection).filter(Connection.connection_id == req.connection_id).first()
     if not conn:
         return ConnectionResponse(success=False, message=f"Connection {req.connection_id} not found")
+
+    if conn.receiver_id != current_user.user_id:
+        return ConnectionResponse(success=False, message="Only the connection receiver can reject this request")
 
     if conn.status != "pending":
         return ConnectionResponse(success=False, message=f"Connection is already {conn.status}")

@@ -57,14 +57,20 @@ class JobUpdate(BaseModel):
 
 
 class JobSearch(BaseModel):
-    keyword: Optional[str] = Field(None, description="Search in title and description")
+    keyword: Optional[str] = Field(None, description="Search in title and description (uses full-text when available)")
     location: Optional[str] = None
     employment_type: Optional[str] = None
     work_mode: Optional[str] = None
     seniority_level: Optional[str] = None
     skills: Optional[List[str]] = Field(None, description="Filter by required skills")
+    salary_min: Optional[int] = Field(None, description="Minimum salary filter — matches jobs whose salary_max >= this value")
+    salary_max: Optional[int] = Field(None, description="Maximum salary filter — matches jobs whose salary_min <= this value")
+    sort_by: Optional[str] = Field(None, description="Sort order: 'date' (default), 'applicants', 'views'")
+    # Offset pagination (backwards-compatible)
     page: int = Field(1, ge=1)
     page_size: int = Field(20, ge=1, le=100)
+    # Cursor-based pagination (takes precedence over page when provided)
+    cursor: Optional[str] = Field(None, description="Opaque cursor returned from a previous response for keyset pagination")
 
 
 class JobClose(BaseModel):
@@ -95,3 +101,6 @@ class JobListResponse(BaseModel):
     total: Optional[int] = None
     page: Optional[int] = None
     page_size: Optional[int] = None
+    # Cursor pagination extras (None when offset pagination used or no more results)
+    next_cursor: Optional[str] = None
+    has_more: Optional[bool] = None

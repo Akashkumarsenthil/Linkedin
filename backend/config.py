@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
 
+    # ─── Auth / JWT ─────────────────────────────────────────────────
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "linkedin-demo-secret-change-in-prod")
+    JWT_EXPIRE_HOURS: int = 24
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -13,8 +13,10 @@ from config import settings
 from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
+from routers import auth_router
 from agents.hiring_assistant import rehydrate_tasks
-from database import create_mongo_indexes
+from database import create_mongo_indexes, engine, Base
+import models.user_credentials  # register model with Base.metadata before create_all
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -47,6 +49,7 @@ async def lifespan(app: FastAPI):
             "job.viewed", "job.saved", "job.created", "job.closed",
             "application.submitted", "application.statusChanged",
             "message.sent", "connection.requested", "connection.accepted",
+            "profile.viewed",
             "ai.requests", "ai.results",
         ]
         await kafka_consumer.start(topics)
@@ -54,6 +57,13 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Kafka consumer started")
     except Exception as e:
         logger.warning(f"✗ Kafka consumer failed to start: {e}")
+
+    # Create any missing SQL tables (idempotent — adds user_credentials if not exists)
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        logger.info("✓ SQL tables verified / created")
+    except Exception as e:
+        logger.warning(f"✗ SQL table creation failed: {e}")
 
     # Ensure MongoDB indexes exist
     try:
@@ -142,6 +152,7 @@ app.include_router(messages.router)
 app.include_router(connections.router)
 app.include_router(analytics.router)
 app.include_router(ai_service.router)
+app.include_router(auth_router.router)
 
 
 # ─── Health Check ──────────────────────────────────────────────
