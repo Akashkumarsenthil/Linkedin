@@ -13,6 +13,8 @@ from config import settings
 from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
+from agents.hiring_assistant import rehydrate_tasks
+from database import create_mongo_indexes
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -52,6 +54,19 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Kafka consumer started")
     except Exception as e:
         logger.warning(f"✗ Kafka consumer failed to start: {e}")
+
+    # Ensure MongoDB indexes exist
+    try:
+        await create_mongo_indexes()
+    except Exception as e:
+        logger.warning(f"✗ MongoDB index creation failed: {e}")
+
+    # Rehydrate AI task state from MongoDB
+    try:
+        restored = await rehydrate_tasks()
+        logger.info(f"✓ AI task rehydration complete ({restored} task(s) restored)")
+    except Exception as e:
+        logger.warning(f"✗ AI task rehydration failed: {e}")
 
     logger.info("✓ All services ready")
     logger.info(f"  Swagger UI:  http://localhost:8000/docs")

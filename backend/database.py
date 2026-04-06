@@ -3,10 +3,14 @@ LinkedIn Platform — Database Connections
 Handles MySQL (SQLAlchemy) and MongoDB (motor) connections.
 """
 
+import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ASCENDING
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 # ─── MySQL (SQLAlchemy) ─────────────────────────────────────────
 engine = create_engine(
@@ -44,3 +48,75 @@ agent_tasks_collection = mongo_db["agent_tasks"]
 def get_mongo():
     """Returns the MongoDB database instance."""
     return mongo_db
+
+
+# ─── MongoDB index creation ─────────────────────────────────────
+async def create_mongo_indexes() -> None:
+    """
+    Create MongoDB indexes for all collections used by this application.
+
+    Called once during application startup (main.py lifespan).
+    create_index is idempotent — re-running is safe and fast when the index
+    already exists.
+
+    Index rationale
+    ---------------
+    agent_tasks
+      task_id  (unique) — every find_one / update_one in hiring_assistant.py
+                          filters on this field; without an index every call
+                          does a full collection scan.
+      status            — rehydrate_tasks() queries {"status": {"$in": [...]}}
+                          on startup; an index keeps this fast even as the
+                          collection grows over many demo runs.
+
+    processed_events
+      idempotency_key (unique) — find_one({"idempotency_key": ...}) is called
+                                 for EVERY Kafka message in the consumer hot
+                                 path (kafka_consumer.py:74).  Without an index
+                                 throughput degrades linearly with collection
+                                 size.
+
+    event_logs
+      event_type — all event handlers insert with this field; future analytics
+                   queries (e.g. "show all job.viewed events") will filter on it.
+      timestamp  — event logs are time-series; range queries by timestamp are
+                   the natural access pattern for dashboards and audits.
+
+    agent_traces
+      task_id    — traces are written per-member per-step for each AI task.
+                   Debugging or replaying a task requires fetching all traces
+                   for a given task_id; a full scan becomes slow once thousands
+                   of traces accumulate across many workflow runs.
+    """
+    try:
+        # agent_tasks ────────────────────────────────────────────
+        await mongo_db.agent_tasks.create_index(
+            "task_id", unique=True, name="task_id_unique"
+        )
+        await mongo_db.agent_tasks.create_index(
+            "status", name="status_1"
+        )
+
+        # processed_events ───────────────────────────────────────
+        await mongo_db.processed_events.create_index(
+            "idempotency_key", unique=True, name="idempotency_key_unique"
+        )
+
+        # event_logs ─────────────────────────────────────────────
+        await mongo_db.event_logs.create_index(
+            "event_type", name="event_type_1"
+        )
+        await mongo_db.event_logs.create_index(
+            [("timestamp", ASCENDING)], name="timestamp_1"
+        )
+
+        # agent_traces ───────────────────────────────────────────
+        await mongo_db.agent_traces.create_index(
+            "task_id", name="task_id_1"
+        )
+
+        logger.info("✓ MongoDB indexes ensured")
+    except Exception as e:
+        # Non-fatal: indexes are a performance optimisation, not a correctness
+        # requirement.  Log and continue so the app still starts.
+        logger.warning(f"✗ MongoDB index creation failed: {e}")

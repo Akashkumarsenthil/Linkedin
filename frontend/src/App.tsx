@@ -1,8 +1,17 @@
 import { useCallback, useState } from 'react'
 import './App.css'
 import { apiGet, apiPost } from './api'
+import { TopJobsChart } from './components/TopJobsChart'
+import { FunnelChart } from './components/FunnelChart'
+import { GeoTable } from './components/GeoTable'
+import { MemberDashboard } from './components/MemberDashboard'
+import { MessagingPanel } from './components/MessagingPanel'
+import { ConnectionsPanel } from './components/ConnectionsPanel'
+import { TopMonthlyChart, LeastAppliedChart, ClicksPerJobChart } from './components/RecruiterJobCharts'
+import { GeoMonthlyChart } from './components/GeoMonthlyChart'
+import { SavesTrendChart } from './components/SavesTrendChart'
 
-type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai'
+type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections'
 
 function App() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -24,6 +33,8 @@ function App() {
               ['jobs', 'Jobs'],
               ['members', 'Members'],
               ['analytics', 'Analytics'],
+              ['messages', 'Messages'],
+              ['connections', 'Connections'],
               ['ai', 'AI tools'],
             ] as const
           ).map(([id, label]) => (
@@ -44,6 +55,8 @@ function App() {
         {tab === 'jobs' && <JobsPanel />}
         {tab === 'members' && <MembersPanel />}
         {tab === 'analytics' && <AnalyticsPanel />}
+        {tab === 'messages' && <MessagingPanel />}
+        {tab === 'connections' && <ConnectionsPanel />}
         {tab === 'ai' && <AiPanel />}
       </main>
 
@@ -212,48 +225,31 @@ function MembersPanel() {
 }
 
 function AnalyticsPanel() {
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const load = async () => {
-    setLoading(true)
-    setErr(null)
-    try {
-      const r = await apiPost<Record<string, unknown>>('/analytics/jobs/top', {
-        metric: 'applications',
-        limit: 8,
-        window_days: 365,
-      })
-      setResult(r)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Request failed')
-      setResult(null)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const rows = (result?.data as Record<string, unknown>[] | undefined) ?? []
-
   return (
     <section className="panel">
-      <h2>Top jobs (applications)</h2>
-      <p className="hint">Uses SQL aggregates over seeded applications.</p>
-      <button type="button" className="primary" onClick={load} disabled={loading}>
-        {loading ? 'Loading…' : 'Load top jobs'}
-      </button>
-      {err && <p className="error">{err}</p>}
-      {result && <p className="meta">{String(result.message ?? '')}</p>}
-      <ul className="card-list">
-        {rows.map((row) => (
-          <li key={String(row.job_id)} className="card">
-            <strong>{String(row.title)}</strong>
-            <span className="muted">{String(row.location ?? '')}</span>
-            <span className="pill">apps: {String(row.count ?? row.metric ?? '')}</span>
-          </li>
-        ))}
-      </ul>
+      <h2>Analytics</h2>
+      <p className="hint">
+        Live charts powered by the backend SQL aggregates. Requires seeded data —
+        run <code>python seed_data.py --quick --yes</code> from <code>backend/</code> if
+        charts show empty results.
+      </p>
+
+      <h3 className="analytics-section-title">Recruiter / Admin Dashboard</h3>
+      <div className="analytics-grid">
+        <TopMonthlyChart />
+        <LeastAppliedChart />
+        <ClicksPerJobChart />
+        <GeoMonthlyChart />
+        <SavesTrendChart />
+      </div>
+
+      <h3 className="analytics-section-title">General Analytics</h3>
+      <div className="analytics-grid">
+        <TopJobsChart />
+        <FunnelChart />
+        <GeoTable />
+        <MemberDashboard />
+      </div>
     </section>
   )
 }

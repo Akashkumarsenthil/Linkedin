@@ -1,0 +1,64 @@
+# FastAPI backend — the core application service
+# Connects to MySQL, MongoDB, Redis, Kafka, and Ollama via ConfigMap/Secret env vars.
+# Runs both the API server and the embedded Kafka consumer (started in main.py lifespan).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: linkedin-platform
+  labels:
+    app: backend
+spec:
+  replicas: 2               # Scale horizontally; all replicas share the same DBs
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # Replace with your ECR/registry URI after pushing:
+          #   <account-id>.dkr.ecr.<region>.amazonaws.com/linkedin-backend:latest
+          image: linkedin-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: linkedin-config
+            - secretRef:
+                name: linkedin-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: linkedin-platform
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000

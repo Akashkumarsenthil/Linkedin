@@ -109,8 +109,9 @@ async def analyze_candidates(req: AnalyzeCandidatesRequest):
 
 @router.post("/task-status", response_model=AIResponse, summary="Get AI task status")
 async def task_status(req: TaskStatusRequest):
-    """Check the current status and progress of an AI task."""
-    status = get_task_status(req.task_id)
+    """Check the current status and progress of an AI task.
+    Falls back to MongoDB so tasks are queryable after a server restart."""
+    status = await get_task_status(req.task_id)
     if not status:
         return AIResponse(success=False, message=f"Task {req.task_id} not found")
 
@@ -182,8 +183,8 @@ async def websocket_task_updates(websocket: WebSocket, task_id: str):
     ws_connections[task_id].append(websocket)
 
     try:
-        # Send current status immediately
-        status = get_task_status(task_id)
+        # Send current status immediately (reads from MongoDB if not in memory cache)
+        status = await get_task_status(task_id)
         if status:
             await websocket.send_json(status)
 
