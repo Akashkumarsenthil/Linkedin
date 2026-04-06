@@ -7,11 +7,16 @@ import { GeoTable } from './components/GeoTable'
 import { MemberDashboard } from './components/MemberDashboard'
 import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
+import { MemberCreateForm } from './components/MemberCreateForm'
+import { JobApplyForm } from './components/JobApplyForm'
+import { JobDetailPanel } from './components/JobDetailPanel'
+import { AuthPanel } from './components/AuthPanel'
 import { TopMonthlyChart, LeastAppliedChart, ClicksPerJobChart } from './components/RecruiterJobCharts'
 import { GeoMonthlyChart } from './components/GeoMonthlyChart'
 import { SavesTrendChart } from './components/SavesTrendChart'
+import { AiDashboard } from './components/AiDashboard'
 
-type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections'
+type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'auth'
 
 function App() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -36,6 +41,7 @@ function App() {
               ['messages', 'Messages'],
               ['connections', 'Connections'],
               ['ai', 'AI tools'],
+              ['auth', 'Auth'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -57,7 +63,8 @@ function App() {
         {tab === 'analytics' && <AnalyticsPanel />}
         {tab === 'messages' && <MessagingPanel />}
         {tab === 'connections' && <ConnectionsPanel />}
-        {tab === 'ai' && <AiPanel />}
+        {tab === 'ai' && <AiDashboard />}
+        {tab === 'auth' && <AuthPanel />}
       </main>
 
       <footer className="footer">
@@ -107,29 +114,49 @@ function OverviewPanel() {
 
 function JobsPanel() {
   const [keyword, setKeyword] = useState('engineer')
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
+  const [sortBy, setSortBy] = useState('date')
+  const [jobs, setJobs] = useState<Record<string, unknown>[]>([])
+  const [total, setTotal] = useState<number | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
+  const [detailJobId, setDetailJobId] = useState<number | null>(null)
 
-  const search = async () => {
+  const doSearch = async (cursor: string | null) => {
     setLoading(true)
     setErr(null)
     try {
-      const r = await apiPost<Record<string, unknown>>('/jobs/search', {
+      const r = await apiPost<{
+        data: Record<string, unknown>[]
+        total: number | null
+        next_cursor: string | null
+        has_more: boolean
+        message: string
+      }>('/jobs/search', {
         keyword: keyword || undefined,
-        page: 1,
+        sort_by: sortBy,
         page_size: 15,
+        cursor: cursor ?? undefined,
       })
-      setResult(r)
+      if (cursor) {
+        setJobs((prev) => [...prev, ...(r.data ?? [])])
+      } else {
+        setJobs(r.data ?? [])
+        setTotal(r.total ?? null)
+      }
+      setNextCursor(r.next_cursor ?? null)
+      setHasMore(r.has_more ?? false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Search failed')
-      setResult(null)
     } finally {
       setLoading(false)
     }
   }
 
-  const jobs = (result?.data as Record<string, unknown>[] | undefined) ?? []
+  const search = () => doSearch(null)
+  const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
 
   return (
     <section className="panel">
@@ -141,56 +168,130 @@ function JobsPanel() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="e.g. engineer"
+            onKeyDown={(e) => e.key === 'Enter' && search()}
           />
         </label>
+        <label>
+          Sort
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{ fontFamily: 'inherit', fontSize: '0.875rem', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+          >
+            <option value="date">Date posted</option>
+            <option value="applicants">Most applicants</option>
+            <option value="views">Most viewed</option>
+          </select>
+        </label>
         <button type="button" className="primary" onClick={search} disabled={loading}>
-          {loading ? 'Searching…' : 'Search'}
+          {loading && !nextCursor ? 'Searching…' : 'Search'}
         </button>
       </div>
       {err && <p className="error">{err}</p>}
-      {result && (
+      {jobs.length > 0 && (
         <p className="meta">
-          {String(result.message ?? '')} · total {String(result.total ?? 0)}
+          Showing {jobs.length}{total != null ? ` of ${total}` : ''} jobs
         </p>
       )}
       <ul className="card-list">
-        {jobs.map((j) => (
-          <li key={String(j.job_id)} className="card">
-            <strong>{String(j.title)}</strong>
-            <span className="muted">{String(j.location ?? '')}</span>
-            <span className="pill">{String(j.work_mode ?? '')}</span>
-          </li>
-        ))}
+        {jobs.map((j) => {
+          const jid = Number(j.job_id)
+          const isSelected = selectedJobId === jid
+          const isViewing = detailJobId === jid
+          return (
+            <li key={String(j.job_id)} className={`card${isSelected ? ' card-selected' : ''}`}>
+              <strong>{String(j.title)}</strong>
+              <span className="muted">{String(j.location ?? '')}</span>
+              <span className="pill">{String(j.work_mode ?? '')}</span>
+              <span className="pill">ID #{String(j.job_id)}</span>
+              <div className="card-actions">
+                <button
+                  type="button"
+                  className={isViewing ? 'apply-btn apply-btn-active' : 'apply-btn'}
+                  onClick={() => setDetailJobId(isViewing ? null : jid)}
+                >
+                  {isViewing ? 'Viewing ▴' : 'View'}
+                </button>
+                <button
+                  type="button"
+                  className={isSelected ? 'apply-btn apply-btn-active' : 'apply-btn'}
+                  onClick={() => setSelectedJobId(isSelected ? null : jid)}
+                >
+                  {isSelected ? 'Selected ✓' : 'Apply'}
+                </button>
+              </div>
+            </li>
+          )
+        })}
       </ul>
+
+      {hasMore && (
+        <button
+          type="button"
+          className="load-more-btn"
+          onClick={loadMore}
+          disabled={loading}
+        >
+          {loading ? 'Loading…' : 'Load more'}
+        </button>
+      )}
+
+      <JobDetailPanel
+        jobId={detailJobId}
+        onClose={() => setDetailJobId(null)}
+      />
+
+      <JobApplyForm
+        prefilledJobId={selectedJobId}
+        onClear={() => setSelectedJobId(null)}
+      />
     </section>
   )
 }
 
 function MembersPanel() {
   const [keyword, setKeyword] = useState('data')
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
+  const [sortBy, setSortBy] = useState('id')
+  const [members, setMembers] = useState<Record<string, unknown>[]>([])
+  const [total, setTotal] = useState<number | null>(null)
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const search = async () => {
+  const doSearch = async (cursor: string | null) => {
     setLoading(true)
     setErr(null)
     try {
-      const r = await apiPost<Record<string, unknown>>('/members/search', {
+      const r = await apiPost<{
+        data: Record<string, unknown>[]
+        total: number | null
+        next_cursor: string | null
+        has_more: boolean
+        message: string
+      }>('/members/search', {
         keyword: keyword || undefined,
-        page: 1,
+        sort_by: sortBy,
         page_size: 12,
+        cursor: cursor ?? undefined,
       })
-      setResult(r)
+      if (cursor) {
+        setMembers((prev) => [...prev, ...(r.data ?? [])])
+      } else {
+        setMembers(r.data ?? [])
+        setTotal(r.total ?? null)
+      }
+      setNextCursor(r.next_cursor ?? null)
+      setHasMore(r.has_more ?? false)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Search failed')
-      setResult(null)
     } finally {
       setLoading(false)
     }
   }
 
-  const members = (result?.data as Record<string, unknown>[] | undefined) ?? []
+  const search = () => doSearch(null)
+  const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
 
   return (
     <section className="panel">
@@ -202,14 +303,31 @@ function MembersPanel() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             placeholder="name, headline, about"
+            onKeyDown={(e) => e.key === 'Enter' && search()}
           />
         </label>
+        <label>
+          Sort
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{ fontFamily: 'inherit', fontSize: '0.875rem', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
+          >
+            <option value="id">Default</option>
+            <option value="connections">Most connected</option>
+            <option value="recent">Newest</option>
+          </select>
+        </label>
         <button type="button" className="primary" onClick={search} disabled={loading}>
-          {loading ? 'Searching…' : 'Search'}
+          {loading && !nextCursor ? 'Searching…' : 'Search'}
         </button>
       </div>
       {err && <p className="error">{err}</p>}
-      {result && <p className="meta">{String(result.message ?? '')}</p>}
+      {members.length > 0 && (
+        <p className="meta">
+          Showing {members.length}{total != null ? ` of ${total}` : ''} members
+        </p>
+      )}
       <ul className="card-list">
         {members.map((m) => (
           <li key={String(m.member_id)} className="card">
@@ -217,9 +335,25 @@ function MembersPanel() {
               {String(m.first_name)} {String(m.last_name)}
             </strong>
             <span className="muted">{String(m.headline ?? '')}</span>
+            {m.location_city && (
+              <span className="pill">{String(m.location_city)}</span>
+            )}
           </li>
         ))}
       </ul>
+
+      {hasMore && (
+        <button
+          type="button"
+          className="load-more-btn"
+          onClick={loadMore}
+          disabled={loading}
+        >
+          {loading ? 'Loading…' : 'Load more'}
+        </button>
+      )}
+
+      <MemberCreateForm />
     </section>
   )
 }
@@ -250,54 +384,6 @@ function AnalyticsPanel() {
         <GeoTable />
         <MemberDashboard />
       </div>
-    </section>
-  )
-}
-
-function AiPanel() {
-  const [text, setText] = useState(
-    'Jane Smith | ML Engineer | jane@example.com\n\n5 years building recommendation systems with Python, PyTorch, and Spark. MS Statistics. Skills: Python, Kafka, AWS.',
-  )
-  const [result, setResult] = useState<Record<string, unknown> | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const parse = async () => {
-    setLoading(true)
-    setErr(null)
-    try {
-      const r = await apiPost<Record<string, unknown>>('/ai/parse-resume', {
-        resume_text: text,
-      })
-      setResult(r)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Request failed')
-      setResult(null)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <section className="panel">
-      <h2>Parse resume (AI)</h2>
-      <p className="hint">
-        Calls the backend; uses Ollama when available, otherwise heuristic parsing.
-      </p>
-      <textarea
-        className="resume-input"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={8}
-        spellCheck={false}
-      />
-      <button type="button" className="primary" onClick={parse} disabled={loading}>
-        {loading ? 'Parsing…' : 'Parse resume'}
-      </button>
-      {err && <p className="error">{err}</p>}
-      {result && (
-        <pre className="json-out">{JSON.stringify(result, null, 2)}</pre>
-      )}
     </section>
   )
 }

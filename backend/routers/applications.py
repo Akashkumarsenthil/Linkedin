@@ -12,6 +12,7 @@ from database import get_db
 from models.application import Application
 from models.job import JobPosting
 from models.member import Member
+from auth import require_member, TokenPayload
 from schemas.application import (
     ApplicationSubmit, ApplicationGet, ApplicationByJob, ApplicationByMember,
     ApplicationUpdateStatus, ApplicationAddNote,
@@ -27,11 +28,19 @@ VALID_STATUSES = {"submitted", "reviewing", "rejected", "interview", "offer"}
 
 
 @router.post("/submit", response_model=ApplicationResponse, summary="Submit a job application")
-async def submit_application(req: ApplicationSubmit, db: Session = Depends(get_db)):
+async def submit_application(
+    req: ApplicationSubmit,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_member),
+):
     """
     Submit an application to a job posting.
     Handles: duplicate application, closed job, and missing member/job errors.
     """
+    # Enforce caller can only submit as themselves
+    if req.member_id != current_user.user_id:
+        return ApplicationResponse(success=False, message="Cannot submit application on behalf of another member")
+
     # Check job exists and is open
     job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
     if not job:

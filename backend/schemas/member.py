@@ -80,11 +80,15 @@ class MemberDelete(BaseModel):
 
 class MemberSearch(BaseModel):
     """Request body for searching members."""
-    keyword: Optional[str] = Field(None, description="Search keyword (name, headline, about)")
+    keyword: Optional[str] = Field(None, description="Search keyword (name, headline, about) — uses full-text when available")
     skill: Optional[str] = Field(None, description="Filter by skill")
     location: Optional[str] = Field(None, description="Filter by city or state")
+    sort_by: Optional[str] = Field(None, description="Sort order: 'id' (default), 'connections', 'recent'")
+    # Offset pagination (backwards-compatible)
     page: int = Field(1, ge=1, description="Page number")
     page_size: int = Field(20, ge=1, le=100, description="Results per page")
+    # Cursor-based pagination (takes precedence over page when provided)
+    cursor: Optional[str] = Field(None, description="Opaque cursor returned from a previous response for keyset pagination")
 
 
 class MemberResponse(BaseModel):
@@ -102,3 +106,6 @@ class MemberListResponse(BaseModel):
     total: Optional[int] = None
     page: Optional[int] = None
     page_size: Optional[int] = None
+    # Cursor pagination extras (None when offset pagination used or no more results)
+    next_cursor: Optional[str] = None
+    has_more: Optional[bool] = None
