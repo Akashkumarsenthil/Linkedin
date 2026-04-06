@@ -1,0 +1,30 @@
+# Non-secret configuration shared across services.
+# Values reference Kubernetes Service DNS names (service.namespace.svc.cluster.local).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: linkedin-config
+  namespace: linkedin-platform
+data:
+  # ── MySQL ──
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: linkedin
+
+  # ── MongoDB ──
+  MONGO_HOST: mongodb
+  MONGO_PORT: "27017"
+  MONGO_DATABASE: linkedin
+  MONGO_AUTH_SOURCE: admin
+
+  # ── Redis ──
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+  # ── Kafka ──
+  # Inside the cluster, pods connect to the PLAINTEXT listener on port 9092.
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  # ── Ollama ──
+  OLLAMA_BASE_URL: http://ollama:11434
+  OLLAMA_MODEL: llama3.2

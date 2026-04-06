@@ -6,7 +6,7 @@ Provides recruiter and member analytics with MongoDB event logs.
 import logging
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter
-from sqlalchemy import func as sql_func, desc
+from sqlalchemy import func as sql_func, desc, asc, extract, case, literal_column
 
 from database import get_db, mongo_db, SessionLocal
 from models.job import JobPosting, SavedJob
@@ -14,7 +14,8 @@ from models.application import Application
 from models.member import Member, ProfileViewDaily
 from schemas.analytics import (
     EventIngest, TopJobsRequest, FunnelRequest, GeoRequest,
-    MemberDashboardRequest, AnalyticsResponse,
+    MemberDashboardRequest, LeastAppliedRequest, SavesTrendRequest,
+    ClicksPerJobRequest, AnalyticsResponse,
 )
 from kafka_producer import kafka_producer
 
@@ -247,6 +248,288 @@ async def member_dashboard(req: MemberDashboardRequest):
 
         return AnalyticsResponse(
             success=True, message="Dashboard metrics retrieved", data=data
+        )
+    finally:
+        db.close()
+
+
+# ── Recruiter / Admin Dashboard Endpoints (brief §requirements) ──────────────
+
+
+@router.post(
+    "/analytics/jobs/top-monthly",
+    response_model=AnalyticsResponse,
+    summary="Top 10 jobs by applications, grouped by month",
+)
+async def top_jobs_monthly(req: TopJobsRequest):
+    """
+    Brief requirement: "Top 10 job postings by applications per month."
+    Groups applications by calendar month and returns the top N jobs
+    within the requested look-back window.  Each result row contains the
+    month label (YYYY-MM) and the count.
+    Data source: MySQL  applications + job_postings (JOIN + GROUP BY).
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(days=req.window_days)
+
+        month_label = sql_func.date_format(
+            Application.application_datetime, "%Y-%m"
+        ).label("month")
+
+        results = (
+            db.query(
+                month_label,
+                JobPosting.job_id,
+                JobPosting.title,
+                JobPosting.location,
+                sql_func.count(Application.application_id).label("count"),
+            )
+            .join(Application, Application.job_id == JobPosting.job_id)
+            .filter(Application.application_datetime >= cutoff)
+            .group_by(month_label, JobPosting.job_id)
+            .order_by(desc("count"))
+            .limit(req.limit)
+            .all()
+        )
+
+        data = [
+            {
+                "month": r[0],
+                "job_id": r[1],
+                "title": r[2],
+                "location": r[3],
+                "count": r[4],
+            }
+            for r in results
+        ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"Top {req.limit} jobs by applications (monthly), last {req.window_days} days",
+            data=data,
+        )
+    finally:
+        db.close()
+
+
+@router.post(
+    "/analytics/geo/monthly",
+    response_model=AnalyticsResponse,
+    summary="City-wise applications per month for a job",
+)
+async def geo_monthly(req: GeoRequest):
+    """
+    Brief requirement: "City-wise applications per month for a selected job posting."
+    Same as /analytics/geo but grouped by calendar month.
+    Data source: MySQL  applications + members (JOIN + GROUP BY month, city).
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(days=req.window_days)
+        month_label = sql_func.date_format(
+            Application.application_datetime, "%Y-%m"
+        ).label("month")
+
+        results = (
+            db.query(
+                month_label,
+                Member.location_city,
+                Member.location_state,
+                sql_func.count(Application.application_id).label("count"),
+            )
+            .join(Application, Application.member_id == Member.member_id)
+            .filter(
+                Application.job_id == req.job_id,
+                Application.application_datetime >= cutoff,
+            )
+            .group_by(month_label, Member.location_city, Member.location_state)
+            .order_by(month_label, desc("count"))
+            .all()
+        )
+
+        data = [
+            {
+                "month": r[0],
+                "city": r[1] or "Unknown",
+                "state": r[2] or "Unknown",
+                "count": r[3],
+            }
+            for r in results
+        ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"City-wise monthly applications for job {req.job_id}",
+            data=data,
+        )
+    finally:
+        db.close()
+
+
+@router.post(
+    "/analytics/jobs/least-applied",
+    response_model=AnalyticsResponse,
+    summary="Top 5 jobs with fewest applications",
+)
+async def least_applied_jobs(req: LeastAppliedRequest):
+    """
+    Brief requirement: "Top 5 job postings with the fewest applications."
+    Returns open jobs ordered ascending by application count.
+    Data source: MySQL  job_postings LEFT JOIN applications (GROUP BY + ASC).
+    Uses LEFT JOIN so jobs with zero applications are included.
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(days=req.window_days)
+
+        results = (
+            db.query(
+                JobPosting.job_id,
+                JobPosting.title,
+                JobPosting.location,
+                sql_func.count(Application.application_id).label("count"),
+            )
+            .outerjoin(Application, Application.job_id == JobPosting.job_id)
+            .filter(
+                JobPosting.status == "open",
+                JobPosting.posted_datetime >= cutoff,
+            )
+            .group_by(JobPosting.job_id)
+            .order_by(asc("count"))
+            .limit(req.limit)
+            .all()
+        )
+
+        data = [
+            {"job_id": r[0], "title": r[1], "location": r[2], "count": r[3]}
+            for r in results
+        ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"Bottom {req.limit} jobs by application count",
+            data=data,
+        )
+    finally:
+        db.close()
+
+
+@router.post(
+    "/analytics/jobs/clicks",
+    response_model=AnalyticsResponse,
+    summary="Clicks (views) per job posting from event logs",
+)
+async def clicks_per_job(req: ClicksPerJobRequest):
+    """
+    Brief requirement: "Clicks per job posting (from logs)."
+    Queries MongoDB event_logs for 'job.viewed' events, groups by entity_id
+    (the job_id), and returns per-job click counts.
+    Data source: MongoDB event_logs collection.
+    """
+    try:
+        cutoff = (datetime.now() - timedelta(days=req.window_days)).isoformat()
+
+        pipeline = [
+            {
+                "$match": {
+                    "event_type": "job.viewed",
+                    "timestamp": {"$gte": cutoff},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$entity_id",
+                    "clicks": {"$sum": 1},
+                }
+            },
+            {"$sort": {"clicks": -1}},
+            {"$limit": req.limit},
+        ]
+
+        cursor = mongo_db.event_logs.aggregate(pipeline)
+        raw = await cursor.to_list(length=req.limit)
+
+        # Enrich with job titles from MySQL
+        job_ids = [int(r["_id"]) for r in raw if r["_id"]]
+        titles = {}
+        if job_ids:
+            db = SessionLocal()
+            try:
+                rows = (
+                    db.query(JobPosting.job_id, JobPosting.title)
+                    .filter(JobPosting.job_id.in_(job_ids))
+                    .all()
+                )
+                titles = {r[0]: r[1] for r in rows}
+            finally:
+                db.close()
+
+        data = [
+            {
+                "job_id": int(r["_id"]) if r["_id"] else 0,
+                "title": titles.get(int(r["_id"]), f"Job #{r['_id']}"),
+                "clicks": r["clicks"],
+            }
+            for r in raw
+            if r["_id"]
+        ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"Top {req.limit} jobs by clicks (event logs), last {req.window_days} days",
+            data=data,
+        )
+    except Exception as e:
+        logger.error(f"Clicks-per-job query failed: {e}")
+        return AnalyticsResponse(
+            success=False,
+            message=f"Clicks query failed: {str(e)}",
+        )
+
+
+@router.post(
+    "/analytics/saves/trend",
+    response_model=AnalyticsResponse,
+    summary="Saved jobs per day or week",
+)
+async def saves_trend(req: SavesTrendRequest):
+    """
+    Brief requirement: "Number of saved jobs per day/week (from logs)."
+    Aggregates saved_jobs rows by day or ISO week.
+    Data source: MySQL saved_jobs table (saved_at timestamp).
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now() - timedelta(days=req.window_days)
+
+        if req.granularity == "week":
+            period_label = sql_func.date_format(
+                SavedJob.saved_at, "%x-W%v"
+            ).label("period")
+        else:
+            period_label = sql_func.date(SavedJob.saved_at).label("period")
+
+        results = (
+            db.query(
+                period_label,
+                sql_func.count(SavedJob.id).label("count"),
+            )
+            .filter(SavedJob.saved_at >= cutoff)
+            .group_by(period_label)
+            .order_by(period_label)
+            .all()
+        )
+
+        data = [
+            {"period": str(r[0]), "count": r[1]}
+            for r in results
+        ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"Saved-jobs trend ({req.granularity}), last {req.window_days} days",
+            data=data,
         )
     finally:
         db.close()
