@@ -115,6 +115,30 @@ async def create_mongo_indexes() -> None:
             "task_id", name="task_id_1"
         )
 
+        # analytics_job_clicks_daily ─────────────────────────────
+        # Pre-aggregated click counts per job per calendar day.
+        # Compound unique index supports upsert (job_id+date) and
+        # range queries by date for the clicks_per_job endpoint.
+        await mongo_db.analytics_job_clicks_daily.create_index(
+            [("job_id", ASCENDING), ("date", ASCENDING)],
+            unique=True,
+            name="job_id_date_unique",
+        )
+        await mongo_db.analytics_job_clicks_daily.create_index(
+            "date", name="date_1"
+        )
+
+        # analytics_saves_daily ──────────────────────────────────
+        # Pre-aggregated saved-job counts per calendar day.
+        # Unique on date supports upsert; date index supports range
+        # queries for the saves_trend endpoint.
+        await mongo_db.analytics_saves_daily.create_index(
+            "date", unique=True, name="date_unique"
+        )
+        await mongo_db.analytics_saves_daily.create_index(
+            "week", name="week_1"
+        )
+
         logger.info("✓ MongoDB indexes ensured")
     except Exception as e:
         # Non-fatal: indexes are a performance optimisation, not a correctness

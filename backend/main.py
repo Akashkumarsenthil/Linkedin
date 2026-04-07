@@ -14,7 +14,7 @@ from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
 from routers import auth_router
-from agents.hiring_assistant import rehydrate_tasks
+from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
 from database import create_mongo_indexes, engine, Base
 import models.user_credentials  # register model with Base.metadata before create_all
 
@@ -74,9 +74,13 @@ async def lifespan(app: FastAPI):
     # Rehydrate AI task state from MongoDB
     try:
         restored = await rehydrate_tasks()
-        logger.info(f"✓ AI task rehydration complete ({restored} task(s) restored)")
+        logger.info(f"✓ AI task rehydration complete ({restored} task(s) restored/re-queued)")
     except Exception as e:
         logger.warning(f"✗ AI task rehydration failed: {e}")
+
+    # Start AI workflow dispatcher (bounded-concurrency queue drain)
+    dispatcher_task = asyncio.create_task(run_dispatcher(), name="ai-dispatcher")
+    logger.info("✓ AI workflow dispatcher started")
 
     logger.info("✓ All services ready")
     logger.info(f"  Swagger UI:  http://localhost:8000/docs")
@@ -87,6 +91,11 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down services...")
+    dispatcher_task.cancel()
+    try:
+        await asyncio.gather(dispatcher_task, return_exceptions=True)
+    except Exception:
+        pass
     try:
         await kafka_producer.stop()
     except Exception:
