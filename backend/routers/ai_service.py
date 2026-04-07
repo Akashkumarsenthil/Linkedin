@@ -7,7 +7,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
-from agents.hiring_assistant import start_task, get_task_status, approve_task, ws_connections, active_tasks
+from agents.hiring_assistant import (
+    start_task, get_task_status, approve_task,
+    ws_connections, active_tasks, get_queue_stats,
+)
 from agents.resume_parser import parse_resume_with_ollama
 from agents.job_matcher import match_candidate_to_job
 
@@ -169,6 +172,24 @@ async def list_tasks():
         for t in active_tasks.values()
     ]
     return AIResponse(success=True, message=f"Found {len(tasks)} tasks", data=tasks)
+
+
+@router.get("/queue-status", response_model=AIResponse, summary="AI dispatcher queue depth and concurrency")
+async def queue_status():
+    """
+    Return real-time dispatcher stats: how many workflows are running,
+    how many are queued, and how many concurrent slots are available.
+    Useful for monitoring and demo observability.
+    """
+    stats = get_queue_stats()
+    return AIResponse(
+        success=True,
+        message=(
+            f"{stats['active']}/{stats['max_concurrent']} workflows active, "
+            f"{stats['queued']} queued"
+        ),
+        data=stats,
+    )
 
 
 # ─── WebSocket for Real-time Updates ───────────────────────────

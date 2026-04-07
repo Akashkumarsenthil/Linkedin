@@ -366,6 +366,51 @@ def test_message_send_retry_exhausted(client: TestClient):
         _delete_member(client, member_id)
 
 
+# ── Shared Kafka mock helpers ─────────────────────────────────────────────────
+
+class _MockMessage:
+    """Minimal stand-in for an aiokafka ConsumerRecord."""
+    def __init__(self, value, topic="test-topic", partition=0, offset=0):
+        self.value = value
+        self.topic = topic
+        self.partition = partition
+        self.offset = offset
+
+
+class _MockAsyncIterator:
+    """Async iterable that drains a list of messages then stops."""
+    def __init__(self, messages):
+        self._messages = iter(messages)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._messages)
+        except StopIteration:
+            raise StopAsyncIteration
+
+
+def _make_mock_consumer(messages: list) -> object:
+    """
+    Build a minimal mock for AIOKafkaConsumer that supports __aiter__ and an
+    async commit() method.  commit_calls is a list that records each call so
+    tests can assert on it.
+    """
+    commit_calls = []
+
+    async def _commit():
+        commit_calls.append(True)
+
+    mock = type("MockAIOKafkaConsumer", (), {
+        "__aiter__": lambda self: _MockAsyncIterator(messages),
+        "commit": _commit,
+        "_commit_calls": commit_calls,
+    })()
+    return mock
+
+
 # ── 5. Kafka consumer idempotent processing ───────────────────────────────────
 
 @pytest.mark.integration
@@ -373,6 +418,7 @@ def test_kafka_consumer_idempotency(client: TestClient):
     """
     Delivering the same event twice to the Kafka consumer must call the handler
     only once. Uses an async mock iterator to avoid a real Kafka broker.
+    The offset must be committed for both messages (original + duplicate skip).
     """
     from kafka_consumer import KafkaEventConsumer
     from database import mongo_db
@@ -390,47 +436,26 @@ def test_kafka_consumer_idempotency(client: TestClient):
     async def mock_handler(e: dict):
         handler_calls["count"] += 1
 
-    # Build an async iterable that yields the same event twice
-    class _MockMessage:
-        def __init__(self, value):
-            self.value = value
-
-    class _MockAsyncIterator:
-        def __init__(self, messages):
-            self._messages = iter(messages)
-
-        def __aiter__(self):
-            return self
-
-        async def __anext__(self):
-            try:
-                return next(self._messages)
-            except StopIteration:
-                raise StopAsyncIteration
-
     async def run_test():
         consumer = KafkaEventConsumer()
         consumer._running = True
         consumer.register_handler("job.viewed", mock_handler)
 
         messages = [
-            _MockMessage(event),
-            _MockMessage(event),  # duplicate
+            _MockMessage(event, offset=0),
+            _MockMessage(event, offset=1),  # duplicate
         ]
-
-        # Patch consumer.consumer with a mock whose __aiter__ returns our messages
-        mock_aiokafka = type("MockConsumer", (), {
-            "__aiter__": lambda self: _MockAsyncIterator(messages),
-        })()
+        mock_aiokafka = _make_mock_consumer(messages)
         consumer.consumer = mock_aiokafka
 
-        # Ensure MongoDB doesn't have this key from a prior test run
         await mongo_db.processed_events.delete_many({"idempotency_key": idempotency_key})
-
         await consumer.consume()
-
-        # Cleanup MongoDB
         await mongo_db.processed_events.delete_many({"idempotency_key": idempotency_key})
+
+        # Both messages must have had their offsets committed
+        assert len(mock_aiokafka._commit_calls) == 2, (
+            f"Expected 2 commit calls (one per message), got {len(mock_aiokafka._commit_calls)}"
+        )
 
     asyncio.run(run_test())
 
@@ -438,3 +463,137 @@ def test_kafka_consumer_idempotency(client: TestClient):
         f"Handler was called {handler_calls['count']} times for a duplicate event; "
         "expected exactly 1"
     )
+
+
+# ── 5b. Manual commit — success path ─────────────────────────────────────────
+
+@pytest.mark.integration
+def test_kafka_consumer_commits_after_successful_processing(client: TestClient):
+    """
+    After a handler executes successfully the consumer must commit the offset
+    exactly once for that message.
+    """
+    from kafka_consumer import KafkaEventConsumer
+    from database import mongo_db
+
+    idempotency_key = f"test-commit-ok-{uuid.uuid4().hex}"
+    event = {
+        "event_type": "message.sent",
+        "idempotency_key": idempotency_key,
+        "entity": {"entity_id": "1"},
+        "payload": {},
+    }
+
+    handler_calls = {"count": 0}
+
+    async def mock_handler(e: dict):
+        handler_calls["count"] += 1
+
+    async def run_test():
+        consumer = KafkaEventConsumer()
+        consumer._running = True
+        consumer.register_handler("message.sent", mock_handler)
+
+        messages = [_MockMessage(event, offset=0)]
+        mock_aiokafka = _make_mock_consumer(messages)
+        consumer.consumer = mock_aiokafka
+
+        await mongo_db.processed_events.delete_many({"idempotency_key": idempotency_key})
+        await consumer.consume()
+        await mongo_db.processed_events.delete_many({"idempotency_key": idempotency_key})
+
+        assert handler_calls["count"] == 1, "Handler should have been called once"
+        assert len(mock_aiokafka._commit_calls) == 1, (
+            f"Expected exactly 1 commit after successful processing, "
+            f"got {len(mock_aiokafka._commit_calls)}"
+        )
+
+    asyncio.run(run_test())
+
+
+# ── 5c. Manual commit — failure path ─────────────────────────────────────────
+
+@pytest.mark.integration
+def test_kafka_consumer_does_not_commit_after_handler_failure(client: TestClient):
+    """
+    If a handler raises an exception the consumer must NOT commit the offset,
+    leaving the message available for redelivery after a restart.
+    """
+    from kafka_consumer import KafkaEventConsumer
+    from database import mongo_db
+
+    idempotency_key = f"test-commit-fail-{uuid.uuid4().hex}"
+    event = {
+        "event_type": "connection.requested",
+        "idempotency_key": idempotency_key,
+        "entity": {"entity_id": "1"},
+        "payload": {},
+    }
+
+    async def failing_handler(e: dict):
+        raise RuntimeError("Simulated handler failure")
+
+    async def run_test():
+        consumer = KafkaEventConsumer()
+        consumer._running = True
+        consumer.register_handler("connection.requested", failing_handler)
+
+        messages = [_MockMessage(event, offset=0)]
+        mock_aiokafka = _make_mock_consumer(messages)
+        consumer.consumer = mock_aiokafka
+
+        await mongo_db.processed_events.delete_many({"idempotency_key": idempotency_key})
+        await consumer.consume()
+
+        # idempotency_key must NOT be in MongoDB (handler failed, nothing persisted)
+        remaining = await mongo_db.processed_events.find_one({"idempotency_key": idempotency_key})
+        assert remaining is None, "Idempotency record must not be written after a handler failure"
+
+        # Offset must NOT have been committed
+        assert len(mock_aiokafka._commit_calls) == 0, (
+            f"Expected 0 commits after handler failure, "
+            f"got {len(mock_aiokafka._commit_calls)}"
+        )
+
+    asyncio.run(run_test())
+
+
+# ── 5d. Manual commit — unhandled event type ─────────────────────────────────
+
+@pytest.mark.integration
+def test_kafka_consumer_commits_unhandled_event_type(client: TestClient):
+    """
+    Events with no registered handler are logged to MongoDB and their offsets
+    ARE committed so the consumer does not stall on unknown event types.
+    """
+    from kafka_consumer import KafkaEventConsumer
+    from database import mongo_db
+
+    idempotency_key = f"test-unhandled-{uuid.uuid4().hex}"
+    event = {
+        "event_type": "unknown.future.event",
+        "idempotency_key": idempotency_key,
+        "entity": {"entity_id": "0"},
+        "payload": {},
+    }
+
+    async def run_test():
+        consumer = KafkaEventConsumer()
+        consumer._running = True
+        # Intentionally register no handler for "unknown.future.event"
+
+        messages = [_MockMessage(event, offset=0)]
+        mock_aiokafka = _make_mock_consumer(messages)
+        consumer.consumer = mock_aiokafka
+
+        await consumer.consume()
+
+        # Offset committed despite no handler
+        assert len(mock_aiokafka._commit_calls) == 1, (
+            f"Expected 1 commit for unhandled event, got {len(mock_aiokafka._commit_calls)}"
+        )
+
+        # Cleanup event_log entry
+        await mongo_db.event_logs.delete_many({"idempotency_key": idempotency_key})
+
+    asyncio.run(run_test())

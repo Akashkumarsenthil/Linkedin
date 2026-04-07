@@ -423,36 +423,48 @@ async def least_applied_jobs(req: LeastAppliedRequest):
 async def clicks_per_job(req: ClicksPerJobRequest):
     """
     Brief requirement: "Clicks per job posting (from logs)."
-    Queries MongoDB event_logs for 'job.viewed' events, groups by entity_id
-    (the job_id), and returns per-job click counts.
-    Data source: MongoDB event_logs collection.
+
+    Data source: analytics_job_clicks_daily (pre-aggregated) — O(days × jobs)
+    rather than O(raw events).  The Kafka consumer upserts one document per
+    (job_id, date) pair for every job.viewed event it processes, so this
+    collection always reflects the latest ingested data.
+
+    Fallback: if the pre-aggregated collection is empty (fresh deployment or
+    migration period), re-computes on-the-fly from event_logs so the endpoint
+    never returns empty results while historical data is still accumulating.
     """
     try:
-        cutoff = (datetime.now() - timedelta(days=req.window_days)).isoformat()
+        cutoff_date = (datetime.now() - timedelta(days=req.window_days)).strftime("%Y-%m-%d")
 
+        # ── Read from pre-aggregated collection ─────────────────────────────
         pipeline = [
-            {
-                "$match": {
-                    "event_type": "job.viewed",
-                    "timestamp": {"$gte": cutoff},
-                }
-            },
-            {
-                "$group": {
-                    "_id": "$entity_id",
-                    "clicks": {"$sum": 1},
-                }
-            },
+            {"$match": {"date": {"$gte": cutoff_date}}},
+            {"$group": {"_id": "$job_id", "clicks": {"$sum": "$clicks"}}},
             {"$sort": {"clicks": -1}},
             {"$limit": req.limit},
         ]
-
-        cursor = mongo_db.event_logs.aggregate(pipeline)
+        cursor = mongo_db.analytics_job_clicks_daily.aggregate(pipeline)
         raw = await cursor.to_list(length=req.limit)
 
-        # Enrich with job titles from MySQL
-        job_ids = [int(r["_id"]) for r in raw if r["_id"]]
-        titles = {}
+        # ── Fallback: scan event_logs if pre-aggregated data not yet available
+        if not raw:
+            logger.info("analytics_job_clicks_daily is empty — falling back to event_logs scan")
+            cutoff_iso = (datetime.now() - timedelta(days=req.window_days)).isoformat()
+            fallback_pipeline = [
+                {"$match": {"event_type": "job.viewed", "timestamp": {"$gte": cutoff_iso}}},
+                {"$group": {"_id": "$entity_id", "clicks": {"$sum": 1}}},
+                {"$sort": {"clicks": -1}},
+                {"$limit": req.limit},
+            ]
+            fb_cursor = mongo_db.event_logs.aggregate(fallback_pipeline)
+            fb_raw = await fb_cursor.to_list(length=req.limit)
+            raw = [{"_id": r["_id"], "clicks": r["clicks"]} for r in fb_raw if r["_id"]]
+            job_ids = [int(r["_id"]) for r in raw if r["_id"]]
+        else:
+            job_ids = [r["_id"] for r in raw if r["_id"]]
+
+        # ── Enrich with job titles from MySQL ────────────────────────────────
+        titles: dict = {}
         if job_ids:
             db = SessionLocal()
             try:
@@ -467,8 +479,8 @@ async def clicks_per_job(req: ClicksPerJobRequest):
 
         data = [
             {
-                "job_id": int(r["_id"]) if r["_id"] else 0,
-                "title": titles.get(int(r["_id"]), f"Job #{r['_id']}"),
+                "job_id": r["_id"],
+                "title": titles.get(r["_id"], f"Job #{r['_id']}"),
                 "clicks": r["clicks"],
             }
             for r in raw
@@ -477,7 +489,7 @@ async def clicks_per_job(req: ClicksPerJobRequest):
 
         return AnalyticsResponse(
             success=True,
-            message=f"Top {req.limit} jobs by clicks (event logs), last {req.window_days} days",
+            message=f"Top {req.limit} jobs by clicks, last {req.window_days} days",
             data=data,
         )
     except Exception as e:
@@ -496,12 +508,53 @@ async def clicks_per_job(req: ClicksPerJobRequest):
 async def saves_trend(req: SavesTrendRequest):
     """
     Brief requirement: "Number of saved jobs per day/week (from logs)."
-    Aggregates saved_jobs rows by day or ISO week.
-    Data source: MySQL saved_jobs table (saved_at timestamp).
+
+    Data source: analytics_saves_daily (pre-aggregated) — one document per
+    calendar day, maintained by the Kafka job.saved handler.  Daily granularity
+    is served directly; weekly granularity is computed by grouping the daily
+    rows in the application (each row already carries a pre-computed week field).
+
+    Fallback: if the pre-aggregated collection has no data for the requested
+    window (fresh deployment), queries MySQL saved_jobs so the endpoint always
+    returns results.
     """
+    cutoff_date = (datetime.now() - timedelta(days=req.window_days)).strftime("%Y-%m-%d")
+
+    # ── Read from pre-aggregated collection ─────────────────────────────────
+    cursor = mongo_db.analytics_saves_daily.find(
+        {"date": {"$gte": cutoff_date}},
+        sort=[("date", 1)],
+    )
+    daily_docs = await cursor.to_list(length=None)
+
+    if daily_docs:
+        if req.granularity == "week":
+            # Collapse daily docs into weekly buckets
+            week_totals: dict = {}
+            for doc in daily_docs:
+                week = doc.get("week", doc["date"][:7])
+                week_totals[week] = week_totals.get(week, 0) + doc["saves"]
+            data = [
+                {"period": week, "count": count}
+                for week, count in sorted(week_totals.items())
+            ]
+        else:
+            data = [
+                {"period": doc["date"], "count": doc["saves"]}
+                for doc in daily_docs
+            ]
+
+        return AnalyticsResponse(
+            success=True,
+            message=f"Saved-jobs trend ({req.granularity}), last {req.window_days} days",
+            data=data,
+        )
+
+    # ── Fallback: MySQL GROUP BY when pre-aggregated data not yet available ──
+    logger.info("analytics_saves_daily is empty — falling back to MySQL saved_jobs scan")
     db = SessionLocal()
     try:
-        cutoff = datetime.now() - timedelta(days=req.window_days)
+        cutoff_dt = datetime.now() - timedelta(days=req.window_days)
 
         if req.granularity == "week":
             period_label = sql_func.date_format(
@@ -511,20 +564,14 @@ async def saves_trend(req: SavesTrendRequest):
             period_label = sql_func.date(SavedJob.saved_at).label("period")
 
         results = (
-            db.query(
-                period_label,
-                sql_func.count(SavedJob.id).label("count"),
-            )
-            .filter(SavedJob.saved_at >= cutoff)
+            db.query(period_label, sql_func.count(SavedJob.id).label("count"))
+            .filter(SavedJob.saved_at >= cutoff_dt)
             .group_by(period_label)
             .order_by(period_label)
             .all()
         )
 
-        data = [
-            {"period": str(r[0]), "count": r[1]}
-            for r in results
-        ]
+        data = [{"period": str(r[0]), "count": r[1]} for r in results]
 
         return AnalyticsResponse(
             success=True,

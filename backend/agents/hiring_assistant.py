@@ -44,6 +44,19 @@ from kafka_producer import kafka_producer
 
 logger = logging.getLogger(__name__)
 
+# ── Concurrency controls ──────────────────────────────────────────────────────
+# Limit how many full hiring workflows run concurrently.  Each workflow makes
+# multiple sequential HTTP calls to Ollama (a single-threaded LLM server), so
+# running many workflows simultaneously only queues work inside Ollama while
+# consuming memory here.  Two concurrent workflows is enough for a demo platform.
+MAX_CONCURRENT_WORKFLOWS = 2
+
+# Bounded queue: tasks wait here until a dispatcher coroutine picks them up.
+_task_queue: asyncio.Queue = asyncio.Queue()
+
+# Semaphore: limits how many workflows actually run at the same time.
+_workflow_semaphore: asyncio.Semaphore = asyncio.Semaphore(MAX_CONCURRENT_WORKFLOWS)
+
 # ── Runtime cache ────────────────────────────────────────────────────────────
 # MongoDB is the source of truth. This dict is an in-process cache only.
 # Do NOT read from it without first trying MongoDB when a task_id is not found.
@@ -54,7 +67,10 @@ ws_connections: Dict[str, list] = {}
 
 # Statuses that mean the workflow is still ongoing / waiting for input.
 _RECOVERABLE_STATUSES = {"awaiting_approval"}
-_INTERRUPTED_ON_RESTART = {"queued", "running"}
+# "queued" tasks never started — safe to re-submit to _task_queue on restart.
+_REQUEUEABLE_STATUSES = {"queued"}
+# "running" tasks were mid-flight — cannot resume; mark honestly as interrupted.
+_INTERRUPTED_ON_RESTART = {"running"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,6 +147,70 @@ async def update_task_status(
         )
     except Exception:
         pass
+
+
+# ── Dispatcher ───────────────────────────────────────────────────────────────
+
+async def _workflow_runner(task_id: str, job_id: int, top_n: int) -> None:
+    """
+    Acquire a concurrency slot (semaphore) and run the workflow.
+
+    The dispatcher creates one asyncio.Task per queue item and returns
+    immediately to pick up the next item.  All created tasks compete for the
+    shared semaphore, so at most MAX_CONCURRENT_WORKFLOWS run at the same time.
+    """
+    async with _workflow_semaphore:
+        queue_depth = _task_queue.qsize()
+        active_slots = MAX_CONCURRENT_WORKFLOWS - _workflow_semaphore._value  # type: ignore[attr-defined]
+        logger.info(
+            f"[dispatcher] starting workflow {task_id[:8]}… "
+            f"(active={active_slots}/{MAX_CONCURRENT_WORKFLOWS}, queued={queue_depth})"
+        )
+        await run_hiring_workflow(task_id, job_id, top_n)
+
+
+async def run_dispatcher() -> None:
+    """
+    Background dispatcher: drain _task_queue and run workflows with bounded
+    concurrency.  Start exactly once from main.py lifespan as an asyncio.Task.
+
+    Behaviour
+    ---------
+    - Blocks on the queue until a task arrives.
+    - Creates a new asyncio.Task for the workflow (non-blocking for the
+      dispatcher — it immediately returns to wait for the next queue item).
+    - The semaphore inside _workflow_runner ensures at most
+      MAX_CONCURRENT_WORKFLOWS tasks are executing concurrently.
+    - Exits cleanly on CancelledError (triggered by app shutdown).
+    """
+    logger.info(
+        f"[dispatcher] AI workflow dispatcher started "
+        f"(max_concurrent={MAX_CONCURRENT_WORKFLOWS})"
+    )
+    while True:
+        try:
+            task_id, job_id, top_n = await _task_queue.get()
+            asyncio.create_task(
+                _workflow_runner(task_id, job_id, top_n),
+                name=f"workflow-{task_id[:8]}",
+            )
+            _task_queue.task_done()
+        except asyncio.CancelledError:
+            logger.info("[dispatcher] dispatcher shutting down")
+            break
+        except Exception as e:
+            logger.error(f"[dispatcher] unexpected error: {e}", exc_info=True)
+
+
+def get_queue_stats() -> Dict[str, Any]:
+    """Return current queue depth and active workflow count for observability."""
+    active_slots = MAX_CONCURRENT_WORKFLOWS - _workflow_semaphore._value  # type: ignore[attr-defined]
+    return {
+        "queued": _task_queue.qsize(),
+        "active": active_slots,
+        "max_concurrent": MAX_CONCURRENT_WORKFLOWS,
+        "available_slots": _workflow_semaphore._value,  # type: ignore[attr-defined]
+    }
 
 
 # ── Workflow ─────────────────────────────────────────────────────────────────
@@ -351,8 +431,14 @@ async def start_task(job_id: int, top_n: int = 5) -> str:
     except Exception:
         pass
 
-    # Fire-and-forget background workflow
-    asyncio.create_task(run_hiring_workflow(task_id, job_id, top_n))
+    # Enqueue — the dispatcher (run_dispatcher) picks this up and runs it
+    # with bounded concurrency.  The task is already persisted to MongoDB
+    # with status="queued", so it's observable immediately.
+    await _task_queue.put((task_id, job_id, top_n))
+    logger.info(
+        f"[start_task] task {task_id[:8]}… enqueued "
+        f"(queue depth now {_task_queue.qsize()})"
+    )
 
     return task_id
 
@@ -413,7 +499,8 @@ async def approve_task(task_id: str, approved: bool, feedback: str = "") -> Dict
 
 async def rehydrate_tasks() -> int:
     """
-    Reload recoverable task state from MongoDB into the in-memory cache.
+    Reload recoverable task state from MongoDB into the in-memory cache and
+    re-submit unstarted tasks to the dispatcher queue.
 
     Called once during application startup (see main.py lifespan).
 
@@ -421,19 +508,27 @@ async def rehydrate_tasks() -> int:
     -----
     - ``awaiting_approval``: workflow finished, result is in MongoDB, recruiter
       hasn't approved yet.  Load into active_tasks so /ai/approve keeps working.
-    - ``queued`` / ``running``: workflow was in-flight when the process died.
-      Cannot be resumed.  Mark as ``interrupted`` in MongoDB so the status
-      is honest; do NOT load into active_tasks.
+    - ``queued``: task was created and persisted but the dispatcher never started
+      it before the restart.  Re-submit to _task_queue so it runs normally; also
+      load into active_tasks so status queries work immediately.
+    - ``running``: workflow was mid-flight when the process died and cannot be
+      resumed.  Mark as ``interrupted`` in MongoDB so clients don't get stuck.
 
-    Returns the number of tasks loaded into active_tasks (awaiting_approval only).
+    Returns the number of tasks loaded into active_tasks (awaiting_approval +
+    re-queued tasks).
     """
     loaded = 0
+    requeued = 0
     interrupted = 0
     now = datetime.now(timezone.utc).isoformat()
 
     try:
-        recoverable = list(_RECOVERABLE_STATUSES) + list(_INTERRUPTED_ON_RESTART)
-        cursor = mongo_db.agent_tasks.find({"status": {"$in": recoverable}})
+        all_actionable = (
+            list(_RECOVERABLE_STATUSES)
+            + list(_REQUEUEABLE_STATUSES)
+            + list(_INTERRUPTED_ON_RESTART)
+        )
+        cursor = mongo_db.agent_tasks.find({"status": {"$in": all_actionable}})
 
         async for doc in cursor:
             _strip_mongo_id(doc)
@@ -444,19 +539,31 @@ async def rehydrate_tasks() -> int:
                 continue
 
             if status in _RECOVERABLE_STATUSES:
-                # Load into cache — approval / status queries will work
+                # Workflow done, waiting for recruiter approval — restore cache
                 active_tasks[task_id] = doc
                 loaded += 1
                 logger.info(f"  [rehydrate] restored task {task_id} (status={status})")
 
+            elif status in _REQUEUEABLE_STATUSES:
+                # Never started — re-submit to queue so it runs after startup
+                job_id = doc.get("job_id", 0)
+                top_n = doc.get("top_n", 5)
+                active_tasks[task_id] = doc           # warm cache for status queries
+                await _task_queue.put((task_id, job_id, top_n))
+                requeued += 1
+                logger.info(
+                    f"  [rehydrate] re-queued task {task_id} "
+                    f"(job_id={job_id}, top_n={top_n})"
+                )
+
             elif status in _INTERRUPTED_ON_RESTART:
-                # Workflow was mid-flight; mark honestly so clients don't get stuck
+                # Was mid-flight; mark honestly so clients don't get stuck
                 await mongo_db.agent_tasks.update_one(
                     {"task_id": task_id},
                     {"$set": {
                         "status": "interrupted",
                         "updated_at": now,
-                        "interrupted_reason": "Server restarted while task was in-flight",
+                        "interrupted_reason": "Server restarted while task was running",
                     }},
                 )
                 interrupted += 1
@@ -466,6 +573,7 @@ async def rehydrate_tasks() -> int:
         logger.error(f"Task rehydration failed: {e}", exc_info=True)
 
     logger.info(
-        f"  [rehydrate] done — {loaded} task(s) restored, {interrupted} marked interrupted"
+        f"  [rehydrate] done — {loaded} restored, {requeued} re-queued, "
+        f"{interrupted} marked interrupted"
     )
-    return loaded
+    return loaded + requeued
