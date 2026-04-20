@@ -1,11 +1,18 @@
 # API Design Document
 
 **LinkedIn Agentic AI Platform**
-DATA236 — Distributed Systems Group Project
-San Jose State University
-Akash
-Danish
-.... (Add your names here)
+DATA236 — Distributed Systems Group Project 12
+San Jose State University 
+
+**Team Members**
+1. Akash
+2. Danish
+3. Shruthi
+4. Pramod
+5. Sadaf
+6. Rohil
+7. Siva
+8. Denisha
 
 ---
 
@@ -23,7 +30,8 @@ Danish
    - 4.6 Connection Service
    - 4.7 Analytics Service
    - 4.8 AI Agent Service
-   - 4.9 System / Health
+   - 4.9 Authentication Service
+   - 4.10 System / Health
 5. [Kafka / Event Integration](#5-kafka--event-integration)
 6. [Database Interaction Summary](#6-database-interaction-summary)
 7. [AI API Workflow](#7-ai-api-workflow)
@@ -41,11 +49,13 @@ LinkedIn Agentic AI Platform
 
 ### System Description
 
-A LinkedIn-style professional networking and recruiting platform implemented as a distributed system. The platform covers the full hiring lifecycle: member profiles, job postings, applications, threaded messaging, connection graphs, event-driven analytics, and an AI-powered recruiting copilot that parses resumes, scores candidates, generates outreach drafts, and routes recruiter decisions through a human-in-the-loop approval gate.
+We built a LinkedIn-style professional networking and recruiting platform as a distributed system. The platform covers the full hiring lifecycle: member profiles, job postings, applications, threaded messaging, connection graphs, event-driven analytics, and an AI-powered recruiting copilot that parses resumes, scores candidates, generates outreach drafts, and routes recruiter decisions through a human-in-the-loop approval gate.
 
 ### Purpose of This Document
 
-This document specifies the complete API surface of the platform: all service endpoints, request/response contracts, Kafka event integrations, database interactions, caching behavior, failure handling, and the AI workflow lifecycle. It serves as the API deliverable for the DATA236 group project.
+This document describes the API surface we designed for the platform: service endpoints, request/response contracts, Kafka event integrations, database interactions, caching behavior, failure handling, and the AI workflow lifecycle. It serves as the API deliverable for the DATA236 group project.
+
+> **Source of truth:** This document reflects the implemented design as of submission. Where any discrepancy exists between this document and the codebase, the code takes precedence. All endpoint behavior can be verified interactively via Swagger UI at `http://localhost:8000/docs`.
 
 ### Technology Stack
 
@@ -63,6 +73,10 @@ This document specifies the complete API surface of the platform: all service en
 | Async Kafka Client | aiokafka 0.11 — producer and consumer |
 
 The full interactive spec is available at `http://localhost:8000/docs` (Swagger UI) and `http://localhost:8000/redoc` while the server is running.
+
+> **Optional screenshots** (not embedded here to keep the document concise):
+> - Swagger UI overview showing all service groups and endpoints
+> - A single expanded endpoint (e.g., `POST /ai/analyze-candidates`) demonstrating the request schema and example response
 
 ---
 
@@ -102,7 +116,7 @@ Tier 3 — Databases
 
 ### Backend Service Structure
 
-The backend is a FastAPI monolith with clean domain boundaries. Each domain has its own router, schema module, and model module:
+We structured the backend as a FastAPI monolith with clean domain boundaries. Each domain has its own router, schema module, and model module:
 
 | Domain | Router prefix | Module |
 |--------|--------------|--------|
@@ -117,9 +131,9 @@ The backend is a FastAPI monolith with clean domain boundaries. Each domain has 
 
 ### Where Kafka Fits
 
-Kafka sits between the REST API layer and backend workers. REST endpoints act as producers: when a significant domain event occurs (job viewed, application submitted, message sent), the handler publishes a structured JSON event to the appropriate topic and returns immediately. A background consumer (`kafka_consumer.py`) processes these events asynchronously — updating counters, writing to MongoDB, maintaining analytics state.
+We positioned Kafka between the REST API layer and the background consumer. REST endpoints act as producers: when a significant domain event occurs (job viewed, application submitted, message sent), the handler publishes a structured JSON event to the appropriate topic and returns immediately. A background consumer (`kafka_consumer.py`) processes these events asynchronously — updating counters, writing to MongoDB, maintaining analytics state.
 
-This decouples request-time latency from analytics/notification side-effects.
+This design decouples request-time latency from analytics and notification side-effects.
 
 ### Where MySQL, MongoDB, and Redis Fit
 
@@ -131,7 +145,7 @@ This decouples request-time latency from analytics/notification side-effects.
 
 ### How the AI Service Fits
 
-The AI service exposes REST endpoints that trigger background async workflows. The `Hiring Assistant` agent is a supervisor that coordinates three skills (resume parser, job matcher, outreach generator) in sequence. All intermediate results are persisted to MongoDB. The supervisor publishes progress events to Kafka `ai.results`. The UI receives real-time updates via WebSocket. A recruiter-facing approval step must be completed before the workflow is finalized — this is the human-in-the-loop gate.
+We designed the AI service to expose REST endpoints that trigger background async workflows. The `Hiring Assistant` acts as a supervisor agent, coordinating three skills (resume parser, job matcher, outreach generator) in sequence. We persist all intermediate results to MongoDB and publish progress events to Kafka `ai.results`. The UI receives real-time updates via WebSocket. We required a recruiter-facing approval step before any workflow result is finalized — this is the human-in-the-loop gate.
 
 ---
 
@@ -139,7 +153,7 @@ The AI service exposes REST endpoints that trigger background async workflows. T
 
 ### Request and Response Format
 
-All API endpoints exchange JSON. The `Content-Type` header must be `application/json` on requests. Every response follows a consistent envelope:
+All API endpoints exchange JSON. We designed every response to follow a consistent envelope (the `Content-Type` header must be `application/json` on requests):
 
 ```json
 {
@@ -164,17 +178,17 @@ List responses extend this with pagination fields:
 
 ### Why POST Is Used Across Most Endpoints
 
-All service endpoints use `POST`. This is an intentional design decision:
+We chose `POST` for all service endpoints, for three reasons:
 
-1. **Consistent message body** — every operation, including reads, passes its filter parameters in the request body rather than query strings or path segments. This aligns with how services communicate internally and avoids URL length limits for complex filters.
+1. **Consistent message body** — every operation, including reads, passes its filter parameters in the request body rather than query strings or path segments. This keeps the API uniform and avoids URL length limits for complex filters.
 2. **Uniformity** — the API client (frontend, Postman, service-to-service callers) uses one pattern for all calls.
 3. **Explicit contract** — Pydantic schemas define exactly what is required and optional for every operation.
 
-The only exceptions are `GET /` (health root) and `GET /health` which use `GET` per standard convention.
+The only exceptions are `GET /` (health root) and `GET /health`, which use `GET` per standard convention.
 
 ### Validation Through Pydantic Schemas
 
-Every request body is a Pydantic `BaseModel`. Validation is automatic and happens before the handler runs:
+We defined every request body as a Pydantic `BaseModel`. Validation runs automatically before the handler executes:
 
 - Required fields declared with `Field(...)` raise a 422 Unprocessable Entity if missing.
 - Optional fields default to `None` and are excluded from updates via `model_dump(exclude_unset=True)`.
@@ -183,11 +197,11 @@ Every request body is a Pydantic `BaseModel`. Validation is automatic and happen
 
 ### Error Handling Style
 
-Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler returns a `success: false` response with a descriptive message and HTTP 200. This is a deliberate choice for this API design:
+We chose not to raise HTTP exceptions for most error cases. Instead, handlers return a `success: false` response with a descriptive message and HTTP 200:
 
 - Application-level errors (not found, duplicate, closed job) are business errors, not protocol errors.
 - The client always receives a parseable JSON response body.
-- Genuine server errors (database connection failure, unhandled exception) will produce a FastAPI 500 with an `Internal Server Error` body.
+- Genuine server errors (database connection failure, unhandled exception) produce a FastAPI 500 with an `Internal Server Error` body.
 
 ### Success/Error Response Patterns
 
@@ -202,9 +216,9 @@ Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler
 
 ### Idempotency and Async/Event-Driven Considerations
 
-- Kafka events use a unique `idempotency_key` (UUID) per message. The consumer checks this key in both an in-memory set and a MongoDB `processed_events` collection before processing — guaranteeing at-most-once execution even with Kafka's at-least-once delivery.
-- The AI task system is idempotent at the task level: `start_task()` writes to MongoDB before launching the async coroutine, so any crash leaves a queryable record.
-- Write endpoints (create, update, delete) invalidate relevant Redis cache keys immediately on commit. Reads check cache first; misses fall through to MySQL.
+- We assign each Kafka message a unique `idempotency_key` (UUID). The consumer checks this key against both an in-memory set and a MongoDB `processed_events` collection before processing — guaranteeing at-most-once handler execution despite Kafka's at-least-once delivery.
+- We designed the AI task system to be idempotent at the task level: `start_task()` writes to MongoDB before launching the async coroutine, so any crash leaves a queryable record.
+- Write endpoints (create, update, delete) invalidate relevant Redis cache keys immediately on commit. Reads check the cache first; misses fall through to MySQL.
 
 ---
 
@@ -295,23 +309,36 @@ Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler
 
 #### `POST /members/search`
 
-**Purpose:** Search members by keyword, skill, or location. All filters are optional and combinable.
+**Purpose:** Search members by keyword, skill, or location with cursor-based pagination. All filters are optional and combinable.
 
 **Request Body:**
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `keyword` | string | null | Matches first_name, last_name, headline, about |
-| `skill` | string | null | Matches within JSON skills array |
+| `keyword` | string | null | Matches first_name, last_name, headline, about via FULLTEXT (`MATCH…AGAINST`). Falls back to `LIKE` for terms shorter than 3 characters. |
+| `skill` | string | null | Matches within JSON `skills` array |
 | `location` | string | null | Matches location_city or location_state |
-| `page` | int | 1 | Page number (≥1) |
+| `sort_by` | string | `"id"` | `"id"` (default, keyset cursor), `"connections"` (offset cursor), `"recent"` (offset cursor) |
 | `page_size` | int | 20 | Max 100 |
+| `cursor` | string | null | Opaque base64 token from the previous response's `next_cursor`; omit for first page |
 
-**Response:** `MemberListResponse` — paginated list with `total`, `page`, `page_size`.
+**Response:** `MemberListResponse`
+
+```json
+{
+  "success": true,
+  "data": [...],
+  "total": 120,
+  "next_cursor": "eyJ0eXBlIjoib2Zmc2V0Iiw...",
+  "has_more": true
+}
+```
+
+**Cursor behavior:** When `sort_by=id`, the server uses a keyset cursor (`WHERE member_id > last_id`) for stable, index-efficient pagination. For computed sorts (`connections`, `recent`), an offset-encoded cursor is used. Both types are transparent to the caller — the same `cursor` field is used.
 
 **Cache behavior:** Caches result keyed on all filter params (TTL 60s). Invalidated on any write.
 
-**Databases:** Redis (read), MySQL `members` (read on miss via LIKE queries).
+**Databases:** Redis (read), MySQL `members` (read on miss via FULLTEXT/LIKE queries).
 
 ---
 
@@ -446,22 +473,37 @@ Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler
 
 #### `POST /jobs/search`
 
-**Purpose:** Search open job postings with optional filters. Returns only `status = 'open'` jobs.
+**Purpose:** Search open job postings with optional filters and cursor-based pagination. Returns only `status = 'open'` jobs.
 
 **Request Body:**
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `keyword` | string | null | Matches title and description |
+| `keyword` | string | null | FULLTEXT `MATCH…AGAINST` on title and description. Falls back to `LIKE` for short terms. |
 | `location` | string | null | Partial match on location string |
 | `employment_type` | string | null | Exact match |
 | `work_mode` | string | null | `remote`, `hybrid`, `onsite` |
 | `seniority_level` | string | null | Exact match |
 | `skills` | list[string] | null | All listed skills must be present |
-| `page` | int | 1 | |
+| `salary_min` | float | null | Minimum salary filter (`salary_max >= salary_min`) |
+| `salary_max` | float | null | Maximum salary filter (`salary_min <= salary_max`) |
+| `sort_by` | string | `"date"` | `"date"` (keyset cursor on `posted_datetime, job_id`), `"applicants"` (offset cursor), `"views"` (offset cursor) |
 | `page_size` | int | 20 | Max 100 |
+| `cursor` | string | null | Opaque base64 token from the previous response's `next_cursor`; omit for first page |
 
-**Response:** `JobListResponse` — paginated, ordered by `posted_datetime` descending.
+**Response:** `JobListResponse`
+
+```json
+{
+  "success": true,
+  "data": [...],
+  "total": 47,
+  "next_cursor": "eyJ0eXBlIjoia2V5c2V0Iiw...",
+  "has_more": true
+}
+```
+
+**Cursor behavior:** When `sort_by=date`, a true keyset cursor (`WHERE (posted_datetime, job_id) < (cursor_dt, cursor_id)`) is used — results are stable even as new jobs are inserted. For relevance and computed sorts, an offset-encoded cursor is used. Both are transparent to the caller.
 
 **Cache behavior:** Keyed on all filter params (TTL 60s).
 
@@ -887,13 +929,17 @@ Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler
 
 #### `POST /analytics/jobs/clicks`
 
-**Purpose:** Click (view) counts per job from the MongoDB event log. (Brief requirement: "Clicks per job posting from logs.")
+**Purpose:** Click (view) counts per job from event data. (Brief requirement: "Clicks per job posting from logs.")
 
 **Request Body:** `{ "limit": 10, "window_days": 30 }`
 
-**Response:** List of `{job_id, title, clicks}` from MongoDB aggregation, enriched with job titles from MySQL.
+**Response:** List of `{job_id, title, clicks}` ordered by clicks descending, enriched with job titles from MySQL.
 
-**Databases:** MongoDB `event_logs` (aggregation pipeline on `event_type: "job.viewed"`), MySQL `job_postings` (title enrichment).
+**Data source (pre-aggregated):** Reads from `analytics_job_clicks_daily` MongoDB collection — one document per `(job_id, date)` maintained by the Kafka `job.viewed` consumer handler. The aggregation pipeline sums daily counters rather than scanning raw event logs, making this O(days × jobs) instead of O(raw events).
+
+**Fallback:** If the pre-aggregated collection is empty (fresh deployment), the endpoint automatically falls back to scanning `event_logs` and returns the same response shape.
+
+**Databases:** MongoDB `analytics_job_clicks_daily` (primary), MongoDB `event_logs` (fallback), MySQL `job_postings` (title enrichment).
 
 ---
 
@@ -905,7 +951,11 @@ Errors are **not** raised as HTTP exceptions in most cases. Instead, the handler
 
 **Response:** List of `{period (YYYY-MM-DD or YYYY-WNN), count}`.
 
-**Databases:** MySQL `saved_jobs`.
+**Data source (pre-aggregated):** Reads from `analytics_saves_daily` MongoDB collection — one document per calendar day maintained by the Kafka `job.saved` consumer handler (`handle_job_saved`). Each document stores `date`, `week` (ISO-8601), and `saves` counter. Weekly roll-ups are computed in-process by grouping the small set of daily docs.
+
+**Fallback:** If the pre-aggregated collection is empty, falls back to MySQL `saved_jobs` GROUP BY.
+
+**Databases:** MongoDB `analytics_saves_daily` (primary), MySQL `saved_jobs` (fallback).
 
 ---
 
@@ -1008,6 +1058,30 @@ Full workflow documentation is in Section 7. This section provides the endpoint 
 
 ---
 
+#### `GET /ai/queue-status`
+
+**Purpose:** Real-time observability of the AI workflow dispatcher — how many workflows are running, how many are queued, and how many concurrency slots are free.
+
+**Request:** No body.
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "2/2 workflows active, 1 queued",
+  "data": {
+    "queued": 1,
+    "active": 2,
+    "max_concurrent": 2,
+    "available_slots": 0
+  }
+}
+```
+
+**Purpose in architecture:** The dispatcher enforces `MAX_CONCURRENT_WORKFLOWS = 2` to prevent all workflows from simultaneously calling Ollama (single-threaded LLM). Excess tasks wait in an `asyncio.Queue`. This endpoint exposes the queue depth and slot occupancy for monitoring and demo observability.
+
+---
+
 #### `WebSocket /ai/ws/{task_id}`
 
 **Protocol:** WebSocket (ws://)
@@ -1024,7 +1098,129 @@ Full workflow documentation is in Section 7. This section provides the endpoint 
 
 ---
 
-### 4.9 System / Health
+### 4.9 Authentication Service — `/auth`
+
+**Base URL prefix:** `/auth`
+
+JWT-based authentication using HS256 tokens. A separate `user_credentials` table stores hashed passwords; member and recruiter records are unchanged. Dependencies `require_member` and `require_recruiter` protect write operations on the respective domains.
+
+---
+
+#### `POST /auth/login`
+
+**Purpose:** Authenticate with email and password. Returns a signed JWT.
+
+**Request Body:**
+```json
+{ "email": "jane@example.com", "password": "secret" }
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user_type": "member",
+  "user_id": 101,
+  "email": "jane@example.com"
+}
+```
+
+**Validation rules:** Returns 401 if credentials are invalid.
+
+**Databases:** MySQL `user_credentials` (SELECT, bcrypt verify).
+
+---
+
+#### `POST /auth/login-form`
+
+**Purpose:** OAuth2 password-flow login using `application/x-www-form-urlencoded`. Used by the Swagger UI **Authorize** button.
+
+**Request Fields:** `username` (email), `password` (form fields).
+
+**Response:** Same shape as `/auth/login`.
+
+---
+
+#### `POST /auth/register/member`
+
+**Purpose:** Create a new member profile and a linked credential record in a single transaction. Returns a JWT so the user is immediately authenticated.
+
+**Request Body:**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `email` | string | Yes — unique |
+| `password` | string | Yes — min 8 chars |
+| `first_name`, `last_name` | string | Yes |
+| `headline` | string | No |
+
+**Response:** JWT token response (same as login).
+
+**Side effects:** Inserts into MySQL `members` + `user_credentials`. Duplicate email returns `success: false`.
+
+---
+
+#### `POST /auth/register/recruiter`
+
+**Purpose:** Create a new recruiter profile and linked credentials. Returns a JWT.
+
+**Request Body:**
+
+| Field | Type | Required |
+|-------|------|----------|
+| `email` | string | Yes — unique |
+| `password` | string | Yes — min 8 chars |
+| `first_name`, `last_name` | string | Yes |
+| `company_name` | string | No |
+| `company_industry` | string | No |
+
+**Response:** JWT token response.
+
+**Side effects:** Inserts into MySQL `recruiters` + `user_credentials`.
+
+---
+
+#### `GET /auth/me`
+
+**Purpose:** Return the current user's identity and profile object from the JWT token.
+
+**Auth required:** `Authorization: Bearer <token>` header.
+
+**Response:**
+```json
+{
+  "user_type": "member",
+  "user_id": 101,
+  "email": "jane@example.com",
+  "profile": { "first_name": "Jane", "last_name": "Smith", ... }
+}
+```
+
+**Databases:** MySQL `members` or `recruiters` (profile lookup by user_id).
+
+---
+
+#### Protected Endpoints
+
+The following endpoint groups require a valid JWT with the matching `user_type`:
+
+| Guard | Applies to | Enforcement |
+|-------|-----------|-------------|
+| `require_member` | `POST /applications/submit` | `member_id` in request must equal token's `user_id` |
+| `require_member` | `POST /connections/request` | `requester_id` must equal token's `user_id` |
+| `require_member` | `POST /connections/accept`, `reject` | Connection's `receiver_id` must equal token's `user_id` |
+| `require_member` | `POST /messages/send` | `sender_id` must equal token's `user_id` |
+| `require_member` | `POST /members/update`, `delete` | `member_id` must equal token's `user_id` |
+| `require_recruiter` | `POST /jobs/create` | Recruiter identity verified via token |
+| `require_recruiter` | `POST /jobs/close` | Job's `recruiter_id` must equal token's `user_id` |
+| `require_member` | `POST /jobs/save` | `member_id` must equal token's `user_id` |
+
+Any protected endpoint called without a valid token returns `HTTP 401 Unauthorized`.
+
+---
+
+### 4.10 System / Health
 
 ---
 
@@ -1061,7 +1257,7 @@ Full workflow documentation is in Section 7. This section provides the endpoint 
 
 ### Event Envelope Structure
 
-Every Kafka message published by this platform follows the same JSON structure (enforced in `kafka_producer.py`):
+Every Kafka message we publish follows the same JSON structure, enforced in `kafka_producer.py`:
 
 ```json
 {
@@ -1093,8 +1289,8 @@ Every Kafka message published by this platform follows the same JSON structure (
 | Topic | Producer endpoint | Consumer action |
 |-------|-------------------|----------------|
 | `job.created` | `POST /jobs/create` | Logs to MongoDB |
-| `job.viewed` | `POST /jobs/get` | Increments `views_count` in MySQL |
-| `job.saved` | `POST /jobs/save` | Logs to MongoDB |
+| `job.viewed` | `POST /jobs/get` | Increments `views_count` in MySQL; upserts into `analytics_job_clicks_daily` (MongoDB) |
+| `job.saved` | `POST /jobs/save` | Logs to MongoDB; upserts into `analytics_saves_daily` (MongoDB) |
 | `job.closed` | `POST /jobs/close` | Logs to MongoDB |
 | `application.submitted` | `POST /applications/submit` | Increments `applicants_count` in MySQL |
 | `application.statusChanged` | `POST /applications/updateStatus` | Logs to MongoDB |
@@ -1108,20 +1304,39 @@ Custom events from `POST /events/ingest` are published to `events.{event_type}` 
 
 ### Consumer Group
 
-A single consumer group `"linkedin-backend"` subscribes to all 11 topics above. The consumer is started as a background asyncio task during FastAPI lifespan startup.
+A single consumer group `"linkedin-backend"` subscribes to the 11 topics listed above. The consumer is started as a background asyncio task during FastAPI lifespan startup. Note: `profile.viewed` is registered as a consumer topic in the codebase but is not currently published by any REST endpoint (see Section 10 limitations).
+
+### Delivery Guarantee — At-Least-Once with Manual Commit
+
+We configured the consumer with `enable_auto_commit=False`. Offsets are committed manually only **after** a message has been fully processed (handler executed + idempotency record written to MongoDB). If the handler raises an exception, we intentionally do not commit the offset, so Kafka redelivers the message on the next consumer start.
+
+This gives us **at-least-once delivery**: no message is silently lost, but a crashed handler may be called more than once. The idempotency layer converts this into effectively-exactly-once execution.
+
+Commit sequence per message:
+
+```
+1. Poll message from Kafka
+2. Idempotency check (in-memory set)
+3. Idempotency check (MongoDB processed_events)
+4. Execute handler
+5. Write idempotency record to MongoDB   ← persisted BEFORE commit
+6. consumer.commit()                     ← offset advanced AFTER persistence
+```
+
+Commit failures are logged as warnings (not re-raised); the worst case is re-delivery on the next start, handled by the idempotency layer.
 
 ### Idempotency
 
-The consumer applies two-layer deduplication before calling any handler:
+We implemented two-layer deduplication in the consumer, applied before calling any handler:
 
 1. **In-memory set** (`processed_keys`) — fast path, per process lifetime.
 2. **MongoDB `processed_events` collection** — durable across restarts. Indexed on `idempotency_key` (unique index).
 
-A message is skipped if its `idempotency_key` is found in either layer. This guarantees exactly-once handler execution despite Kafka's at-least-once delivery.
+A message is skipped if its `idempotency_key` is found in either layer, guaranteeing exactly-once handler execution despite Kafka's at-least-once delivery.
 
 ### Distributed Processing Support
 
-The architecture supports scaling the consumer tier independently: multiple consumer instances in the same `group_id` would partition topic load across them. The in-memory dedup set would not be shared across instances, but the MongoDB layer provides cross-process dedup. For the current project the consumer runs in-process with the API, which is appropriate for the class demo scale.
+The architecture supports scaling the consumer tier independently: multiple consumer instances in the same `group_id` would partition topic load across them. The in-memory dedup set would not be shared, but the MongoDB layer provides cross-process deduplication. For this project we ran the consumer in-process with the API, which is appropriate for the demo scale.
 
 ---
 
@@ -1156,10 +1371,10 @@ The architecture supports scaling the consumer tier independently: multiple cons
 | Key pattern | Set by | Evicted by | TTL |
 |-------------|--------|-----------|-----|
 | `members:get:{member_id}` | `/members/get` | `/members/update`, `/members/delete` | 300s |
-| `members:search:{keyword}:{skill}:{location}:{page}:{page_size}` | `/members/search` | Any member write | 60s |
+| `members:search:{keyword}:{skill}:{location}:{sort_by}:{cursor}` | `/members/search` | Any member write | 60s |
 | `recruiters:get:{recruiter_id}` | `/recruiters/get` | `/recruiters/update`, `/recruiters/delete` | 300s |
 | `jobs:get:{job_id}` | `/jobs/get` | `/jobs/update`, `/jobs/close` | 300s |
-| `jobs:search:{keyword}:{location}:{type}:{mode}:{seniority}:{page}:{page_size}` | `/jobs/search` | Any job write | 60s |
+| `jobs:search:{keyword}:{location}:{type}:{mode}:{seniority}:{sort_by}:{cursor}` | `/jobs/search` | Any job write | 60s |
 
 ---
 
@@ -1167,14 +1382,34 @@ The architecture supports scaling the consumer tier independently: multiple cons
 
 ### Overview
 
-The AI service implements a **supervisor agent pattern**: the Hiring Assistant orchestrates three skills in a sequential pipeline, persisting state at each step, with a mandatory human approval gate before finalizing.
+We implemented the AI service using a **supervisor agent pattern**: the Hiring Assistant orchestrates three skills in a sequential pipeline, persisting state at each step, with a mandatory human approval gate before finalizing.
+
+### Dispatcher Queue and Concurrency Control
+
+`POST /ai/analyze-candidates` returns the `task_id` immediately. We dispatch the actual workflow through a bounded `asyncio.Queue` and a semaphore (`MAX_CONCURRENT_WORKFLOWS = 2`) to prevent multiple simultaneous Ollama calls from overwhelming the single-threaded LLM server:
+
+```
+POST /ai/analyze-candidates
+    │
+    │ MongoDB: insert task (status="queued")
+    │ _task_queue.put((task_id, job_id, top_n))
+    │ HTTP 200 → { task_id }
+    │
+    └── Background dispatcher (run_dispatcher, always running):
+            await _task_queue.get()
+            create_task(_workflow_runner(...))
+                └── async with _workflow_semaphore:   # at most 2 concurrent
+                        run_hiring_workflow(...)
+```
+
+If the server restarts while tasks are `"queued"`, `rehydrate_tasks()` re-submits them to the queue. Tasks in `"running"` state at restart are marked `"interrupted"`.
 
 ### Multi-Step Workflow
 
 ```
 POST /ai/analyze-candidates
     │
-    │ returns task_id immediately
+    │ returns task_id immediately (task enqueued)
     │
     └── asyncio background task: run_hiring_workflow(task_id, job_id, top_n)
             │
@@ -1216,15 +1451,15 @@ POST /ai/analyze-candidates
 | `approved` | Recruiter approved the shortlist and outreach drafts |
 | `rejected` | Recruiter rejected the output |
 | `failed` | Unrecoverable error during execution |
-| `interrupted` | Server restarted while task was `queued` or `running` |
+| `interrupted` | Server restarted while task was `running` (mid-flight); `queued` tasks are re-submitted automatically |
 
 ### WebSocket Updates
 
-The WebSocket at `ws://localhost:8000/ai/ws/{task_id}` provides real-time progress to the UI:
+We added a WebSocket at `ws://localhost:8000/ai/ws/{task_id}` to push real-time progress to the UI:
 
 1. On connect, the server immediately sends the current task status (fetched from MongoDB if not in memory).
 2. As each step completes, `update_task_status()` pushes a JSON update to all connected clients.
-3. Client sends `"ping"` to keep the connection alive; server responds `"pong"`.
+3. The client sends `"ping"` to keep the connection alive; the server responds `"pong"`.
 4. WebSocket connections are process-scoped and do not survive server restarts.
 
 ### Approval Flow
@@ -1245,13 +1480,11 @@ Calling approve on a task not in `awaiting_approval` returns `success: false`.
 
 ### Persistence and Restart Recovery
 
-All task state is written to MongoDB as the primary store. On server restart:
+We write all task state to MongoDB as the primary store. On server restart, `rehydrate_tasks()` runs during FastAPI lifespan startup and performs three actions:
 
-1. `rehydrate_tasks()` runs in the FastAPI lifespan.
-2. All `awaiting_approval` tasks are loaded into the in-memory `active_tasks` dict.
-3. All `queued` and `running` tasks are updated to `interrupted` in MongoDB.
-
-This means a recruiter can still approve a task that was `awaiting_approval` before a server restart. In-flight tasks (`running`) must be re-triggered via a new `/ai/analyze-candidates` call.
+1. `awaiting_approval` tasks are loaded into the in-memory `active_tasks` dict — the recruiter approval endpoint continues to work.
+2. `queued` tasks (never dispatched before the restart) are re-submitted to `_task_queue` and run normally once the dispatcher starts.
+3. `running` tasks (mid-flight at restart time) are marked `interrupted` in MongoDB — these cannot be resumed and must be re-triggered via a new `/ai/analyze-candidates` call.
 
 ---
 
@@ -1298,7 +1531,7 @@ POST /members/create
 
 ### Jobs Search
 
-**Request:**
+**Request (first page, cursor pagination):**
 ```json
 POST /jobs/search
 {
@@ -1306,7 +1539,7 @@ POST /jobs/search
   "location": "California",
   "work_mode": "hybrid",
   "seniority_level": "Senior",
-  "page": 1,
+  "sort_by": "date",
   "page_size": 5
 }
 ```
@@ -1333,8 +1566,8 @@ POST /jobs/search
     }
   ],
   "total": 47,
-  "page": 1,
-  "page_size": 5
+  "next_cursor": "eyJ0eXBlIjoia2V5c2V0IiwiZHQiOiIyMDI2LTA0LTA1VDEwOjAwOjAwIiwiaWQiOjEyfQ==",
+  "has_more": true
 }
 ```
 
@@ -1516,7 +1749,7 @@ POST /ai/approve
 
 ### Duplicate Email (Members and Recruiters)
 
-Before any INSERT, the service queries for an existing row with the same email. If found, it returns `success: false` without attempting the insert. This is an application-layer check.
+Before any INSERT, we query for an existing row with the same email. If found, the handler returns `success: false` without attempting the insert. This is an application-layer check backed by a MySQL unique index as a secondary safeguard.
 
 ```python
 # routers/members.py:31-33
@@ -1525,13 +1758,11 @@ if existing:
     return MemberResponse(success=False, message=f"Email '{req.email}' already exists")
 ```
 
-MySQL also enforces a unique index on `email` as a secondary safeguard.
-
 ---
 
 ### Duplicate Application
 
-Before inserting an application, the service queries for a row matching the same `(job_id, member_id)` pair.
+Before inserting an application, we check for an existing row matching the same `(job_id, member_id)` pair. A unique index on `(job_id, member_id)` is also present in the MySQL schema as a secondary guard.
 
 ```python
 # routers/applications.py:47-56
@@ -1543,19 +1774,17 @@ if existing:
     return ApplicationResponse(success=False, message=...)
 ```
 
-A unique index on `(job_id, member_id)` is also present in the MySQL schema.
-
 ---
 
 ### Applying to a Closed Job
 
-Before inserting, the service checks `job.status == "closed"` and returns `success: false` without touching the database.
+Before inserting, we check `job.status == "closed"` and return `success: false` without touching the database.
 
 ---
 
 ### Message Send Failure and Retry
 
-`POST /messages/send` uses a 3-attempt retry loop with explicit rollback on each failed commit:
+We implemented `POST /messages/send` with a 3-attempt retry loop and explicit rollback on each failed commit:
 
 ```python
 max_retries = 3
@@ -1568,34 +1797,34 @@ for attempt in range(max_retries):
             return MessageResponse(success=False, message="Message send failed. Please retry.")
 ```
 
-If all retries fail, zero messages are written (consistent state). The caller receives a clear `success: false` response.
+If all retries fail, zero messages are written (consistent state) and the caller receives a clear `success: false` response.
 
 ---
 
 ### Kafka Idempotent Processing
 
-The Kafka consumer guards against duplicate event processing at two levels:
+We guard the Kafka consumer against duplicate event processing at two levels:
 
 1. **In-memory set** — `processed_keys` contains `idempotency_key` values seen since process start.
 2. **MongoDB `processed_events`** — a permanent record with a unique index on `idempotency_key`.
 
-Before invoking any handler, the consumer checks both layers and silently skips already-processed events. This makes the consumer safe under Kafka's at-least-once delivery guarantee.
+Before invoking any handler, we check both layers and silently skip already-processed events. This keeps the consumer safe under Kafka's at-least-once delivery guarantee.
 
 ---
 
 ### Kafka or Database Unavailability
 
-All Kafka publish calls are wrapped in `try/except`. A Kafka failure never causes the REST endpoint to fail — the response is still returned, and the event is simply lost. This is acceptable for analytics side-effects; it is not acceptable for transactional writes (which do not go through Kafka).
+We wrapped all Kafka publish calls in `try/except`. A Kafka failure never causes the REST endpoint to fail — the response is still returned and the event is lost. This trade-off is acceptable for analytics side-effects; transactional writes do not go through Kafka and are unaffected.
 
 If MySQL is unavailable at request time, SQLAlchemy raises an exception which FastAPI converts to a 500 Internal Server Error.
 
-If MongoDB is unavailable at startup, the server logs a warning and continues. MongoDB failures during AI task operations will surface as 500s on affected endpoints.
+If MongoDB is unavailable at startup, we log a warning and continue. MongoDB failures during AI task operations surface as 500s on the affected endpoints.
 
 ---
 
 ### Fallback Behavior When Ollama Is Unavailable
 
-All three AI skills have complete fallbacks that do not require Ollama:
+We built complete fallbacks into all three AI skills so the workflow always runs, even without Ollama:
 
 | Skill | Ollama path | Fallback |
 |-------|------------|---------|
@@ -1611,39 +1840,37 @@ The `method` field on parsed resume responses tells the caller whether `"ollama"
 
 ### What Is Implemented
 
-- **43 REST endpoints** covering all services required by the project brief: Profile, Recruiter, Job, Application, Messaging, Connection, Analytics, and AI Agent.
-- **1 WebSocket endpoint** for real-time AI task progress streaming.
-- **Full Kafka integration**: 11 topics, standard JSON envelope, consumer group, two-layer idempotency.
-- **Redis caching** with cache invalidation on writes. Measured speedup: 5–40× on search endpoints.
-- **Full AI agentic workflow**: supervisor pattern, three skills, HITL approval gate, MongoDB persistence, restart recovery.
-- **All 7 required analytics charts** (5 recruiter dashboard + 2 member dashboard) backed by dedicated endpoints.
-- **All 6 required failure modes** handled with tests verifying each one.
+- **56 REST endpoints and 1 WebSocket endpoint** across all service domains: Profile, Recruiter, Job, Application, Messaging, Connection, Analytics, Authentication, and AI Agent.
+- **Kafka integration**: 11 topics with a standard JSON envelope, single consumer group, and two-layer idempotency (in-memory + MongoDB).
+- **Redis caching** with write-time invalidation. Cache-hit latency is 5–40× faster than cold MySQL on individual lookups (`cache_benchmark.py`).
+- **Agentic AI hiring workflow**: supervisor pattern, three coordinated skills (resume parser, job matcher, outreach generator), HITL approval gate, MongoDB-persisted state, and dispatcher-queue concurrency control.
+- **7 analytics endpoints** addressing the project brief's required charts (5 recruiter dashboard + 2 additional).
+- **Failure mode handling** for duplicate entities, closed-job guard, message retry, Kafka idempotency, and AI restart recovery — each covered by integration tests.
 
 ### What Is Strong
 
-- Every endpoint is backed by a Pydantic schema — all contracts are machine-readable and self-documenting via Swagger at `/docs`.
-- The AI workflow is fully durable: task state survives server restarts, in-flight tasks are marked as `interrupted` rather than silently lost.
-- Kafka events carry `trace_id` linking all steps of a multi-step workflow for end-to-end observability.
-- Cache invalidation is applied on every write operation that could affect cached results.
-- The application-level duplicate checks, closed-job guard, and message retry loop ensure the system is left in a consistent state after partial failures.
+- Every endpoint is backed by a Pydantic v2 schema — contracts are machine-readable and auto-documented via Swagger at `/docs`.
+- AI task state is fully durable: tasks survive server restarts. `queued` tasks are re-dispatched; `running` tasks are marked `interrupted` rather than silently lost.
+- Kafka events carry a `trace_id` that links all steps of a multi-step workflow, enabling end-to-end observability.
+- Cache invalidation is applied on every write operation that could affect a cached result.
+- Application-level guards (duplicate check, closed-job check, message retry loop) leave the system in a consistent state after partial failures.
 
 ### What Is Limited
 
-- **No authentication layer**: endpoints do not require tokens or session cookies. `user_id` must be passed explicitly in request bodies. This is intentional for the demo environment.
-- **No job `industry` search filter**: the `job_postings` schema does not have an industry column. The existing filters (keyword, location, type, mode, seniority, skills) cover the practical use cases.
-- **`profile.viewed` Kafka event** is not emitted from `POST /members/get` (though the consumer handler exists). Profile view data in analytics is populated by the seeder.
-- **Ollama inference is CPU-only** in the current deployment: expect 30–60s per resume parse. All endpoints remain functional via fallbacks.
-- **Frontend CRUD forms are not implemented** for member create/update, job create/close, or application submit. All 43 API endpoints are fully accessible via Swagger (`/docs`) and the provided Postman collection.
+- **No job `industry` search filter**: the `job_postings` schema does not have an industry column. Existing filters (keyword, location, type, mode, seniority, skills, salary) cover the demonstrated use cases.
+- **`profile.viewed` Kafka event** is not published from `POST /members/get`, although the consumer handler exists. Profile view data in analytics is populated by the seeder.
+- **Ollama inference is CPU-only** in the current deployment: expect 30–60 s per resume parse on local hardware. All endpoints remain functional via fallbacks when Ollama is unavailable.
+- **Frontend CRUD coverage is partial**: member update/delete, recruiter CRUD, and job create/close are accessible via Swagger and the Postman collection but have no corresponding frontend UI form.
 
-### What Is Available via API But Not in the Frontend
+### What Is Accessible via API but Not in the Frontend
 
-All of the following are tested and working through Swagger and the Postman collection, but have no corresponding UI form:
+The following are functional through Swagger (`/docs`) and the Postman collection, but do not have a corresponding UI form:
 
-- Member create, update, delete
+- Member update, delete
 - Recruiter create, update, delete, get
 - Job create, update, close, save
-- Application submit, status update, add note, list by job
-- Full AI evaluate + approve workflow (partial UI via the AI Tools tab)
-- All 9 analytics endpoints (5 recruiter dashboard + 4 general)
+- Application status update, add note, list by job
+- Full AI analyze → approve workflow (the AI Tools tab provides a partial UI)
+- Analytics endpoints beyond the main dashboard charts
 
-The Swagger UI at `http://localhost:8000/docs` provides a fully functional interactive interface for all 43 endpoints during the demo.
+The Swagger UI at `http://localhost:8000/docs` provides a fully functional interactive interface for all 56 REST endpoints.
