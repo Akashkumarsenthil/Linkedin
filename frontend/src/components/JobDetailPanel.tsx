@@ -65,27 +65,21 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
       {loading && <p className="meta">Fetching job details…</p>}
       {err && <p className="error">{err}</p>}
 
-      {job && (
+      {job != null && (
         <div className="job-detail-body">
           {/* Status + meta pills */}
           <div className="job-detail-meta">
             <span className={`job-status-badge job-status-${String(job.status)}`}>
               {String(job.status)}
             </span>
-            {job.seniority_level && (
-              <span className="pill">{String(job.seniority_level)}</span>
-            )}
-            {job.employment_type && (
-              <span className="pill">{String(job.employment_type)}</span>
-            )}
-            {job.work_mode && (
-              <span className="pill">{String(job.work_mode)}</span>
-            )}
+            {job.seniority_level ? <span className="pill">{String(job.seniority_level)}</span> : null}
+            {job.employment_type ? <span className="pill">{String(job.employment_type)}</span> : null}
+            {job.work_mode ? <span className="pill">{String(job.work_mode)}</span> : null}
           </div>
 
           {/* Location + stats */}
           <div className="job-detail-stats">
-            {job.location && <span>📍 {String(job.location)}</span>}
+            {job.location ? <span>📍 {String(job.location)}</span> : null}
             <span>{String(job.views_count ?? 0)} views</span>
             <span>{String(job.applicants_count ?? 0)} applicants</span>
             {postedDate && <span>Posted {postedDate}</span>}
@@ -93,14 +87,14 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
           </div>
 
           {/* Salary */}
-          {(salaryMin !== null || salaryMax !== null) && (
+          {(salaryMin !== null || salaryMax !== null) ? (
             <p className="job-detail-salary">
               💰{' '}
               {salaryMin !== null ? `$${salaryMin.toLocaleString()}` : '—'}
               {salaryMax !== null ? ` – $${salaryMax.toLocaleString()}` : '+'}
               {' '}/ year
             </p>
-          )}
+          ) : null}
 
           {/* Skills */}
           {skills.length > 0 && (
@@ -117,12 +111,12 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
           )}
 
           {/* Description */}
-          {job.description && (
+          {job.description ? (
             <div className="job-detail-section">
               <p className="chart-label">Description</p>
               <p className="job-desc-text">{String(job.description)}</p>
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </div>

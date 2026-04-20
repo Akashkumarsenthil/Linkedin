@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { apiGet, apiPost } from './api'
 import { TopJobsChart } from './components/TopJobsChart'
@@ -24,93 +24,256 @@ function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="logo-dot" aria-hidden />
-          <div>
-            <h1>LinkedIn Agentic AI</h1>
-            <p className="tagline">DATA236 demo console</p>
+        <div className="topbar-inner">
+          <div className="brand">
+            <div className="logo-mark">
+              <span className="logo-in">in</span>
+            </div>
+            <span className="brand-name">
+              LinkedIn <span className="brand-highlight">Agentic AI</span>
+            </span>
           </div>
+
+          <nav className="nav" aria-label="Primary">
+            {(
+              [
+                ['overview',    'Overview'],
+                ['jobs',        'Jobs'],
+                ['members',     'Members'],
+                ['analytics',   'Analytics'],
+                ['messages',    'Messages'],
+                ['connections', 'Connections'],
+                ['ai',          'AI Recruiter'],
+                ['auth',        'Account'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={tab === id ? 'nav-btn active' : 'nav-btn'}
+                onClick={() => setTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
         </div>
-        <nav className="nav" aria-label="Primary">
-          {(
-            [
-              ['overview', 'Overview'],
-              ['jobs', 'Jobs'],
-              ['members', 'Members'],
-              ['analytics', 'Analytics'],
-              ['messages', 'Messages'],
-              ['connections', 'Connections'],
-              ['ai', 'AI tools'],
-              ['auth', 'Auth'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={tab === id ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
       </header>
 
       <main className="main">
-        {tab === 'overview' && <OverviewPanel />}
-        {tab === 'jobs' && <JobsPanel />}
-        {tab === 'members' && <MembersPanel />}
-        {tab === 'analytics' && <AnalyticsPanel />}
-        {tab === 'messages' && <MessagingPanel />}
+        {tab === 'overview'    && <OverviewPanel onNavigate={setTab} />}
+        {tab === 'jobs'        && <JobsPanel />}
+        {tab === 'members'     && <MembersPanel />}
+        {tab === 'analytics'   && <AnalyticsPanel />}
+        {tab === 'messages'    && <MessagingPanel />}
         {tab === 'connections' && <ConnectionsPanel />}
-        {tab === 'ai' && <AiDashboard />}
-        {tab === 'auth' && <AuthPanel />}
+        {tab === 'ai'          && <AiDashboard />}
+        {tab === 'auth'        && <AuthPanel />}
       </main>
 
       <footer className="footer">
-        API docs: <code>/docs</code> · OpenAPI: <code>docs/openapi.json</code> · Postman:{' '}
-        <code>postman/</code>
+        <div className="footer-inner">
+          <span className="footer-brand">LinkedIn Agentic AI</span>
+          <span className="footer-sep">·</span>
+          <span>API docs: <code>/docs</code></span>
+          <span className="footer-sep">·</span>
+          <span>OpenAPI: <code>docs/openapi.json</code></span>
+          <span className="footer-sep">·</span>
+          <span>DATA236 · SJSU</span>
+        </div>
       </footer>
     </div>
   )
 }
 
-function OverviewPanel() {
-  const [data, setData] = useState<Record<string, unknown> | null>(null)
+// ── Overview ──────────────────────────────────────────────────────────────────
+
+type ServiceStatus = 'online' | 'offline' | 'checking'
+
+interface ServiceInfo {
+  key: string
+  name: string
+  description: string
+  status: ServiceStatus
+}
+
+function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+  const [healthData, setHealthData] = useState<Record<string, unknown> | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [checked, setChecked] = useState(false)
 
-  const load = useCallback(async () => {
+  const checkHealth = useCallback(async () => {
     setLoading(true)
     setErr(null)
     try {
       const h = await apiGet<Record<string, unknown>>('/health')
-      setData(h)
+      setHealthData(h)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Request failed')
-      setData(null)
+      setErr(e instanceof Error ? e.message : 'API unreachable')
+      setHealthData(null)
     } finally {
       setLoading(false)
+      setChecked(true)
     }
   }, [])
 
+  useEffect(() => { checkHealth() }, [checkHealth])
+
+  const services: ServiceInfo[] = [
+    {
+      key: 'api',
+      name: 'API Server',
+      description: 'FastAPI backend',
+      status: !checked ? 'checking' : err ? 'offline' : 'online',
+    },
+    {
+      key: 'mysql',
+      name: 'MySQL',
+      description: 'Primary database',
+      status: !checked ? 'checking' : (healthData?.mysql === 'ok' ? 'online' : (healthData ? 'offline' : 'checking')),
+    },
+    {
+      key: 'redis',
+      name: 'Redis',
+      description: 'Cache & sessions',
+      status: !checked ? 'checking' : (healthData?.redis === 'ok' ? 'online' : (healthData ? 'offline' : 'checking')),
+    },
+    {
+      key: 'kafka',
+      name: 'Kafka',
+      description: 'Event streaming',
+      status: !checked ? 'checking' : (healthData?.kafka === 'ok' ? 'online' : (healthData ? 'offline' : 'checking')),
+    },
+    {
+      key: 'mongo',
+      name: 'MongoDB',
+      description: 'Document store',
+      status: !checked ? 'checking' : (healthData?.mongo === 'ok' ? 'online' : (healthData ? 'offline' : 'checking')),
+    },
+  ]
+
+  const onlineCount = services.filter((s) => s.status === 'online').length
+  const platformOnline = checked && !err
+
+  const exploreItems = [
+    { tab: 'jobs' as Tab,        icon: '💼', title: 'Job Search',       desc: 'Search open positions, view details, and submit applications.' },
+    { tab: 'members' as Tab,     icon: '👥', title: 'Member Directory',  desc: 'Find professionals, browse profiles, and add new members.' },
+    { tab: 'analytics' as Tab,   icon: '📊', title: 'Analytics',         desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
+    { tab: 'ai' as Tab,          icon: '✦',  title: 'AI Recruiter',      desc: 'Agentic candidate matching with shortlist scoring and outreach drafts.' },
+    { tab: 'messages' as Tab,    icon: '✉',  title: 'Messaging',         desc: 'Thread-based professional messaging between platform members.' },
+    { tab: 'connections' as Tab, icon: '⊕',  title: 'Connections',       desc: 'Send and manage professional connection requests.' },
+  ]
+
   return (
-    <section className="panel">
-      <h2>Service health</h2>
-      <p className="hint">
-        Starts the FastAPI app with Docker infra (MySQL, Redis, MongoDB, Kafka). If the API is
-        down, run <code>uvicorn main:app --reload</code> from <code>backend/</code>.
-      </p>
-      <button type="button" className="primary" onClick={load} disabled={loading}>
-        {loading ? 'Checking…' : 'Refresh health'}
-      </button>
-      {err && <p className="error">{err}</p>}
-      {data && (
-        <pre className="json-out">{JSON.stringify(data, null, 2)}</pre>
-      )}
-    </section>
+    <div className="overview-page">
+
+      {/* Hero */}
+      <div className="overview-hero">
+        <div className="overview-hero-content">
+          <h1 className="overview-hero-title">LinkedIn Agentic AI Platform</h1>
+          <p className="overview-hero-desc">
+            An intelligent talent network powered by agentic AI workflows, real-time analytics,
+            and event-driven infrastructure — built for DATA236 at SJSU.
+          </p>
+          <div className="overview-hero-cta">
+            <button type="button" className="primary" onClick={() => onNavigate('jobs')}>
+              Browse Jobs
+            </button>
+            <button type="button" className="secondary-btn" onClick={() => onNavigate('ai')}>
+              AI Recruiter Tools
+            </button>
+          </div>
+        </div>
+
+        <div className="overview-status-badge">
+          <div className={`platform-health platform-health-${platformOnline ? 'online' : err ? 'offline' : 'checking'}`}>
+            <span className={`health-dot health-dot-${platformOnline ? 'online' : err ? 'offline' : 'checking'}`} />
+            <span className="health-label">
+              {!checked
+                ? 'Connecting to API…'
+                : err
+                ? 'API Offline'
+                : `${onlineCount}/${services.length} services online`}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={checkHealth}
+            disabled={loading}
+            style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem' }}
+          >
+            {loading ? '…' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {/* System status */}
+      <section className="overview-section">
+        <div className="overview-section-hdr">
+          <h2 className="overview-section-title">System Status</h2>
+          {err && (
+            <span className="overview-warn">
+              Start backend: <code>uvicorn main:app --reload</code> from <code>backend/</code>
+            </span>
+          )}
+        </div>
+        <div className="service-status-grid">
+          {services.map((svc) => (
+            <div key={svc.key} className={`service-card svc-${svc.status}`}>
+              <span className={`svc-dot dot-${svc.status}`} />
+              <div className="svc-info">
+                <span className="svc-name">{svc.name}</span>
+                <span className="svc-desc">{svc.description}</span>
+              </div>
+              <span className={`svc-badge badge-${svc.status}`}>
+                {svc.status === 'online' ? 'OK' : svc.status === 'offline' ? 'Down' : '…'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Explore */}
+      <section className="overview-section">
+        <h2 className="overview-section-title">Explore the Platform</h2>
+        <div className="explore-grid">
+          {exploreItems.map((item) => (
+            <button
+              key={item.tab}
+              type="button"
+              className="explore-card"
+              onClick={() => onNavigate(item.tab)}
+            >
+              <span className="explore-icon">{item.icon}</span>
+              <span className="explore-title">{item.title}</span>
+              <span className="explore-desc">{item.desc}</span>
+              <span className="explore-arrow">→</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Tech stack */}
+      <section className="overview-section">
+        <div className="tech-stack-card">
+          <h2 className="overview-section-title" style={{ margin: 0 }}>Architecture</h2>
+          <div className="tech-pills">
+            {[
+              'FastAPI', 'MySQL', 'Redis', 'Apache Kafka',
+              'MongoDB', 'React + TypeScript', 'WebSockets', 'Ollama AI', 'Docker',
+            ].map((t) => (
+              <span key={t} className="tech-pill">{t}</span>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
+
+// ── Jobs panel ────────────────────────────────────────────────────────────────
 
 function JobsPanel() {
   const [keyword, setKeyword] = useState('engineer')
@@ -160,65 +323,86 @@ function JobsPanel() {
 
   return (
     <section className="panel">
-      <h2>Job search</h2>
-      <div className="row">
-        <label>
-          Keyword
+      <div className="panel-header">
+        <h2 className="panel-title">Job Search</h2>
+        <p className="panel-subtitle">Browse and apply to open positions across the network</p>
+      </div>
+
+      <div className="search-toolbar">
+        <div className="search-input-wrap">
+          <span className="search-icon-glyph">⌕</span>
           <input
+            className="search-input-field"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="e.g. engineer"
+            placeholder="Search by title, keyword, or skill…"
             onKeyDown={(e) => e.key === 'Enter' && search()}
           />
-        </label>
-        <label>
-          Sort
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            style={{ fontFamily: 'inherit', fontSize: '0.875rem', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
-          >
-            <option value="date">Date posted</option>
-            <option value="applicants">Most applicants</option>
-            <option value="views">Most viewed</option>
-          </select>
-        </label>
+        </div>
+        <select
+          className="toolbar-select"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+        >
+          <option value="date">Date posted</option>
+          <option value="applicants">Most applicants</option>
+          <option value="views">Most viewed</option>
+        </select>
         <button type="button" className="primary" onClick={search} disabled={loading}>
           {loading && !nextCursor ? 'Searching…' : 'Search'}
         </button>
       </div>
+
       {err && <p className="error">{err}</p>}
+
       {jobs.length > 0 && (
-        <p className="meta">
-          Showing {jobs.length}{total != null ? ` of ${total}` : ''} jobs
+        <p className="results-meta">
+          Showing <strong>{jobs.length}</strong>{total != null ? ` of ${total}` : ''} positions
         </p>
       )}
-      <ul className="card-list">
+
+      <ul className="job-card-list">
         {jobs.map((j) => {
           const jid = Number(j.job_id)
           const isSelected = selectedJobId === jid
           const isViewing = detailJobId === jid
+          const titleStr = String(j.title ?? '')
+          const initial = titleStr[0]?.toUpperCase() ?? '?'
+
           return (
-            <li key={String(j.job_id)} className={`card${isSelected ? ' card-selected' : ''}`}>
-              <strong>{String(j.title)}</strong>
-              <span className="muted">{String(j.location ?? '')}</span>
-              <span className="pill">{String(j.work_mode ?? '')}</span>
-              <span className="pill">ID #{String(j.job_id)}</span>
-              <div className="card-actions">
-                <button
-                  type="button"
-                  className={isViewing ? 'apply-btn apply-btn-active' : 'apply-btn'}
-                  onClick={() => setDetailJobId(isViewing ? null : jid)}
-                >
-                  {isViewing ? 'Viewing ▴' : 'View'}
-                </button>
-                <button
-                  type="button"
-                  className={isSelected ? 'apply-btn apply-btn-active' : 'apply-btn'}
-                  onClick={() => setSelectedJobId(isSelected ? null : jid)}
-                >
-                  {isSelected ? 'Selected ✓' : 'Apply'}
-                </button>
+            <li key={String(j.job_id)} className={`job-card${isSelected ? ' job-card-selected' : ''}`}>
+              <div className="job-card-logo">
+                <span>{initial}</span>
+              </div>
+              <div className="job-card-body">
+                <div className="job-card-top">
+                  <h3 className="job-card-title">{titleStr}</h3>
+                  <div className="job-card-actions">
+                    <button
+                      type="button"
+                      className={isViewing ? 'jc-btn jc-btn-active' : 'jc-btn'}
+                      onClick={() => setDetailJobId(isViewing ? null : jid)}
+                    >
+                      {isViewing ? 'Close' : 'Details'}
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        isSelected
+                          ? 'jc-btn jc-btn-apply jc-btn-selected'
+                          : 'jc-btn jc-btn-apply'
+                      }
+                      onClick={() => setSelectedJobId(isSelected ? null : jid)}
+                    >
+                      {isSelected ? '✓ Selected' : 'Apply'}
+                    </button>
+                  </div>
+                </div>
+                <div className="job-card-meta">
+                  {j.location ? <span className="jc-meta-item">📍 {String(j.location)}</span> : null}
+                  {j.work_mode ? <span className="pill pill-accent">{String(j.work_mode)}</span> : null}
+                  <span className="pill">ID #{String(j.job_id)}</span>
+                </div>
               </div>
             </li>
           )
@@ -226,28 +410,23 @@ function JobsPanel() {
       </ul>
 
       {hasMore && (
-        <button
-          type="button"
-          className="load-more-btn"
-          onClick={loadMore}
-          disabled={loading}
-        >
-          {loading ? 'Loading…' : 'Load more'}
+        <button type="button" className="load-more-btn" onClick={loadMore} disabled={loading}>
+          {loading ? 'Loading…' : 'Load more positions'}
         </button>
       )}
 
-      <JobDetailPanel
-        jobId={detailJobId}
-        onClose={() => setDetailJobId(null)}
-      />
-
-      <JobApplyForm
-        prefilledJobId={selectedJobId}
-        onClear={() => setSelectedJobId(null)}
-      />
+      <JobDetailPanel jobId={detailJobId} onClose={() => setDetailJobId(null)} />
+      <JobApplyForm prefilledJobId={selectedJobId} onClear={() => setSelectedJobId(null)} />
     </section>
   )
 }
+
+// ── Members panel ─────────────────────────────────────────────────────────────
+
+// Muted color palette for avatars
+const AVATAR_COLORS = [
+  '#0a66c2', '#0d7764', '#b24020', '#9c45c2', '#b87a0a', '#1a7a34',
+]
 
 function MembersPanel() {
   const [keyword, setKeyword] = useState('data')
@@ -295,61 +474,75 @@ function MembersPanel() {
 
   return (
     <section className="panel">
-      <h2>Member search</h2>
-      <div className="row">
-        <label>
-          Keyword
+      <div className="panel-header">
+        <h2 className="panel-title">Member Directory</h2>
+        <p className="panel-subtitle">Find and connect with professionals in the network</p>
+      </div>
+
+      <div className="search-toolbar">
+        <div className="search-input-wrap">
+          <span className="search-icon-glyph">⌕</span>
           <input
+            className="search-input-field"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="name, headline, about"
+            placeholder="Search by name, headline, or location…"
             onKeyDown={(e) => e.key === 'Enter' && search()}
           />
-        </label>
-        <label>
-          Sort
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            style={{ fontFamily: 'inherit', fontSize: '0.875rem', padding: '0.5rem 0.65rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)' }}
-          >
-            <option value="id">Default</option>
-            <option value="connections">Most connected</option>
-            <option value="recent">Newest</option>
-          </select>
-        </label>
+        </div>
+        <select
+          className="toolbar-select"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+        >
+          <option value="id">Default</option>
+          <option value="connections">Most connected</option>
+          <option value="recent">Newest</option>
+        </select>
         <button type="button" className="primary" onClick={search} disabled={loading}>
           {loading && !nextCursor ? 'Searching…' : 'Search'}
         </button>
       </div>
+
       {err && <p className="error">{err}</p>}
+
       {members.length > 0 && (
-        <p className="meta">
-          Showing {members.length}{total != null ? ` of ${total}` : ''} members
+        <p className="results-meta">
+          Showing <strong>{members.length}</strong>{total != null ? ` of ${total}` : ''} members
         </p>
       )}
-      <ul className="card-list">
-        {members.map((m) => (
-          <li key={String(m.member_id)} className="card">
-            <strong>
-              {String(m.first_name)} {String(m.last_name)}
-            </strong>
-            <span className="muted">{String(m.headline ?? '')}</span>
-            {m.location_city && (
-              <span className="pill">{String(m.location_city)}</span>
-            )}
-          </li>
-        ))}
+
+      <ul className="member-card-grid">
+        {members.map((m) => {
+          const firstName = String(m.first_name ?? '')
+          const lastName = String(m.last_name ?? '')
+          const initials = `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase() || '?'
+          const colorIndex = (Number(m.member_id) || 0) % AVATAR_COLORS.length
+
+          return (
+            <li key={String(m.member_id)} className="member-card">
+              <div
+                className="member-avatar"
+                style={{ background: AVATAR_COLORS[colorIndex] }}
+              >
+                {initials}
+              </div>
+              <div className="member-card-body">
+                <h3 className="member-card-name">{firstName} {lastName}</h3>
+                {m.headline ? <p className="member-card-headline">{String(m.headline)}</p> : null}
+                <div className="member-card-meta">
+                  {m.location_city ? <span className="pill">📍 {String(m.location_city)}</span> : null}
+                  <span className="member-id-chip">#{String(m.member_id)}</span>
+                </div>
+              </div>
+            </li>
+          )
+        })}
       </ul>
 
       {hasMore && (
-        <button
-          type="button"
-          className="load-more-btn"
-          onClick={loadMore}
-          disabled={loading}
-        >
-          {loading ? 'Loading…' : 'Load more'}
+        <button type="button" className="load-more-btn" onClick={loadMore} disabled={loading}>
+          {loading ? 'Loading…' : 'Load more members'}
         </button>
       )}
 
@@ -358,31 +551,38 @@ function MembersPanel() {
   )
 }
 
+// ── Analytics panel ───────────────────────────────────────────────────────────
+
 function AnalyticsPanel() {
   return (
     <section className="panel">
-      <h2>Analytics</h2>
-      <p className="hint">
-        Live charts powered by the backend SQL aggregates. Requires seeded data —
-        run <code>python seed_data.py --quick --yes</code> from <code>backend/</code> if
-        charts show empty results.
-      </p>
-
-      <h3 className="analytics-section-title">Recruiter / Admin Dashboard</h3>
-      <div className="analytics-grid">
-        <TopMonthlyChart />
-        <LeastAppliedChart />
-        <ClicksPerJobChart />
-        <GeoMonthlyChart />
-        <SavesTrendChart />
+      <div className="panel-header">
+        <h2 className="panel-title">Analytics Dashboard</h2>
+        <p className="panel-subtitle">
+          Live charts from backend SQL aggregates &middot; seed data with{' '}
+          <code>python seed_data.py --quick --yes</code> from <code>backend/</code>
+        </p>
       </div>
 
-      <h3 className="analytics-section-title">General Analytics</h3>
-      <div className="analytics-grid">
-        <TopJobsChart />
-        <FunnelChart />
-        <GeoTable />
-        <MemberDashboard />
+      <div className="analytics-tab-section">
+        <h3 className="analytics-section-title">Recruiter &amp; Admin Insights</h3>
+        <div className="analytics-grid">
+          <TopMonthlyChart />
+          <LeastAppliedChart />
+          <ClicksPerJobChart />
+          <GeoMonthlyChart />
+          <SavesTrendChart />
+        </div>
+      </div>
+
+      <div className="analytics-tab-section">
+        <h3 className="analytics-section-title">General Analytics</h3>
+        <div className="analytics-grid">
+          <TopJobsChart />
+          <FunnelChart />
+          <GeoTable />
+          <MemberDashboard />
+        </div>
       </div>
     </section>
   )

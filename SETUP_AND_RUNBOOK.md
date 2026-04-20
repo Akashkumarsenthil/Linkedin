@@ -496,8 +496,48 @@ python generate_charts.py results.json
 # Produces 5 PNGs in load_tests/results/
 ```
 
-See `REQUIRED_PERFORMANCE_COMPARISON_REPORT.md` for full methodology, mode
-definitions, and interpretation guide.
+**Measured results (live Docker stack, Apple Silicon MacBook)**
+
+*Scenario A — Read path (100 concurrent users, 30 s per mode)*
+
+| Mode | Requests | RPS | P50 | P95 | P99 | Err% |
+|------|---------|-----|-----|-----|-----|------|
+| B (cold cache) | 27,338 | 905.9 | 3.0 ms | 25.5 ms | 129.1 ms | 0.0% |
+| B+S (warm cache) | 28,572 | 945.6 | 2.4 ms | 6.2 ms | 17.1 ms | 0.0% |
+| B+S+K | 28,296 | 935.2 | 2.3 ms | 6.8 ms | 30.0 ms | 0.0% |
+| B+S+K+O | 28,387 | 939.0 | 2.4 ms | 6.2 ms | 16.5 ms | 0.0% |
+
+Redis warm cache reduces P95 tail latency from 25.5 ms to 6.2 ms (4× improvement).
+Throughput improvement is modest (+4%) because MySQL on localhost is already fast.
+
+*Scenario B — Write path (20 concurrent users, 30 s per mode)*
+
+> **Note:** Scenario B at 100 users produced 67–100% timeout errors due to a
+> synchronous SQLAlchemy `Session` inside an `async def` endpoint blocking the
+> event loop. Valid measurements use 20 users (capacity ceiling on this setup).
+
+| Mode | Requests | RPS | P50 | P95 | P99 | Err% |
+|------|---------|-----|-----|-----|-----|------|
+| B | 2,853 | 94.2 | 6.1 ms | 16.6 ms | 84.4 ms | 0.0% |
+| B+S | 2,897 | 95.9 | 4.2 ms | 12.7 ms | 30.5 ms | 0.0% |
+| B+S+K | 2,890 | 95.6 | 4.6 ms | 13.4 ms | 21.8 ms | 0.0% |
+| B+S+K+O | 2,875 | 95.1 | 4.8 ms | 12.7 ms | 20.6 ms | 0.0% |
+
+Write throughput is flat across modes — the ceiling is the MySQL INSERT +
+`applicants_count` UPDATE, not caching or Kafka overhead.
+
+*Deployment scaling (single vs 3-replica, estimated)*
+
+| Scenario | Single RPS | 3-Replica est. | Factor |
+|----------|-----------|----------------|--------|
+| A (Reads, 100u) | 939.0 | ~2,066 | 2.2× |
+| B (Writes, 20u) | 95.1 | ~171 | 1.8× |
+
+Reads scale better because Redis absorbs most traffic across replicas.
+Writes scale less due to MySQL row-level locks on the `applicants_count` UPDATE.
+
+**Fix for Scenario B 100-user failure:** Switch to SQLAlchemy 2.x `AsyncSession`
+or change the endpoint to `def` (sync) so FastAPI offloads DB calls to a thread pool.
 
 ---
 

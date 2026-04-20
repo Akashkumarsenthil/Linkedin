@@ -919,13 +919,12 @@ curl -s -X POST http://localhost:8000/ai/parse-resume \
 
 ---
 
-## Additional Documentation
+## Documentation
 
 | Document | Contents |
 |----------|---------|
-| [`SETUP_AND_RUNBOOK.md`](SETUP_AND_RUNBOOK.md) | Comprehensive setup, seeding, dataset loading, AI evaluation, performance benchmarking, K8s deployment, demo-day runbook, troubleshooting |
-| [`REQUIRED_PERFORMANCE_COMPARISON_REPORT.md`](REQUIRED_PERFORMANCE_COMPARISON_REPORT.md) | Four-mode performance comparison methodology and results |
-| [`FINAL_REQUIREMENTS_ALIGNMENT_REPORT.md`](FINAL_REQUIREMENTS_ALIGNMENT_REPORT.md) | Evidence-driven audit of every class requirement against actual code |
+| [`API_DESIGN_DOCUMENT.md`](API_DESIGN_DOCUMENT.md) | Full REST API reference — all endpoints, schemas, auth, pagination, Kafka topics, AI workflow, analytics, performance results |
+| [`SETUP_AND_RUNBOOK.md`](SETUP_AND_RUNBOOK.md) | Setup, seeding, dataset loading, AI evaluation, performance benchmarking (with measured results), K8s deployment, demo-day runbook, troubleshooting |
 
 ---
 
