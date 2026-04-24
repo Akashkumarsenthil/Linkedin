@@ -2,21 +2,21 @@ import { useEffect, useState } from 'react'
 
 interface Activity {
   id: number
-  icon: string
+  initial: string
   title: string
   time: string
   accent: 'blue' | 'green' | 'purple' | 'orange'
 }
 
 const SEED: Omit<Activity, 'id' | 'time'>[] = [
-  { icon: '💼', title: 'Senior ML Engineer posted by Acme Corp', accent: 'blue' },
-  { icon: '🎯', title: 'AI shortlist approved for Backend Engineer role', accent: 'green' },
-  { icon: '🤝', title: 'Jane Smith accepted your connection', accent: 'purple' },
-  { icon: '✉', title: 'New message from recruiter at Globex', accent: 'blue' },
-  { icon: '📈', title: '1,247 profile views this week', accent: 'orange' },
-  { icon: '🚀', title: 'Hiring Assistant completed 3 workflows', accent: 'green' },
-  { icon: '⚡', title: 'Kafka processed 12.4k events in the last hour', accent: 'blue' },
-  { icon: '🧠', title: 'Resume parser extracted 48 skills', accent: 'purple' },
+  { initial: 'M', title: 'Senior ML Engineer posted by Acme Corp', accent: 'blue' },
+  { initial: 'A', title: 'AI shortlist approved for Backend Engineer role', accent: 'green' },
+  { initial: 'J', title: 'Jane Smith accepted your connection', accent: 'purple' },
+  { initial: 'R', title: 'New message from recruiter at Globex', accent: 'blue' },
+  { initial: 'P', title: '1,247 profile views this week', accent: 'orange' },
+  { initial: 'H', title: 'Hiring Assistant completed 3 workflows', accent: 'green' },
+  { initial: 'K', title: 'Kafka processed 12.4k events in the last hour', accent: 'blue' },
+  { initial: 'R', title: 'Resume parser extracted 48 skills', accent: 'purple' },
 ]
 
 function timeAgo(ms: number): string {
@@ -49,14 +49,14 @@ export function ActivityFeed() {
       <div className="activity-header">
         <div className="activity-title-wrap">
           <span className="live-pulse" />
-          <h3 className="activity-title">Live Network Activity</h3>
+          <h3 className="activity-title">Network Activity</h3>
         </div>
-        <span className="activity-sub">Streaming from Kafka</span>
+        <span className="activity-sub">Live</span>
       </div>
       <ul className="activity-list">
         {items.map((it) => (
           <li key={it.id} className={`activity-item accent-${it.accent}`}>
-            <span className="activity-icon">{it.icon}</span>
+            <span className="activity-icon">{it.initial}</span>
             <div className="activity-body">
               <span className="activity-line">{it.title}</span>
               <span className="activity-time">{it.time}</span>

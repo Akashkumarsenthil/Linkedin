@@ -444,7 +444,7 @@ export function AiDashboard() {
           <div className="ai-detail-pane">
             {!selectedTaskId && (
               <div className="ai-detail-empty">
-                <div className="ai-empty-icon">🤖</div>
+                <div className="ai-empty-icon">AI</div>
                 <p className="ai-empty-msg">Select a task or start a new analysis to see results here.</p>
               </div>
             )}

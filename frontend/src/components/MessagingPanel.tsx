@@ -161,7 +161,6 @@ export function MessagingPanel() {
           <h2 className="panel-title">Messaging</h2>
         </div>
         <div className="auth-prompt-card">
-          <span className="auth-prompt-icon">✉</span>
           <p className="auth-prompt-title">Sign in to access your messages</p>
           <p className="auth-prompt-sub">
             Connect with recruiters and professionals via private threads.
@@ -261,7 +260,6 @@ export function MessagingPanel() {
           {!selectedId ? (
             <div className="msg-empty">
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 32, opacity: .3 }}>✉</span>
                 <p>Select a conversation to read messages</p>
               </div>
             </div>
