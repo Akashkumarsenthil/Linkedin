@@ -10,7 +10,7 @@ from database import get_db
 from models.recruiter import Recruiter
 from auth import require_recruiter, TokenPayload
 from schemas.recruiter import (
-    RecruiterCreate, RecruiterGet, RecruiterUpdate, RecruiterDelete,
+    RecruiterGet, RecruiterUpdate, RecruiterDelete,
     RecruiterResponse, RecruiterListResponse,
 )
 from cache import cache
@@ -19,30 +19,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/recruiters", tags=["Recruiter Service"])
 
 
-@router.post("/create", response_model=RecruiterResponse, summary="Create a new recruiter")
-async def create_recruiter(req: RecruiterCreate, db: Session = Depends(get_db)):
-    """Create a new recruiter/employer admin account."""
-    existing = db.query(Recruiter).filter(Recruiter.email == req.email).first()
-    if existing:
-        return RecruiterResponse(success=False, message=f"Email '{req.email}' already exists")
-
-    recruiter = Recruiter(
-        first_name=req.first_name,
-        last_name=req.last_name,
-        email=req.email,
-        phone=req.phone,
-        company_id=req.company_id,
-        company_name=req.company_name,
-        company_industry=req.company_industry,
-        company_size=req.company_size,
-        role=req.role,
-        access_level=req.access_level,
-    )
-    db.add(recruiter)
-    db.commit()
-    db.refresh(recruiter)
-
-    return RecruiterResponse(success=True, message="Recruiter created successfully", data=recruiter.to_dict())
+# NOTE: Creating a recruiter profile is intentionally not exposed as a public
+# endpoint.  New recruiter accounts must be created through
+# `POST /auth/register/recruiter`, which atomically creates both the profile
+# *and* the login credentials.  Exposing a raw create endpoint would allow any
+# caller to seed orphan recruiter rows with no associated password.
 
 
 @router.post("/get", response_model=RecruiterResponse, summary="Get recruiter by ID")

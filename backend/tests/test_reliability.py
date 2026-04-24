@@ -36,80 +36,118 @@ def _unique_email(prefix: str = "user") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@reliability.test"
 
 
+_TEST_PASSWORD = "ReliabilityTest123!"
+
+
+def _auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _create_member(client: TestClient, email: str | None = None) -> dict:
+    """Register a new member via the public sign-up endpoint.
+
+    Returns a dict compatible with the previous `/members/create` response shape
+    (`member_id`, `email`) plus the JWT `access_token` so callers can exercise
+    protected endpoints on behalf of this user.
+    """
     email = email or _unique_email("member")
-    r = client.post("/members/create", json={
+    r = client.post("/auth/register/member", json={
         "first_name": "Test",
         "last_name": "User",
         "email": email,
+        "password": _TEST_PASSWORD,
     })
-    assert r.status_code == 200
+    assert r.status_code == 201, f"Member registration failed: {r.status_code} {r.text}"
     body = r.json()
-    assert body["success"] is True, f"Member creation failed: {body}"
-    return body["data"]
+    return {
+        "member_id": body["user_id"],
+        "email": body["email"],
+        "access_token": body["access_token"],
+    }
 
 
 def _create_recruiter(client: TestClient, email: str | None = None) -> dict:
+    """Register a new recruiter via the public sign-up endpoint."""
     email = email or _unique_email("recruiter")
-    r = client.post("/recruiters/create", json={
+    r = client.post("/auth/register/recruiter", json={
         "first_name": "Test",
         "last_name": "Recruiter",
         "email": email,
+        "password": _TEST_PASSWORD,
         "company_name": "TestCo",
     })
-    assert r.status_code == 200
+    assert r.status_code == 201, f"Recruiter registration failed: {r.status_code} {r.text}"
     body = r.json()
-    assert body["success"] is True, f"Recruiter creation failed: {body}"
-    return body["data"]
+    return {
+        "recruiter_id": body["user_id"],
+        "email": body["email"],
+        "access_token": body["access_token"],
+    }
 
 
-def _create_job(client: TestClient, recruiter_id: int, status: str = "open") -> dict:
-    r = client.post("/jobs/create", json={
-        "recruiter_id": recruiter_id,
-        "title": "Test Engineer",
-        "description": "Reliability test job",
-        "employment_type": "full_time",
-    })
+def _create_job(client: TestClient, recruiter_id: int, token: str, status: str = "open") -> dict:
+    r = client.post(
+        "/jobs/create",
+        json={
+            "recruiter_id": recruiter_id,
+            "title": "Test Engineer",
+            "description": "Reliability test job",
+            "employment_type": "full_time",
+        },
+        headers=_auth_headers(token),
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["success"] is True, f"Job creation failed: {body}"
     job = body["data"]
 
     if status == "closed":
-        rc = client.post("/jobs/close", json={"job_id": job["job_id"]})
+        rc = client.post(
+            "/jobs/close",
+            json={"job_id": job["job_id"]},
+            headers=_auth_headers(token),
+        )
         assert rc.status_code == 200
         assert rc.json()["success"] is True
 
     return job
 
 
-def _delete_member(client: TestClient, member_id: int):
-    client.post("/members/delete", json={"member_id": member_id})
+def _delete_member(client: TestClient, member_id: int, token: str):
+    client.post(
+        "/members/delete",
+        json={"member_id": member_id},
+        headers=_auth_headers(token),
+    )
 
 
-def _delete_recruiter(client: TestClient, recruiter_id: int):
-    client.post("/recruiters/delete", json={"recruiter_id": recruiter_id})
+def _delete_recruiter(client: TestClient, recruiter_id: int, token: str):
+    client.post(
+        "/recruiters/delete",
+        json={"recruiter_id": recruiter_id},
+        headers=_auth_headers(token),
+    )
 
 
 # ── 1. Duplicate email / user ─────────────────────────────────────────────────
 
 @pytest.mark.integration
 def test_duplicate_member_email(client: TestClient):
-    """Registering two members with the same email must return success:False on the second call."""
+    """Registering two members with the same email must be rejected (HTTP 409)."""
     email = _unique_email("dup_member")
     first = _create_member(client, email)
     member_id = first["member_id"]
+    token = first["access_token"]
 
     try:
-        r = client.post("/members/create", json={
+        r = client.post("/auth/register/member", json={
             "first_name": "Dupe",
             "last_name": "User",
             "email": email,
+            "password": _TEST_PASSWORD,
         })
-        assert r.status_code == 200
-        body = r.json()
-        assert body["success"] is False, "Expected success:False for duplicate email"
-        assert "already exists" in body["message"].lower() or "email" in body["message"].lower()
+        assert r.status_code == 409, f"Expected 409 for duplicate email, got {r.status_code} {r.text}"
+        assert "already" in r.json().get("detail", "").lower()
 
         # Confirm DB-level count = 1
         from database import SessionLocal
@@ -121,27 +159,27 @@ def test_duplicate_member_email(client: TestClient):
         finally:
             db.close()
     finally:
-        _delete_member(client, member_id)
+        _delete_member(client, member_id, token)
 
 
 @pytest.mark.integration
 def test_duplicate_recruiter_email(client: TestClient):
-    """Registering two recruiters with the same email must return success:False on the second call."""
+    """Registering two recruiters with the same email must be rejected (HTTP 409)."""
     email = _unique_email("dup_recruiter")
     first = _create_recruiter(client, email)
     recruiter_id = first["recruiter_id"]
+    token = first["access_token"]
 
     try:
-        r = client.post("/recruiters/create", json={
+        r = client.post("/auth/register/recruiter", json={
             "first_name": "Dupe",
             "last_name": "Recruiter",
             "email": email,
+            "password": _TEST_PASSWORD,
             "company_name": "DupeCo",
         })
-        assert r.status_code == 200
-        body = r.json()
-        assert body["success"] is False, "Expected success:False for duplicate recruiter email"
-        assert "already exists" in body["message"].lower() or "email" in body["message"].lower()
+        assert r.status_code == 409, f"Expected 409 for duplicate email, got {r.status_code} {r.text}"
+        assert "already" in r.json().get("detail", "").lower()
 
         from database import SessionLocal
         from models.recruiter import Recruiter
@@ -152,7 +190,7 @@ def test_duplicate_recruiter_email(client: TestClient):
         finally:
             db.close()
     finally:
-        _delete_recruiter(client, recruiter_id)
+        _delete_recruiter(client, recruiter_id, token)
 
 
 # ── 2. Duplicate application to same job ──────────────────────────────────────
@@ -166,7 +204,7 @@ def test_duplicate_application(client: TestClient):
     member_id = member["member_id"]
 
     try:
-        job = _create_job(client, recruiter_id)
+        job = _create_job(client, recruiter_id, recruiter["access_token"])
         job_id = job["job_id"]
 
         payload = {"job_id": job_id, "member_id": member_id}
@@ -194,8 +232,8 @@ def test_duplicate_application(client: TestClient):
         finally:
             db.close()
     finally:
-        _delete_member(client, member_id)   # CASCADE deletes applications
-        _delete_recruiter(client, recruiter_id)  # CASCADE deletes jobs
+        _delete_member(client, member_id, member["access_token"])
+        _delete_recruiter(client, recruiter_id, recruiter["access_token"])
 
 
 # ── 3. Apply to closed job ────────────────────────────────────────────────────
@@ -209,7 +247,7 @@ def test_apply_to_closed_job(client: TestClient):
     member_id = member["member_id"]
 
     try:
-        job = _create_job(client, recruiter_id, status="closed")
+        job = _create_job(client, recruiter_id, recruiter["access_token"], status="closed")
         job_id = job["job_id"]
 
         r = client.post("/applications/submit", json={
@@ -233,8 +271,8 @@ def test_apply_to_closed_job(client: TestClient):
         finally:
             db.close()
     finally:
-        _delete_member(client, member_id)
-        _delete_recruiter(client, recruiter_id)
+        _delete_member(client, member_id, member["access_token"])
+        _delete_recruiter(client, recruiter_id, recruiter["access_token"])
 
 
 # ── 4 + 6. Message send success baseline and retry / rollback exhaustion ──────
@@ -272,7 +310,7 @@ def test_message_send_success_and_db_state(client: TestClient):
         finally:
             db.close()
     finally:
-        _delete_member(client, member_id)
+        _delete_member(client, member_id, member["access_token"])
 
 
 @pytest.mark.integration
@@ -363,7 +401,7 @@ def test_message_send_retry_exhausted(client: TestClient):
             verify_db.close()
     finally:
         app.dependency_overrides.pop(get_db, None)
-        _delete_member(client, member_id)
+        _delete_member(client, member_id, member["access_token"])
 
 
 # ── Shared Kafka mock helpers ─────────────────────────────────────────────────

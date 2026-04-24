@@ -23,7 +23,7 @@ class Member(Base):
     experience = Column(JSON)
     education = Column(JSON)
     skills = Column(JSON)
-    profile_photo_url = Column(String(500))
+    profile_photo_url = Column(Text)
     resume_text = Column(Text)
     connections_count = Column(Integer, default=0)
     profile_views = Column(Integer, default=0)
