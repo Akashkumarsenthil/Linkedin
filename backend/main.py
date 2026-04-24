@@ -13,10 +13,11 @@ from config import settings
 from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
-from routers import auth_router
+from routers import auth_router, posts, notifications
 from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
 from database import create_mongo_indexes, engine, Base
 import models.user_credentials  # register model with Base.metadata before create_all
+import models.post  # register Post & PostLike so create_all picks them up
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -64,6 +65,21 @@ async def lifespan(app: FastAPI):
         logger.info("✓ SQL tables verified / created")
     except Exception as e:
         logger.warning(f"✗ SQL table creation failed: {e}")
+
+    # Idempotent schema migration: widen profile_photo_url so users can store
+    # inline base64 data URLs uploaded from the profile page (VARCHAR(500) is
+    # too small for even a small JPEG).  MEDIUMTEXT holds up to 16 MB.
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text(
+                "ALTER TABLE members MODIFY COLUMN profile_photo_url MEDIUMTEXT"
+            ))
+            conn.commit()
+        logger.info("✓ members.profile_photo_url widened to MEDIUMTEXT")
+    except Exception as e:
+        # Safe to ignore — column is already the right type on subsequent boots.
+        logger.debug(f"profile_photo_url widen skipped: {e}")
 
     # Ensure MongoDB indexes exist
     try:
@@ -162,6 +178,8 @@ app.include_router(connections.router)
 app.include_router(analytics.router)
 app.include_router(ai_service.router)
 app.include_router(auth_router.router)
+app.include_router(posts.router)
+app.include_router(notifications.router)
 
 
 # ─── Health Check ──────────────────────────────────────────────
