@@ -180,7 +180,8 @@ async def root():
 async def health_check():
     """Detailed health check with dependency status."""
     from cache import cache
-    from database import mongo_client
+    from database import mongo_client, engine
+    from sqlalchemy import text
 
     mongo_ok = False
     try:
@@ -189,17 +190,25 @@ async def health_check():
     except Exception:
         mongo_ok = False
 
-    health = {
-        "status": "healthy",
-        "services": {
-            "api": True,
-            "redis": cache.health_check(),
-            "kafka_producer": kafka_producer.producer is not None,
-            "mongodb": mongo_ok,
-        },
+    mysql_ok = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        mysql_ok = True
+    except Exception:
+        mysql_ok = False
+
+    services = {
+        "api": True,
+        "mysql": mysql_ok,
+        "mongo": mongo_ok,
+        "redis": cache.health_check(),
+        "kafka": kafka_producer.producer is not None,
     }
 
-    if not all(health["services"].values()):
-        health["status"] = "degraded"
-
-    return health
+    return {
+        "status": "healthy" if all(services.values()) else "degraded",
+        "services": services,
+        # Back-compat keys (flat) so UIs that check root-level still work
+        **{k: ("ok" if v else "down") for k, v in services.items()},
+    }
