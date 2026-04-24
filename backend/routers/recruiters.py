@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.recruiter import Recruiter
+from auth import require_recruiter, TokenPayload
 from schemas.recruiter import (
     RecruiterCreate, RecruiterGet, RecruiterUpdate, RecruiterDelete,
     RecruiterResponse, RecruiterListResponse,
@@ -62,8 +63,15 @@ async def get_recruiter(req: RecruiterGet, db: Session = Depends(get_db)):
 
 
 @router.post("/update", response_model=RecruiterResponse, summary="Update recruiter fields")
-async def update_recruiter(req: RecruiterUpdate, db: Session = Depends(get_db)):
-    """Update specific fields of a recruiter's profile."""
+async def update_recruiter(
+    req: RecruiterUpdate,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """Update specific fields of a recruiter's own profile."""
+    if req.recruiter_id != current_user.user_id:
+        return RecruiterResponse(success=False, message="Cannot update another recruiter's profile")
+
     recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == req.recruiter_id).first()
     if not recruiter:
         return RecruiterResponse(success=False, message=f"Recruiter {req.recruiter_id} not found")
@@ -81,8 +89,15 @@ async def update_recruiter(req: RecruiterUpdate, db: Session = Depends(get_db)):
 
 
 @router.post("/delete", response_model=RecruiterResponse, summary="Delete a recruiter")
-async def delete_recruiter(req: RecruiterDelete, db: Session = Depends(get_db)):
-    """Permanently delete a recruiter account."""
+async def delete_recruiter(
+    req: RecruiterDelete,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """Permanently delete a recruiter's own account."""
+    if req.recruiter_id != current_user.user_id:
+        return RecruiterResponse(success=False, message="Cannot delete another recruiter's profile")
+
     recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == req.recruiter_id).first()
     if not recruiter:
         return RecruiterResponse(success=False, message=f"Recruiter {req.recruiter_id} not found")

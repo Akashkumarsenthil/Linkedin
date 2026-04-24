@@ -13,6 +13,10 @@ from config import settings
 from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
+from routers import auth_router
+from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
+from database import create_mongo_indexes, engine, Base
+import models.user_credentials  # register model with Base.metadata before create_all
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -45,6 +49,7 @@ async def lifespan(app: FastAPI):
             "job.viewed", "job.saved", "job.created", "job.closed",
             "application.submitted", "application.statusChanged",
             "message.sent", "connection.requested", "connection.accepted",
+            "profile.viewed",
             "ai.requests", "ai.results",
         ]
         await kafka_consumer.start(topics)
@@ -52,6 +57,30 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Kafka consumer started")
     except Exception as e:
         logger.warning(f"✗ Kafka consumer failed to start: {e}")
+
+    # Create any missing SQL tables (idempotent — adds user_credentials if not exists)
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        logger.info("✓ SQL tables verified / created")
+    except Exception as e:
+        logger.warning(f"✗ SQL table creation failed: {e}")
+
+    # Ensure MongoDB indexes exist
+    try:
+        await create_mongo_indexes()
+    except Exception as e:
+        logger.warning(f"✗ MongoDB index creation failed: {e}")
+
+    # Rehydrate AI task state from MongoDB
+    try:
+        restored = await rehydrate_tasks()
+        logger.info(f"✓ AI task rehydration complete ({restored} task(s) restored/re-queued)")
+    except Exception as e:
+        logger.warning(f"✗ AI task rehydration failed: {e}")
+
+    # Start AI workflow dispatcher (bounded-concurrency queue drain)
+    dispatcher_task = asyncio.create_task(run_dispatcher(), name="ai-dispatcher")
+    logger.info("✓ AI workflow dispatcher started")
 
     logger.info("✓ All services ready")
     logger.info(f"  Swagger UI:  http://localhost:8000/docs")
@@ -62,6 +91,11 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down services...")
+    dispatcher_task.cancel()
+    try:
+        await asyncio.gather(dispatcher_task, return_exceptions=True)
+    except Exception:
+        pass
     try:
         await kafka_producer.stop()
     except Exception:
@@ -127,6 +161,7 @@ app.include_router(messages.router)
 app.include_router(connections.router)
 app.include_router(analytics.router)
 app.include_router(ai_service.router)
+app.include_router(auth_router.router)
 
 
 # ─── Health Check ──────────────────────────────────────────────

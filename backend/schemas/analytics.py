@@ -48,6 +48,21 @@ class MemberDashboardRequest(BaseModel):
     member_id: int
 
 
+class LeastAppliedRequest(BaseModel):
+    limit: int = Field(5, ge=1, le=20)
+    window_days: int = Field(90, ge=1, le=365, description="Look-back window in days")
+
+
+class SavesTrendRequest(BaseModel):
+    window_days: int = Field(30, ge=1, le=365, description="Look-back window in days")
+    granularity: str = Field("day", description="Grouping: day or week")
+
+
+class ClicksPerJobRequest(BaseModel):
+    limit: int = Field(10, ge=1, le=50)
+    window_days: int = Field(30, ge=1, le=365)
+
+
 class AnalyticsResponse(BaseModel):
     success: bool
     message: str

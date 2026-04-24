@@ -1,0 +1,65 @@
+# Ollama — local LLM inference server for resume parsing
+# The model must be pulled once after the pod starts:
+#   kubectl exec -n linkedin-platform deploy/ollama -- ollama pull llama3.2
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-pvc
+  namespace: linkedin-platform
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi        # LLM model files are large (~2-4 GB for llama3.2)
+  storageClassName: gp2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: linkedin-platform
+  labels:
+    app: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: linkedin-platform
+spec:
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434

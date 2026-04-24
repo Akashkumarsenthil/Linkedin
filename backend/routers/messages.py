@@ -10,6 +10,7 @@ from sqlalchemy import desc
 
 from database import get_db
 from models.message import Thread, ThreadParticipant, Message
+from auth import get_current_user, TokenPayload
 from schemas.message import (
     ThreadOpen, ThreadGet, ThreadsByUser, MessageSend, MessageList,
     MessageResponse, MessageListResponse,
@@ -21,9 +22,13 @@ router = APIRouter(tags=["Messaging Service"])
 
 
 @router.post("/threads/open", response_model=MessageResponse, summary="Open/create a message thread")
-async def open_thread(req: ThreadOpen, db: Session = Depends(get_db)):
+async def open_thread(
+    req: ThreadOpen,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
     """
-    Create a new messaging thread between participants.
+    Create a new messaging thread between participants. Requires authentication.
     Each participant is identified by user_id and user_type (member/recruiter).
     """
     thread = Thread(subject=req.subject)
@@ -107,11 +112,19 @@ async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
 
 
 @router.post("/messages/send", response_model=MessageResponse, summary="Send a message")
-async def send_message(req: MessageSend, db: Session = Depends(get_db)):
+async def send_message(
+    req: MessageSend,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
     """
     Send a message in a thread. Includes retry logic for failure handling.
     Publishes a message.sent event to Kafka.
     """
+    # Enforce caller can only send as themselves
+    if req.sender_id != current_user.user_id:
+        return MessageResponse(success=False, message="Cannot send message on behalf of another user")
+
     # Verify thread exists
     thread = db.query(Thread).filter(Thread.thread_id == req.thread_id).first()
     if not thread:

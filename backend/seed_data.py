@@ -62,7 +62,7 @@ class SeedProfile:
 
 PROFILE_FULL = SeedProfile(
     members=10_000,
-    recruiters=500,
+    recruiters=10_000,
     jobs=10_000,
     applications=15_000,
     connections=20_000,
