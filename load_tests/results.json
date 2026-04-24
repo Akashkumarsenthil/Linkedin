@@ -1,0 +1,204 @@
+{
+  "parameters": {
+    "users": 100,
+    "duration_s": 30,
+    "host": "http://localhost:8000",
+    "member_id_max": 60,
+    "job_id_max": 50,
+    "sample_data": false,
+    "run_date": "2026-04-06",
+    "machine": "single-host Docker (MacOS, Apple Silicon)",
+    "notes": "Scenario B at 100 users hit connection-pool exhaustion (see supplemental results)"
+  },
+  "results": [
+    {
+      "mode": "B",
+      "scenario": "A",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 27338,
+      "total_failures": 0,
+      "throughput_rps": 905.88,
+      "mean_ms": 7.9,
+      "p50_ms": 3.01,
+      "p95_ms": 25.45,
+      "p99_ms": 129.11,
+      "min_ms": 0.75,
+      "max_ms": 234.46,
+      "error_rate": 0.0
+    },
+    {
+      "mode": "B+S",
+      "scenario": "A",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 28572,
+      "total_failures": 0,
+      "throughput_rps": 945.58,
+      "mean_ms": 3.2,
+      "p50_ms": 2.38,
+      "p95_ms": 6.16,
+      "p99_ms": 17.05,
+      "min_ms": 0.77,
+      "max_ms": 94.51,
+      "error_rate": 0.0
+    },
+    {
+      "mode": "B+S+K",
+      "scenario": "A",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 28296,
+      "total_failures": 0,
+      "throughput_rps": 935.21,
+      "mean_ms": 4.09,
+      "p50_ms": 2.33,
+      "p95_ms": 6.83,
+      "p99_ms": 29.97,
+      "min_ms": 0.76,
+      "max_ms": 425.73,
+      "error_rate": 0.0
+    },
+    {
+      "mode": "B+S+K+O",
+      "scenario": "A",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 28387,
+      "total_failures": 0,
+      "throughput_rps": 938.98,
+      "mean_ms": 3.23,
+      "p50_ms": 2.36,
+      "p95_ms": 6.2,
+      "p99_ms": 16.51,
+      "min_ms": 0.7,
+      "max_ms": 105.11,
+      "error_rate": 0.0
+    },
+    {
+      "mode": "B",
+      "scenario": "B",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 262,
+      "total_failures": 200,
+      "throughput_rps": 8.35,
+      "mean_ms": 11513.76,
+      "p50_ms": 15001.88,
+      "p95_ms": 15004.16,
+      "p99_ms": 15028.9,
+      "min_ms": 81.29,
+      "max_ms": 15037.17,
+      "error_rate": 76.34
+    },
+    {
+      "mode": "B+S",
+      "scenario": "B",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 200,
+      "total_failures": 200,
+      "throughput_rps": 6.52,
+      "mean_ms": 15003.25,
+      "p50_ms": 15002.43,
+      "p95_ms": 15008.55,
+      "p99_ms": 15011.22,
+      "min_ms": 15000.88,
+      "max_ms": 15011.64,
+      "error_rate": 100.0
+    },
+    {
+      "mode": "B+S+K",
+      "scenario": "B",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 200,
+      "total_failures": 200,
+      "throughput_rps": 6.52,
+      "mean_ms": 15003.82,
+      "p50_ms": 15002.45,
+      "p95_ms": 15010.02,
+      "p99_ms": 15018.95,
+      "min_ms": 15000.85,
+      "max_ms": 15019.36,
+      "error_rate": 100.0
+    },
+    {
+      "mode": "B+S+K+O",
+      "scenario": "B",
+      "users": 100,
+      "duration_s": 30,
+      "total_requests": 295,
+      "total_failures": 200,
+      "throughput_rps": 9.43,
+      "mean_ms": 10235.0,
+      "p50_ms": 15001.48,
+      "p95_ms": 15003.65,
+      "p99_ms": 15031.78,
+      "min_ms": 31.5,
+      "max_ms": 15037.48,
+      "error_rate": 67.8
+    }
+  ],
+  "supplemental": {
+    "scenario_b_20_users": {
+      "description": "Scenario B re-run at 20 concurrent users — clean baseline free of pool exhaustion",
+      "users": 20,
+      "duration_s": 30,
+      "results": [
+        {
+          "mode": "B",
+          "throughput_rps": 94.15,
+          "mean_ms": 8.13,
+          "p50_ms": 6.05,
+          "p95_ms": 16.62,
+          "p99_ms": 84.43,
+          "error_rate": 0.0
+        },
+        {
+          "mode": "B+S",
+          "throughput_rps": 95.88,
+          "mean_ms": 5.7,
+          "p50_ms": 4.18,
+          "p95_ms": 12.67,
+          "p99_ms": 30.51,
+          "error_rate": 0.0
+        },
+        {
+          "mode": "B+S+K",
+          "throughput_rps": 95.55,
+          "mean_ms": 5.83,
+          "p50_ms": 4.62,
+          "p95_ms": 13.43,
+          "p99_ms": 21.83,
+          "error_rate": 0.0
+        },
+        {
+          "mode": "B+S+K+O",
+          "throughput_rps": 95.1,
+          "mean_ms": 5.79,
+          "p50_ms": 4.83,
+          "p95_ms": 12.67,
+          "p99_ms": 20.56,
+          "error_rate": 0.0
+        }
+      ]
+    },
+    "scenario_b_50_users": {
+      "description": "Scenario B at 50 concurrent users — mode B only, still clean",
+      "users": 50,
+      "duration_s": 30,
+      "results": [
+        {
+          "mode": "B",
+          "throughput_rps": 240.35,
+          "mean_ms": 5.68,
+          "p50_ms": 4.19,
+          "p95_ms": 12.09,
+          "p99_ms": 35.54,
+          "error_rate": 0.0
+        }
+      ]
+    }
+  }
+}

@@ -155,6 +155,17 @@ CREATE TABLE saved_jobs (
     UNIQUE KEY unique_saved (member_id, job_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ─── User Credentials (auth) ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_credentials (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_type ENUM('member', 'recruiter') NOT NULL,
+    user_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ─── Daily Profile Views (for analytics) ────────────────────────
 CREATE TABLE profile_views_daily (
     id INT AUTO_INCREMENT PRIMARY KEY,

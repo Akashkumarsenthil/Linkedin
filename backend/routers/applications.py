@@ -12,6 +12,7 @@ from database import get_db
 from models.application import Application
 from models.job import JobPosting
 from models.member import Member
+from auth import require_member, require_recruiter, TokenPayload
 from schemas.application import (
     ApplicationSubmit, ApplicationGet, ApplicationByJob, ApplicationByMember,
     ApplicationUpdateStatus, ApplicationAddNote,
@@ -27,11 +28,19 @@ VALID_STATUSES = {"submitted", "reviewing", "rejected", "interview", "offer"}
 
 
 @router.post("/submit", response_model=ApplicationResponse, summary="Submit a job application")
-async def submit_application(req: ApplicationSubmit, db: Session = Depends(get_db)):
+async def submit_application(
+    req: ApplicationSubmit,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_member),
+):
     """
     Submit an application to a job posting.
     Handles: duplicate application, closed job, and missing member/job errors.
     """
+    # Enforce caller can only submit as themselves
+    if req.member_id != current_user.user_id:
+        return ApplicationResponse(success=False, message="Cannot submit application on behalf of another member")
+
     # Check job exists and is open
     job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
     if not job:
@@ -104,8 +113,18 @@ async def get_application(req: ApplicationGet, db: Session = Depends(get_db)):
 
 
 @router.post("/byJob", response_model=ApplicationListResponse, summary="List applications for a job")
-async def applications_by_job(req: ApplicationByJob, db: Session = Depends(get_db)):
-    """List all applications for a specific job posting (recruiter view)."""
+async def applications_by_job(
+    req: ApplicationByJob,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """List all applications for a specific job posting. Only the posting recruiter may access."""
+    job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
+    if not job:
+        return ApplicationListResponse(success=False, message=f"Job {req.job_id} not found", data=[], total=0)
+    if job.recruiter_id != current_user.user_id:
+        return ApplicationListResponse(success=False, message="Only the job's recruiter can view its applications", data=[], total=0)
+
     query = db.query(Application).filter(Application.job_id == req.job_id)
     total = query.count()
     offset = (req.page - 1) * req.page_size
@@ -140,9 +159,13 @@ async def applications_by_member(req: ApplicationByMember, db: Session = Depends
 
 
 @router.post("/updateStatus", response_model=ApplicationResponse, summary="Update application status")
-async def update_application_status(req: ApplicationUpdateStatus, db: Session = Depends(get_db)):
+async def update_application_status(
+    req: ApplicationUpdateStatus,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
     """
-    Update the status of an application.
+    Update the status of an application. Only the recruiter who owns the job may change status.
     Valid statuses: submitted, reviewing, rejected, interview, offer.
     """
     if req.status not in VALID_STATUSES:
@@ -154,6 +177,10 @@ async def update_application_status(req: ApplicationUpdateStatus, db: Session = 
     app = db.query(Application).filter(Application.application_id == req.application_id).first()
     if not app:
         return ApplicationResponse(success=False, message=f"Application {req.application_id} not found")
+
+    job = db.query(JobPosting).filter(JobPosting.job_id == app.job_id).first()
+    if not job or job.recruiter_id != current_user.user_id:
+        return ApplicationResponse(success=False, message="Only the job's recruiter can update application status")
 
     old_status = app.status
     app.status = req.status
@@ -181,11 +208,19 @@ async def update_application_status(req: ApplicationUpdateStatus, db: Session = 
 
 
 @router.post("/addNote", response_model=ApplicationResponse, summary="Add recruiter note")
-async def add_note(req: ApplicationAddNote, db: Session = Depends(get_db)):
-    """Add a recruiter note or decision rationale to an application."""
+async def add_note(
+    req: ApplicationAddNote,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """Add a recruiter note to an application. Only the job's recruiter may add notes."""
     app = db.query(Application).filter(Application.application_id == req.application_id).first()
     if not app:
         return ApplicationResponse(success=False, message=f"Application {req.application_id} not found")
+
+    job = db.query(JobPosting).filter(JobPosting.job_id == app.job_id).first()
+    if not job or job.recruiter_id != current_user.user_id:
+        return ApplicationResponse(success=False, message="Only the job's recruiter can add notes to applications")
 
     # Append to existing notes
     existing_notes = app.recruiter_notes or ""

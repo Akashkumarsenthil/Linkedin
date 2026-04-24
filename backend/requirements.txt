@@ -27,11 +27,16 @@ pydantic-settings==2.5.2
 httpx==0.27.2
 ollama==0.3.3
 
+# ─── Auth ───────────────────────────────────────
+PyJWT==2.9.0
+passlib[bcrypt]==1.7.4
+
 # ─── Utilities ──────────────────────────────────
 python-dotenv==1.0.1
 faker==30.3.0
 tqdm==4.66.5
 numpy==1.26.4
+pandas==2.2.3
 
 # ─── API Documentation ─────────────────────────
 pyyaml==6.0.2

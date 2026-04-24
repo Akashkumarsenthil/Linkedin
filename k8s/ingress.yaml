@@ -1,0 +1,116 @@
+# AWS ALB Ingress — routes external traffic to frontend and backend
+# Requires the AWS Load Balancer Controller to be installed on the EKS cluster:
+#   https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.html
+#
+# This creates a single internet-facing ALB with path-based routing:
+#   /              → frontend (React SPA)
+#   /jobs/*        → backend  (FastAPI)
+#   /members/*     → backend
+#   /applications/* → backend
+#   /analytics/*   → backend
+#   /ai/*          → backend
+#   /health        → backend
+#   /docs          → backend  (Swagger UI)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: linkedin-ingress
+  namespace: linkedin-platform
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    # For HTTPS, add a certificate ARN:
+    # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    # alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:ACCOUNT:certificate/CERT-ID
+spec:
+  rules:
+    - http:
+        paths:
+          # Backend API routes
+          - path: /jobs
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /members
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /applications
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /recruiters
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /messages
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /connections
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /analytics
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /ai
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /docs
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          - path: /openapi.json
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+          # Default: frontend (React SPA)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

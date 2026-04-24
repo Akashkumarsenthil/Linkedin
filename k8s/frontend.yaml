@@ -1,0 +1,59 @@
+# React frontend — served by nginx, calls the backend API
+# The backend URL is baked in at Docker build time via VITE_API_URL.
+# For EKS, set VITE_API_URL to the ALB's public DNS name at build time.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: linkedin-platform
+  labels:
+    app: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          # Replace with your ECR/registry URI after pushing:
+          #   <account-id>.dkr.ecr.<region>.amazonaws.com/linkedin-frontend:latest
+          image: linkedin-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5173
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5173
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 5173
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: linkedin-platform
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 5173

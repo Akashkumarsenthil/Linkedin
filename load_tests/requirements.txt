@@ -1,0 +1,7 @@
+# Load testing dependencies — separate from backend/requirements.txt
+# Install in your backend venv or a separate venv:
+#   pip install -r load_tests/requirements.txt
+
+locust==2.31.5
+requests==2.32.3
+redis==5.1.1        # same version as backend; needed by cache_benchmark.py

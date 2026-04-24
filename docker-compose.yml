@@ -1,5 +1,4 @@
 
-
 services:
   # ─── MySQL 8.0 ───────────────────────────────────────────────
   mysql:
@@ -36,6 +35,12 @@ services:
       - "27018:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ─── Redis 7 ─────────────────────────────────────────────────
   redis:
@@ -47,6 +52,11 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ─── Kafka (KRaft mode — no Zookeeper) ──────────────────────
   kafka:
@@ -73,8 +83,77 @@ services:
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
 
+  # ─── Ollama (Local LLM) ──────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: linkedin-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Model files are stored in the ollama_data volume — they persist across
+    # restarts.  Pull the model once after first `docker compose up`:
+    #   docker exec linkedin-ollama ollama pull llama3.2
+
+  # ─── FastAPI Backend ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: linkedin-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # ── MySQL (use Docker service name, internal port) ──
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: linkedin_user
+      MYSQL_PASSWORD: linkedin_pass
+      MYSQL_DATABASE: linkedin
+      # ── MongoDB (internal port 27017 — not the host-mapped 27018) ──
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: mongo_user
+      MONGO_PASSWORD: mongo_pass
+      MONGO_DATABASE: linkedin
+      MONGO_AUTH_SOURCE: admin
+      # ── Redis ──
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # ── Kafka (PLAINTEXT internal listener) ──
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # ── Ollama ──
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: llama3.2
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      ollama:
+        condition: service_started
+
+  # ─── React Frontend ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: linkedin-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
 volumes:
   mysql_data:
   mongo_data:
   redis_data:
   kafka_data:
+  ollama_data:
