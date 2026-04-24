@@ -4,7 +4,7 @@ JWT issuance/verification + password hashing + FastAPI dependency helpers.
 
 Library choices:
   PyJWT  — already in requirements (pip show PyJWT); lightweight, no crypto extras needed
-  passlib[bcrypt] — already installed (bcrypt==4.3.0 in the env)
+  passlib[bcrypt] — already installed (bcrypt pinned to 4.0.1; passlib 1.7.4 breaks on 4.1+)
 """
 
 import jwt
