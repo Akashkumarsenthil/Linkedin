@@ -14,7 +14,7 @@ from database import get_db
 from models.member import Member
 from auth import require_member, TokenPayload
 from schemas.member import (
-    MemberCreate, MemberGet, MemberUpdate, MemberDelete, MemberSearch,
+    MemberGet, MemberUpdate, MemberDelete, MemberSearch,
     MemberResponse, MemberListResponse,
 )
 from cache import cache
@@ -37,42 +37,11 @@ def _decode_cursor(cursor: str) -> dict:
         return {}
 
 
-@router.post("/create", response_model=MemberResponse, summary="Create a new member profile")
-async def create_member(req: MemberCreate, db: Session = Depends(get_db)):
-    """
-    Create a new member profile with all attributes.
-    Returns an error if the email already exists (duplicate prevention).
-    """
-    # Check for duplicate email
-    existing = db.query(Member).filter(Member.email == req.email).first()
-    if existing:
-        return MemberResponse(success=False, message=f"Email '{req.email}' already exists")
-
-    member = Member(
-        first_name=req.first_name,
-        last_name=req.last_name,
-        email=req.email,
-        phone=req.phone,
-        location_city=req.location_city,
-        location_state=req.location_state,
-        location_country=req.location_country,
-        headline=req.headline,
-        about=req.about,
-        experience=req.experience,
-        education=req.education,
-        skills=req.skills,
-        profile_photo_url=req.profile_photo_url,
-        resume_text=req.resume_text,
-    )
-    db.add(member)
-    db.commit()
-    db.refresh(member)
-
-    # Invalidate any cached member searches
-    cache.delete_pattern("members:search:*")
-
-    logger.info(f"Created member {member.member_id}: {member.email}")
-    return MemberResponse(success=True, message="Member created successfully", data=member.to_dict())
+# NOTE: Creating a member profile is intentionally not exposed as a public
+# endpoint.  New member accounts must be created through `POST /auth/register/member`,
+# which atomically creates both the profile *and* the login credentials.
+# This prevents orphan profile rows that have no way to sign in and closes an
+# impersonation vector where any caller could seed arbitrary member data.
 
 
 @router.post("/get", response_model=MemberResponse, summary="Get member profile by ID")
