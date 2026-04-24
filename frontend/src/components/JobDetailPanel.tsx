@@ -58,7 +58,7 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
           {loading ? 'Loading…' : job ? String(job.title) : `Job #${jobId}`}
         </h3>
         <button type="button" className="ghost-btn" onClick={onClose}>
-          ✕ Close
+          Close
         </button>
       </div>
 
@@ -79,7 +79,7 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
 
           {/* Location + stats */}
           <div className="job-detail-stats">
-            {job.location ? <span>📍 {String(job.location)}</span> : null}
+            {job.location ? <span>{String(job.location)}</span> : null}
             <span>{String(job.views_count ?? 0)} views</span>
             <span>{String(job.applicants_count ?? 0)} applicants</span>
             {postedDate && <span>Posted {postedDate}</span>}
@@ -89,7 +89,6 @@ export function JobDetailPanel({ jobId, onClose }: Props) {
           {/* Salary */}
           {(salaryMin !== null || salaryMax !== null) ? (
             <p className="job-detail-salary">
-              💰{' '}
               {salaryMin !== null ? `$${salaryMin.toLocaleString()}` : '—'}
               {salaryMax !== null ? ` – $${salaryMax.toLocaleString()}` : '+'}
               {' '}/ year

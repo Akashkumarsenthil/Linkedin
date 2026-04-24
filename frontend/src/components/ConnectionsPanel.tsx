@@ -156,7 +156,6 @@ export function ConnectionsPanel() {
           <h2 className="panel-title">Connections</h2>
         </div>
         <div className="auth-prompt-card">
-          <span className="auth-prompt-icon">🔗</span>
           <p className="auth-prompt-title">Sign in to manage your network</p>
           <p className="auth-prompt-sub">Connect with other professionals on the platform.</p>
         </div>
@@ -172,7 +171,6 @@ export function ConnectionsPanel() {
           <h2 className="panel-title">Connections</h2>
         </div>
         <div className="auth-prompt-card">
-          <span className="auth-prompt-icon">🔗</span>
           <p className="auth-prompt-title">Connections are for members</p>
           <p className="auth-prompt-sub">Log in as a member to send and manage connection requests.</p>
         </div>
@@ -192,7 +190,6 @@ export function ConnectionsPanel() {
       {/* Connections count banner */}
       {connsTotal > 0 && (
         <div className="identity-bar">
-          <span>🔗</span>
           <strong>{connsTotal}</strong>
           <span>accepted connection{connsTotal !== 1 ? 's' : ''}</span>
         </div>
