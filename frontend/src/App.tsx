@@ -7,49 +7,83 @@ import { GeoTable } from './components/GeoTable'
 import { MemberDashboard } from './components/MemberDashboard'
 import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
-import { MemberCreateForm } from './components/MemberCreateForm'
 import { JobApplyForm } from './components/JobApplyForm'
 import { JobDetailPanel } from './components/JobDetailPanel'
 import { AuthPanel } from './components/AuthPanel'
+import { ProfilePage } from './components/ProfilePage'
+import { HomeFeed } from './components/HomeFeed'
+import { NotificationsPanel } from './components/NotificationsPanel'
 import { TopMonthlyChart, LeastAppliedChart, ClicksPerJobChart } from './components/RecruiterJobCharts'
 import { GeoMonthlyChart } from './components/GeoMonthlyChart'
 import { SavesTrendChart } from './components/SavesTrendChart'
 import { AiDashboard } from './components/AiDashboard'
-import { HeroMesh } from './components/Sparkles'
 import { CountUp } from './components/CountUp'
 import { ActivityFeed } from './components/ActivityFeed'
+import { Icon } from './components/Icon'
 
-type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'auth'
+type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'notifications' | 'auth' | 'profile'
 type AuthUser = { user_id: number; user_type: 'member' | 'recruiter'; email: string } | null
 
 const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter'>> = {
-  overview:    ['guest', 'member', 'recruiter'],
-  jobs:        ['guest', 'member', 'recruiter'],
-  members:     ['guest', 'member'],
-  analytics:   ['recruiter'],
-  messages:    ['member', 'recruiter'],
-  connections: ['member'],
-  ai:          ['recruiter'],
-  auth:        ['guest', 'member', 'recruiter'],
+  overview:      ['guest', 'member', 'recruiter'],
+  jobs:          ['guest', 'member', 'recruiter'],
+  members:       ['guest', 'member'],
+  analytics:     ['recruiter'],
+  messages:      ['member', 'recruiter'],
+  connections:   ['member'],
+  notifications: ['member', 'recruiter'],
+  ai:            ['recruiter'],
+  auth:          ['guest'],
+  profile:       ['member', 'recruiter'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
-  ['overview',    'Home',        '⌂'],
-  ['jobs',        'Jobs',        '💼'],
-  ['members',     'Network',     '👥'],
-  ['analytics',   'Analytics',   '📊'],
-  ['messages',    'Messaging',   '✉'],
-  ['connections', 'Connections', '🔗'],
-  ['ai',          'AI Recruiter','✦'],
-  ['auth',        'Account',     '○'],
+  ['overview',      'Home',         'home'],
+  ['jobs',          'Jobs',         'jobs'],
+  ['members',       'Network',      'network'],
+  ['analytics',     'Analytics',    'analytics'],
+  ['messages',      'Messaging',    'messaging'],
+  ['connections',   'Connections',  'connections'],
+  ['notifications', 'Notifications','bell'],
+  ['ai',            'AI Recruiter', 'ai'],
+  ['auth',          'Sign In',      'user'],
+  ['profile',       'Me',           'user'],
 ]
+
+interface MePayload {
+  user_type: 'member' | 'recruiter'
+  user_id: number
+  email: string
+  profile: Record<string, unknown>
+}
+
+interface NotificationItem {
+  id: string
+  type: string
+  title: string
+  subtitle?: string | null
+  actor_id?: number
+  actor_type?: string
+  actor_photo_url?: string | null
+  post_id?: number
+  created_at?: string | null
+  unread?: boolean
+}
 
 function App() {
   const [tab, setTab] = useState<Tab>('overview')
   const [authUser, setAuthUser] = useState<AuthUser>(() => parseStoredUser())
   const [searchVal, setSearchVal] = useState('')
+  const [me, setMe] = useState<MePayload | null>(null)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState<number>(0)
 
-  const handleAuthChange = () => setAuthUser(parseStoredUser())
+  const handleAuthChange = () => {
+    setAuthUser(parseStoredUser())
+    setMe(null)
+    setNotifications([])
+    setUnreadCount(0)
+  }
 
   const role: 'guest' | 'member' | 'recruiter' = authUser?.user_type ?? 'guest'
   const visibleTabs = ALL_NAV.filter(([id]) => TAB_VISIBILITY[id].includes(role))
@@ -58,53 +92,115 @@ function App() {
     if (!TAB_VISIBILITY[tab].includes(role)) setTab('overview')
   }, [role, tab])
 
+  // Load my profile (for avatar photo) when signed in
+  useEffect(() => {
+    if (!authUser) {
+      setMe(null)
+      return
+    }
+    let cancelled = false
+    apiGet<MePayload>('/auth/me')
+      .then((data) => { if (!cancelled) setMe(data) })
+      .catch(() => { /* stay quiet — avatar will fall back to initials */ })
+    return () => { cancelled = true }
+  }, [authUser])
+
+  // Poll notifications while signed in
+  const loadNotifications = useCallback(async () => {
+    if (!authUser) return
+    try {
+      const res = await apiPost<{ unread_count: number; data: NotificationItem[] }>(
+        '/notifications/list', {},
+      )
+      setNotifications(res.data || [])
+      setUnreadCount(res.unread_count || 0)
+    } catch {
+      // keep prior values on transient errors
+    }
+  }, [authUser])
+
+  useEffect(() => {
+    if (!authUser) return
+    void loadNotifications()
+    const id = setInterval(loadNotifications, 30_000)
+    return () => clearInterval(id)
+  }, [authUser, loadNotifications])
+
+  const profilePhoto = (me?.profile?.profile_photo_url as string | undefined) || null
+  const firstName = (me?.profile?.first_name as string | undefined) || ''
+  const lastName  = (me?.profile?.last_name  as string | undefined) || ''
   const initials = authUser
-    ? authUser.email.substring(0, 2).toUpperCase()
+    ? `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase() ||
+      authUser.email.substring(0, 2).toUpperCase()
     : null
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <div className="brand">
+          <button className="brand" type="button" onClick={() => setTab('overview')}>
             <div className="logo-mark"><span className="logo-in">in</span></div>
-            <span className="brand-name">
-              LinkedIn <span className="brand-highlight">Agentic<span className="brand-sparkle">✦</span>AI</span>
-            </span>
-          </div>
+          </button>
 
           <div className="nav-search">
-            <span className="nav-search-icon">⌕</span>
+            <Icon name="search" size={16} className="nav-search-icon" />
             <input
               value={searchVal}
               onChange={e => setSearchVal(e.target.value)}
-              placeholder="Search jobs, people…"
+              placeholder="Search"
               aria-label="Search"
             />
           </div>
 
           <nav className="nav" aria-label="Primary">
-            {visibleTabs.filter(([id]) => id !== 'auth').map(([id, label, icon]) => (
-              <button
-                key={id}
-                type="button"
-                className={tab === id ? 'nav-btn active' : 'nav-btn'}
-                onClick={() => setTab(id)}
-                title={label}
-              >
-                <span className="nav-icon">{icon}</span>
-                <span>{label}</span>
-              </button>
-            ))}
+            {visibleTabs
+              .filter(([id]) => id !== 'auth' && id !== 'profile' && id !== 'notifications')
+              .map(([id, label, icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={tab === id ? 'nav-btn active' : 'nav-btn'}
+                  onClick={() => setTab(id)}
+                  title={label}
+                >
+                  <Icon name={icon} size={20} className="nav-icon-svg" />
+                  <span className="nav-label">{label}</span>
+                </button>
+              ))}
 
-            {initials ? (
+            {authUser && (
               <button
                 type="button"
-                className="nav-avatar"
-                onClick={() => setTab('auth')}
-                title={authUser?.email}
+                className={tab === 'notifications' ? 'nav-btn active nav-btn-bell' : 'nav-btn nav-btn-bell'}
+                onClick={() => setTab('notifications')}
+                title="Notifications"
               >
-                {initials}
+                <span className="nav-bell-wrap">
+                  <Icon name="bell" size={20} className="nav-icon-svg" />
+                  {unreadCount > 0 && (
+                    <span className="nav-bell-badge">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </span>
+                <span className="nav-label">Notifications</span>
+              </button>
+            )}
+
+            <div className="nav-divider" />
+
+            {authUser ? (
+              <button
+                type="button"
+                className={tab === 'profile' ? 'nav-avatar nav-avatar-active' : 'nav-avatar'}
+                onClick={() => setTab('profile')}
+                title={`${authUser.email} — View profile`}
+              >
+                {profilePhoto ? (
+                  <img src={profilePhoto} alt="Me" className="nav-avatar-img" />
+                ) : (
+                  initials
+                )}
               </button>
             ) : (
               <button
@@ -112,13 +208,13 @@ function App() {
                 className={tab === 'auth' ? 'nav-btn active' : 'nav-btn'}
                 onClick={() => setTab('auth')}
               >
-                <span className="nav-icon">○</span>
-                <span>Account</span>
+                <Icon name="user" size={20} className="nav-icon-svg" />
+                <span className="nav-label">Sign In</span>
               </button>
             )}
 
             {authUser && (
-              <span className="nav-role-badge" title={authUser.email}>
+              <span className="nav-role-badge">
                 {authUser.user_type}
               </span>
             )}
@@ -128,24 +224,39 @@ function App() {
 
       <main className="main" key={tab}>
         <div className="page-fade">
-          {tab === 'overview'    && <OverviewPanel onNavigate={setTab} />}
-          {tab === 'jobs'        && <JobsPanel />}
-          {tab === 'members'     && <MembersPanel />}
-          {tab === 'analytics'   && <AnalyticsPanel />}
-          {tab === 'messages'    && <MessagingPanel />}
-          {tab === 'connections' && <ConnectionsPanel />}
+          {tab === 'overview' &&
+            (authUser && me ? (
+              <HomeFeed me={me} onNavigateProfile={() => setTab('profile')} />
+            ) : (
+              <OverviewPanel onNavigate={setTab} />
+            ))}
+          {tab === 'jobs'          && <JobsPanel />}
+          {tab === 'members'       && <MembersPanel />}
+          {tab === 'analytics'     && <AnalyticsPanel />}
+          {tab === 'messages'      && <MessagingPanel />}
+          {tab === 'connections'   && <ConnectionsPanel />}
+          {tab === 'notifications' && (
+            <NotificationsPanel
+              notifications={notifications}
+              unreadCount={unreadCount}
+              onRefresh={loadNotifications}
+              onOpenConnections={() => setTab('connections')}
+            />
+          )}
           {tab === 'ai'          && <AiDashboard />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
+          {tab === 'profile'     && <ProfilePage onAuthChange={handleAuthChange} />}
         </div>
       </main>
 
       <footer className="footer">
         <div className="footer-inner">
-          <span className="footer-brand">LinkedIn Agentic AI</span>
-          <span className="footer-sep">·</span>
-          <span>API docs: <code>/docs</code></span>
-          <span className="footer-sep">·</span>
-          <span>OpenAPI: <code>docs/openapi.json</code></span>
+          <div className="footer-logo">
+            <div className="logo-mark" style={{ width: 20, height: 20, fontSize: 11, borderRadius: 4 }}>
+              <span className="logo-in">in</span>
+            </div>
+            <span className="footer-brand">LinkedIn Agentic AI</span>
+          </div>
           <span className="footer-sep">·</span>
           <span>DATA236 · SJSU</span>
         </div>
@@ -163,7 +274,6 @@ interface ServiceInfo {
   name: string
   description: string
   status: ServiceStatus
-  icon: string
 }
 
 interface HealthResponse {
@@ -182,7 +292,6 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const [loading, setLoading] = useState(false)
   const [checked, setChecked] = useState(false)
 
-  // Live stats
   const [stats, setStats] = useState<{ members: number | null; jobs: number | null; applications: number | null }>({
     members: null,
     jobs: null,
@@ -206,7 +315,6 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   useEffect(() => { checkHealth() }, [checkHealth])
 
-  // Load live counters
   useEffect(() => {
     (async () => {
       try {
@@ -217,7 +325,6 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         setStats({
           members: members.total,
           jobs: jobs.total,
-          // Derive applications estimate from jobs; real endpoint exists via analytics but keep it snappy
           applications: jobs.total != null ? Math.round(jobs.total * 7.3) : null,
         })
       } catch {
@@ -226,7 +333,6 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     })()
   }, [])
 
-  // Helper reading either the new or old health-endpoint shape.
   const svcState = (flatKey: string, nestedKey: string): ServiceStatus => {
     if (!checked) return 'checking'
     if (!healthData) return 'offline'
@@ -240,52 +346,43 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   const services: ServiceInfo[] = [
-    { key: 'api',   name: 'API Gateway', description: 'FastAPI · 45 endpoints',  icon: '⚡', status: !checked ? 'checking' : err ? 'offline' : 'online' },
-    { key: 'mysql', name: 'MySQL',       description: 'Transactional DB',         icon: '🗄', status: svcState('mysql', 'mysql') },
-    { key: 'mongo', name: 'MongoDB',     description: 'Event & trace store',      icon: '📦', status: svcState('mongo', 'mongodb') },
-    { key: 'redis', name: 'Redis',       description: 'Cache layer',              icon: '⚡', status: svcState('redis', 'redis') },
-    { key: 'kafka', name: 'Kafka',       description: 'Event streaming',          icon: '🔄', status: svcState('kafka', 'kafka_producer') },
+    { key: 'api',   name: 'API Gateway', description: 'FastAPI · 45 endpoints',  status: !checked ? 'checking' : err ? 'offline' : 'online' },
+    { key: 'mysql', name: 'MySQL',       description: 'Transactional DB',         status: svcState('mysql', 'mysql') },
+    { key: 'mongo', name: 'MongoDB',     description: 'Event & trace store',      status: svcState('mongo', 'mongodb') },
+    { key: 'redis', name: 'Redis',       description: 'Cache layer',              status: svcState('redis', 'redis') },
+    { key: 'kafka', name: 'Kafka',       description: 'Event streaming',          status: svcState('kafka', 'kafka_producer') },
   ]
 
   const onlineCount = services.filter((s) => s.status === 'online').length
   const platformOnline = checked && !err && onlineCount === services.length
 
   const exploreItems = [
-    { tab: 'jobs' as Tab,        icon: '💼', title: 'Job Search',       desc: 'Search open positions, view details, and submit applications.' },
-    { tab: 'members' as Tab,     icon: '👥', title: 'Member Directory',  desc: 'Find professionals, browse profiles, and add new members.' },
-    { tab: 'analytics' as Tab,   icon: '📊', title: 'Analytics',         desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
-    { tab: 'ai' as Tab,          icon: '✦',  title: 'AI Recruiter',      desc: 'Agentic candidate matching with shortlist scoring and outreach drafts.' },
-    { tab: 'messages' as Tab,    icon: '✉',  title: 'Messaging',         desc: 'Thread-based professional messaging between platform members.' },
-    { tab: 'connections' as Tab, icon: '⊕',  title: 'Connections',       desc: 'Send and manage professional connection requests.' },
+    { tab: 'jobs' as Tab,        icon: 'jobs',        title: 'Job Search',       desc: 'Search open positions, view details, and submit applications.' },
+    { tab: 'members' as Tab,     icon: 'network',     title: 'Member Directory',  desc: 'Find professionals, browse profiles, and add new members.' },
+    { tab: 'analytics' as Tab,   icon: 'analytics',   title: 'Analytics',         desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
+    { tab: 'ai' as Tab,          icon: 'ai',          title: 'AI Recruiter',      desc: 'Candidate matching with shortlist scoring and outreach drafts.' },
+    { tab: 'messages' as Tab,    icon: 'messaging',   title: 'Messaging',         desc: 'Thread-based professional messaging between platform members.' },
+    { tab: 'connections' as Tab, icon: 'connections',  title: 'Connections',       desc: 'Send and manage professional connection requests.' },
   ]
 
   return (
     <div className="overview-page">
-
-      {/* Hero — mesh background + live stats */}
+      {/* Hero */}
       <div className="overview-hero">
-        <HeroMesh />
         <div className="overview-hero-row">
           <div className="overview-hero-content">
-            <span className="hero-eyebrow">
-              <span className="live-pulse" /> LIVE · Distributed Platform
-            </span>
             <h1 className="overview-hero-title">
-              The AI-powered <span className="title-accent">talent network</span>
-              <br />
-              for modern recruiting.
+              Welcome to your professional community
             </h1>
             <p className="overview-hero-desc">
-              LinkedIn-style professional network powered by agentic AI workflows,
-              real-time Kafka streams, and multi-database analytics — built for
-              DATA236 at SJSU.
+              AI-powered professional network with real-time analytics, intelligent recruiting workflows, and multi-database infrastructure.
             </p>
             <div className="overview-hero-cta">
               <button type="button" className="primary" onClick={() => onNavigate('jobs')}>
-                Browse Jobs →
+                Browse Jobs
               </button>
               <button type="button" className="secondary-btn" onClick={() => onNavigate('ai')}>
-                <span className="btn-sparkle">✦</span> AI Recruiter Tools
+                AI Recruiter Tools
               </button>
             </div>
           </div>
@@ -295,7 +392,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
               <span className={`health-dot health-dot-${platformOnline ? 'online' : err ? 'offline' : 'checking'}`} />
               <span className="health-label">
                 {!checked
-                  ? 'Connecting to API…'
+                  ? 'Connecting to API...'
                   : err
                   ? 'API Offline'
                   : `${onlineCount}/${services.length} services online`}
@@ -308,32 +405,31 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
               disabled={loading}
               style={{ fontSize: '0.78rem', padding: '0.2rem 0.55rem' }}
             >
-              {loading ? '…' : 'Refresh'}
+              {loading ? '...' : 'Refresh'}
             </button>
           </div>
         </div>
 
-        {/* Live stats row */}
         <div className="hero-stats-row">
           <div className="hero-stat">
-            <span className="hero-stat-label">MEMBERS</span>
+            <span className="hero-stat-label">Members</span>
             <span className="hero-stat-value"><CountUp value={stats.members} /></span>
-            <span className="hero-stat-trend">↑ Live from MySQL</span>
+            <span className="hero-stat-trend">Live from MySQL</span>
           </div>
           <div className="hero-stat">
-            <span className="hero-stat-label">OPEN JOBS</span>
+            <span className="hero-stat-label">Open Jobs</span>
             <span className="hero-stat-value"><CountUp value={stats.jobs} /></span>
-            <span className="hero-stat-trend">↑ Across all companies</span>
+            <span className="hero-stat-trend">Across all companies</span>
           </div>
           <div className="hero-stat">
-            <span className="hero-stat-label">APPLICATIONS</span>
+            <span className="hero-stat-label">Applications</span>
             <span className="hero-stat-value"><CountUp value={stats.applications} /></span>
-            <span className="hero-stat-trend">↑ Processed via Kafka</span>
+            <span className="hero-stat-trend">Processed via Kafka</span>
           </div>
           <div className="hero-stat">
-            <span className="hero-stat-label">AI WORKFLOWS</span>
+            <span className="hero-stat-label">AI Workflows</span>
             <span className="hero-stat-value"><CountUp value={24} /></span>
-            <span className="hero-stat-trend">↑ Multi-step agents</span>
+            <span className="hero-stat-trend">Multi-step agents</span>
           </div>
         </div>
       </div>
@@ -352,14 +448,16 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           <div className="service-status-grid">
             {services.map((svc) => (
               <div key={svc.key} className={`service-card svc-${svc.status}`}>
-                <span className="svc-icon">{svc.icon}</span>
+                <div className="svc-icon-wrap">
+                  <span className="svc-initial">{svc.name[0]}</span>
+                </div>
                 <span className={`svc-dot dot-${svc.status}`} />
                 <div className="svc-info">
                   <span className="svc-name">{svc.name}</span>
                   <span className="svc-desc">{svc.description}</span>
                 </div>
                 <span className={`svc-badge badge-${svc.status}`}>
-                  {svc.status === 'online' ? 'OK' : svc.status === 'offline' ? 'Down' : '…'}
+                  {svc.status === 'online' ? 'OK' : svc.status === 'offline' ? 'Down' : '...'}
                 </span>
               </div>
             ))}
@@ -380,10 +478,12 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
               className="explore-card"
               onClick={() => onNavigate(item.tab)}
             >
-              <span className="explore-icon">{item.icon}</span>
+              <div className="explore-icon-wrap">
+                <Icon name={item.icon} size={22} />
+              </div>
               <span className="explore-title">{item.title}</span>
               <span className="explore-desc">{item.desc}</span>
-              <span className="explore-arrow">→</span>
+              <Icon name="arrow-right" size={16} className="explore-arrow" />
             </button>
           ))}
         </div>
@@ -394,7 +494,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         <div className="tech-stack-card">
           <div className="tech-stack-top">
             <h2 className="overview-section-title" style={{ margin: 0 }}>Architecture</h2>
-            <span className="tech-sub">3-tier + Kafka + Agentic AI · FastAPI + React 19</span>
+            <span className="tech-sub">3-tier + Kafka + Agentic AI</span>
           </div>
           <div className="tech-pills">
             {[
@@ -458,24 +558,23 @@ function JobsPanel() {
   const search = () => doSearch(null)
   const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
 
-  // Auto-search on mount
   useEffect(() => { doSearch(null) /* eslint-disable-line react-hooks/exhaustive-deps */ }, [])
 
   return (
     <section className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">Job Search</h2>
+        <h2 className="panel-title">Jobs</h2>
         <p className="panel-subtitle">Browse and apply to open positions across the network</p>
       </div>
 
       <div className="search-toolbar">
         <div className="search-input-wrap">
-          <span className="search-icon-glyph">⌕</span>
+          <Icon name="search" size={16} className="search-icon-glyph" />
           <input
             className="search-input-field"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Search by title, keyword, or skill…"
+            placeholder="Search by title, keyword, or skill"
             onKeyDown={(e) => e.key === 'Enter' && search()}
           />
         </div>
@@ -489,7 +588,7 @@ function JobsPanel() {
           <option value="views">Most viewed</option>
         </select>
         <button type="button" className="primary" onClick={search} disabled={loading}>
-          {loading && !nextCursor ? 'Searching…' : 'Search'}
+          {loading && !nextCursor ? 'Searching...' : 'Search'}
         </button>
       </div>
 
@@ -539,12 +638,12 @@ function JobsPanel() {
                         }
                         onClick={() => setSelectedJobId(isSelected ? null : jid)}
                       >
-                        {isSelected ? '✓ Selected' : 'Apply'}
+                        {isSelected ? 'Selected' : 'Apply'}
                       </button>
                     </div>
                   </div>
                   <div className="job-card-meta">
-                    {j.location ? <span className="jc-meta-item">📍 {String(j.location)}</span> : null}
+                    {j.location ? <span className="jc-meta-item"><Icon name="location" size={12} className="meta-icon" /> {String(j.location)}</span> : null}
                     {j.work_mode ? <span className="pill pill-accent">{String(j.work_mode)}</span> : null}
                     <span className="pill">ID #{String(j.job_id)}</span>
                   </div>
@@ -557,7 +656,7 @@ function JobsPanel() {
 
       {hasMore && (
         <button type="button" className="load-more-btn" onClick={loadMore} disabled={loading}>
-          {loading ? 'Loading…' : 'Load more positions'}
+          {loading ? 'Loading...' : 'Show more results'}
         </button>
       )}
 
@@ -622,18 +721,18 @@ function MembersPanel() {
   return (
     <section className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">Member Directory</h2>
-        <p className="panel-subtitle">Find and connect with professionals in the network</p>
+        <h2 className="panel-title">Network</h2>
+        <p className="panel-subtitle">Find and connect with professionals</p>
       </div>
 
       <div className="search-toolbar">
         <div className="search-input-wrap">
-          <span className="search-icon-glyph">⌕</span>
+          <Icon name="search" size={16} className="search-icon-glyph" />
           <input
             className="search-input-field"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Search by name, headline, or location…"
+            placeholder="Search by name, headline, or location"
             onKeyDown={(e) => e.key === 'Enter' && search()}
           />
         </div>
@@ -647,7 +746,7 @@ function MembersPanel() {
           <option value="recent">Newest</option>
         </select>
         <button type="button" className="primary" onClick={search} disabled={loading}>
-          {loading && !nextCursor ? 'Searching…' : 'Search'}
+          {loading && !nextCursor ? 'Searching...' : 'Search'}
         </button>
       </div>
 
@@ -683,7 +782,7 @@ function MembersPanel() {
                   <h3 className="member-card-name">{firstName} {lastName}</h3>
                   {m.headline ? <p className="member-card-headline">{String(m.headline)}</p> : null}
                   <div className="member-card-meta">
-                    {m.location_city ? <span className="pill">📍 {String(m.location_city)}</span> : null}
+                    {m.location_city ? <span className="pill"><Icon name="location" size={11} className="meta-icon" /> {String(m.location_city)}</span> : null}
                     <span className="member-id-chip">#{String(m.member_id)}</span>
                   </div>
                 </div>
@@ -695,11 +794,9 @@ function MembersPanel() {
 
       {hasMore && (
         <button type="button" className="load-more-btn" onClick={loadMore} disabled={loading}>
-          {loading ? 'Loading…' : 'Load more members'}
+          {loading ? 'Loading...' : 'Show more results'}
         </button>
       )}
-
-      <MemberCreateForm />
     </section>
   )
 }
@@ -712,7 +809,7 @@ function AnalyticsPanel() {
       <div className="panel-header">
         <h2 className="panel-title">Analytics</h2>
         <p className="panel-subtitle">
-          Live metrics from backend SQL aggregates · seed with{' '}
+          Live metrics from backend SQL aggregates. Seed with{' '}
           <code>python seed_data.py --quick --yes</code> from <code>backend/</code>
         </p>
       </div>
