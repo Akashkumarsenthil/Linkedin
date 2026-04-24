@@ -22,9 +22,13 @@ router = APIRouter(tags=["Messaging Service"])
 
 
 @router.post("/threads/open", response_model=MessageResponse, summary="Open/create a message thread")
-async def open_thread(req: ThreadOpen, db: Session = Depends(get_db)):
+async def open_thread(
+    req: ThreadOpen,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
     """
-    Create a new messaging thread between participants.
+    Create a new messaging thread between participants. Requires authentication.
     Each participant is identified by user_id and user_type (member/recruiter).
     """
     thread = Thread(subject=req.subject)

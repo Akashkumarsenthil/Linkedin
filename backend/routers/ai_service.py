@@ -3,10 +3,11 @@ AI Service Router — REST + WebSocket endpoints for Agentic AI workflows.
 """
 
 import logging
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
+from auth import require_recruiter, TokenPayload
 from agents.hiring_assistant import (
     start_task, get_task_status, approve_task,
     ws_connections, active_tasks, get_queue_stats,
@@ -92,7 +93,10 @@ class AIResponse(BaseModel):
 # ─── Endpoints ──────────────────────────────────────────────────
 
 @router.post("/analyze-candidates", response_model=AIResponse, summary="Start candidate analysis workflow")
-async def analyze_candidates(req: AnalyzeCandidatesRequest):
+async def analyze_candidates(
+    req: AnalyzeCandidatesRequest,
+    current_user: TokenPayload = Depends(require_recruiter),
+):
     """
     Start the Hiring Assistant multi-step AI workflow:
     1. Parse resumes for all candidates
@@ -111,7 +115,10 @@ async def analyze_candidates(req: AnalyzeCandidatesRequest):
 
 
 @router.post("/task-status", response_model=AIResponse, summary="Get AI task status")
-async def task_status(req: TaskStatusRequest):
+async def task_status(
+    req: TaskStatusRequest,
+    current_user: TokenPayload = Depends(require_recruiter),
+):
     """Check the current status and progress of an AI task.
     Falls back to MongoDB so tasks are queryable after a server restart."""
     status = await get_task_status(req.task_id)
@@ -122,7 +129,10 @@ async def task_status(req: TaskStatusRequest):
 
 
 @router.post("/approve", response_model=AIResponse, summary="Approve or reject AI output")
-async def approve_output(req: ApproveRequest):
+async def approve_output(
+    req: ApproveRequest,
+    current_user: TokenPayload = Depends(require_recruiter),
+):
     """
     Human-in-the-loop: approve or reject the AI-generated shortlist and outreach drafts.
     The recruiter must review the AI output before any action is taken.
@@ -160,7 +170,7 @@ async def match_candidate(req: MatchRequest):
 
 
 @router.post("/tasks/list", response_model=AIResponse, summary="List all AI tasks")
-async def list_tasks():
+async def list_tasks(current_user: TokenPayload = Depends(require_recruiter)):
     """List all active and recent AI tasks."""
     tasks = [
         {
@@ -175,7 +185,7 @@ async def list_tasks():
 
 
 @router.get("/queue-status", response_model=AIResponse, summary="AI dispatcher queue depth and concurrency")
-async def queue_status():
+async def queue_status(current_user: TokenPayload = Depends(require_recruiter)):
     """
     Return real-time dispatcher stats: how many workflows are running,
     how many are queued, and how many concurrent slots are available.

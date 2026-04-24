@@ -122,11 +122,18 @@ async def get_job(req: JobGet, db: Session = Depends(get_db)):
 
 
 @router.post("/update", response_model=JobResponse, summary="Update job posting fields")
-async def update_job(req: JobUpdate, db: Session = Depends(get_db)):
-    """Update specific fields of a job posting."""
+async def update_job(
+    req: JobUpdate,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """Update specific fields of a job posting. Only the posting recruiter may update."""
     job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
     if not job:
         return JobResponse(success=False, message=f"Job {req.job_id} not found")
+
+    if job.recruiter_id != current_user.user_id:
+        return JobResponse(success=False, message="Only the posting recruiter can update this job")
 
     update_fields = req.model_dump(exclude_unset=True, exclude={"job_id"})
     for field, value in update_fields.items():

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
-import { apiGet, apiPost } from './api'
+import { apiGet, apiPost, parseStoredUser } from './api'
 import { TopJobsChart } from './components/TopJobsChart'
 import { FunnelChart } from './components/FunnelChart'
 import { GeoTable } from './components/GeoTable'
@@ -17,45 +17,112 @@ import { SavesTrendChart } from './components/SavesTrendChart'
 import { AiDashboard } from './components/AiDashboard'
 
 type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'auth'
+type AuthUser = { user_id: number; user_type: 'member' | 'recruiter'; email: string } | null
+
+// Tabs visible per role
+const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter'>> = {
+  overview:    ['guest', 'member', 'recruiter'],
+  jobs:        ['guest', 'member', 'recruiter'],
+  members:     ['guest', 'member'],
+  analytics:   ['recruiter'],
+  messages:    ['member', 'recruiter'],
+  connections: ['member'],
+  ai:          ['recruiter'],
+  auth:        ['guest', 'member', 'recruiter'],
+}
+
+// Nav tab definitions: [id, label, icon]
+const ALL_NAV: [Tab, string, string][] = [
+  ['overview',    'Home',        '⌂'],
+  ['jobs',        'Jobs',        '💼'],
+  ['members',     'Network',     '👥'],
+  ['analytics',   'Analytics',   '📊'],
+  ['messages',    'Messaging',   '✉'],
+  ['connections', 'Connections', '🔗'],
+  ['ai',          'AI Recruiter','✦'],
+  ['auth',        'Account',     '○'],
+]
 
 function App() {
   const [tab, setTab] = useState<Tab>('overview')
+  const [authUser, setAuthUser] = useState<AuthUser>(() => parseStoredUser())
+  const [searchVal, setSearchVal] = useState('')
+
+  const handleAuthChange = () => setAuthUser(parseStoredUser())
+
+  const role: 'guest' | 'member' | 'recruiter' = authUser?.user_type ?? 'guest'
+  const visibleTabs = ALL_NAV.filter(([id]) => TAB_VISIBILITY[id].includes(role))
+
+  useEffect(() => {
+    if (!TAB_VISIBILITY[tab].includes(role)) setTab('overview')
+  }, [role, tab])
+
+  const initials = authUser
+    ? authUser.email.substring(0, 2).toUpperCase()
+    : null
 
   return (
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
+          {/* Logo */}
           <div className="brand">
-            <div className="logo-mark">
-              <span className="logo-in">in</span>
-            </div>
-            <span className="brand-name">
-              LinkedIn <span className="brand-highlight">Agentic AI</span>
-            </span>
+            <div className="logo-mark"><span className="logo-in">in</span></div>
+            <span className="brand-name">LinkedIn <span className="brand-highlight">Agentic AI</span></span>
           </div>
 
+          {/* Search */}
+          <div className="nav-search">
+            <span className="nav-search-icon">⌕</span>
+            <input
+              value={searchVal}
+              onChange={e => setSearchVal(e.target.value)}
+              placeholder="Search jobs, people…"
+              aria-label="Search"
+            />
+          </div>
+
+          {/* Nav tabs */}
           <nav className="nav" aria-label="Primary">
-            {(
-              [
-                ['overview',    'Overview'],
-                ['jobs',        'Jobs'],
-                ['members',     'Members'],
-                ['analytics',   'Analytics'],
-                ['messages',    'Messages'],
-                ['connections', 'Connections'],
-                ['ai',          'AI Recruiter'],
-                ['auth',        'Account'],
-              ] as const
-            ).map(([id, label]) => (
+            {visibleTabs.filter(([id]) => id !== 'auth').map(([id, label, icon]) => (
               <button
                 key={id}
                 type="button"
                 className={tab === id ? 'nav-btn active' : 'nav-btn'}
                 onClick={() => setTab(id)}
+                title={label}
               >
-                {label}
+                <span className="nav-icon">{icon}</span>
+                <span>{label}</span>
               </button>
             ))}
+
+            {/* Account button */}
+            {initials ? (
+              <button
+                type="button"
+                className="nav-avatar"
+                onClick={() => setTab('auth')}
+                title={authUser?.email}
+              >
+                {initials}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={tab === 'auth' ? 'nav-btn active' : 'nav-btn'}
+                onClick={() => setTab('auth')}
+              >
+                <span className="nav-icon">○</span>
+                <span>Account</span>
+              </button>
+            )}
+
+            {authUser && (
+              <span className="nav-role-badge" title={authUser.email}>
+                {authUser.user_type}
+              </span>
+            )}
           </nav>
         </div>
       </header>
@@ -68,7 +135,7 @@ function App() {
         {tab === 'messages'    && <MessagingPanel />}
         {tab === 'connections' && <ConnectionsPanel />}
         {tab === 'ai'          && <AiDashboard />}
-        {tab === 'auth'        && <AuthPanel />}
+        {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
       </main>
 
       <footer className="footer">
@@ -557,15 +624,15 @@ function AnalyticsPanel() {
   return (
     <section className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">Analytics Dashboard</h2>
+        <h2 className="panel-title">Analytics</h2>
         <p className="panel-subtitle">
-          Live charts from backend SQL aggregates &middot; seed data with{' '}
+          Live metrics from backend SQL aggregates · seed with{' '}
           <code>python seed_data.py --quick --yes</code> from <code>backend/</code>
         </p>
       </div>
 
       <div className="analytics-tab-section">
-        <h3 className="analytics-section-title">Recruiter &amp; Admin Insights</h3>
+        <h3 className="analytics-section-title">Recruiter Insights</h3>
         <div className="analytics-grid">
           <TopMonthlyChart />
           <LeastAppliedChart />
@@ -576,7 +643,7 @@ function AnalyticsPanel() {
       </div>
 
       <div className="analytics-tab-section">
-        <h3 className="analytics-section-title">General Analytics</h3>
+        <h3 className="analytics-section-title">Platform Overview</h3>
         <div className="analytics-grid">
           <TopJobsChart />
           <FunnelChart />

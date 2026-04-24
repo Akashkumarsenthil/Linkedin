@@ -68,8 +68,14 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
 
     # ─── Auth / JWT ─────────────────────────────────────────────────
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "linkedin-demo-secret-change-in-prod")
-    JWT_EXPIRE_HOURS: int = 24
+    # Accepts JWT_SECRET_KEY (preferred) or legacy JWT_SECRET env var.
+    JWT_SECRET: str = os.getenv("JWT_SECRET_KEY", os.getenv("JWT_SECRET", "linkedin-demo-secret-change-in-prod"))
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))  # default 24 h
+
+    @property
+    def JWT_EXPIRE_HOURS(self) -> int:
+        return self.JWT_EXPIRE_MINUTES // 60
 
     class Config:
         env_file = ".env"

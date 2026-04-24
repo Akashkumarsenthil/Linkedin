@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiPost } from '../api'
+import { apiPost, parseStoredUser } from '../api'
 
 interface ApplyResponse {
   success: boolean
@@ -14,7 +14,12 @@ interface Props {
 }
 
 export function JobApplyForm({ prefilledJobId, onClear }: Props) {
-  const [memberId, setMemberId] = useState('')
+  const storedUser = parseStoredUser()
+  const isMember = storedUser?.user_type === 'member'
+
+  const [memberId, setMemberId] = useState(() =>
+    storedUser?.user_type === 'member' ? String(storedUser.user_id) : ''
+  )
   const [jobId, setJobId] = useState('')
   const [coverLetter, setCoverLetter] = useState('')
   const [loading, setLoading] = useState(false)
@@ -88,12 +93,19 @@ export function JobApplyForm({ prefilledJobId, onClear }: Props) {
       <div className="form-grid">
         <label className="form-label">
           Member ID *
+          {isMember && (
+            <span style={{ fontWeight: 400, color: 'var(--accent)', fontSize: '0.75rem' }}>
+              {' '}(from your token)
+            </span>
+          )}
           <input
             type="number"
             min={1}
             value={memberId}
-            onChange={(e) => setMemberId(e.target.value)}
+            onChange={isMember ? undefined : (e) => setMemberId(e.target.value)}
+            readOnly={isMember}
             placeholder="e.g. 1"
+            style={isMember ? { opacity: 0.75, cursor: 'not-allowed' } : undefined}
           />
         </label>
 
