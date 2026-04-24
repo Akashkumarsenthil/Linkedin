@@ -1,16 +1,9 @@
 /**
- * ConnectionsPanel — demo UI for connections.
- *
- * No auth exists, so:
- *  - "My member ID" is set manually at the top.
- *  - Accept/reject use a connection_id the user copies from the
- *    "Send request" result panel (the only practical way without a
- *    "list pending" endpoint).
+ * ConnectionsPanel — LinkedIn-style network connections UI.
+ * Uses the stored JWT token for member identity.
  */
-import { useState } from 'react'
-import { apiPost } from '../api'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import { useState, useEffect } from 'react'
+import { apiPost, parseStoredUser } from '../api'
 
 interface ConnectedMember {
   member_id: number
@@ -23,7 +16,6 @@ interface ConnectionData {
   requester_id: number
   receiver_id: number
   status: string
-  connected_at?: string
   connected_member?: ConnectedMember
 }
 
@@ -33,72 +25,50 @@ interface MutualMember {
   headline: string | null
 }
 
-// ── small sub-components ──────────────────────────────────────────────────────
-
 function ResultBanner({ success, message }: { success: boolean; message: string }) {
-  return (
-    <p className={success ? 'result-ok' : 'error'} style={{ margin: '0.4rem 0 0' }}>
-      {message}
-    </p>
-  )
+  return <p className={success ? 'result-ok' : 'error'} style={{ marginTop: 6 }}>{message}</p>
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-
 export function ConnectionsPanel() {
-  // ── shared identity ───────────────────────────────────
-  const [myId, setMyId]     = useState('1')
-  const [identity, setIdentity] = useState<number | null>(null)
+  const identity = parseStoredUser()
+  const myId = identity?.user_type === 'member' ? identity.user_id : null
 
-  // ── send request ──────────────────────────────────────
-  const [toId, setToId]             = useState('')
-  const [reqLoading, setReqL]       = useState(false)
-  const [reqResult, setReqResult]   = useState<{ success: boolean; message: string; data?: ConnectionData } | null>(null)
+  const [toId, setToId]           = useState('')
+  const [reqLoading, setReqL]     = useState(false)
+  const [reqResult, setReqResult] = useState<{ success: boolean; message: string; data?: ConnectionData } | null>(null)
 
-  // ── accept / reject ───────────────────────────────────
-  const [connId, setConnId]         = useState('')
-  const [arLoading, setArL]         = useState(false)
-  const [arResult, setArResult]     = useState<{ success: boolean; message: string } | null>(null)
+  const [connId, setConnId]       = useState('')
+  const [arLoading, setArL]       = useState(false)
+  const [arResult, setArResult]   = useState<{ success: boolean; message: string } | null>(null)
 
-  // ── my connections list ───────────────────────────────
-  const [connections, setConns]     = useState<ConnectionData[]>([])
-  const [connsLoading, setConnsL]   = useState(false)
-  const [connsErr, setConnsErr]     = useState<string | null>(null)
-  const [connsTotal, setConnsTotal] = useState(0)
+  const [connections, setConns]   = useState<ConnectionData[]>([])
+  const [connsLoading, setConnsL] = useState(false)
+  const [connsErr, setConnsErr]   = useState<string | null>(null)
+  const [connsTotal, setConnsT]   = useState(0)
 
-  // ── mutual connections ────────────────────────────────
-  const [otherId, setOtherId]       = useState('')
-  const [mutual, setMutual]         = useState<MutualMember[]>([])
-  const [mutualLoading, setMutualL] = useState(false)
-  const [mutualResult, setMutualR]  = useState<string | null>(null)
+  const [otherId, setOtherId]     = useState('')
+  const [mutual, setMutual]       = useState<MutualMember[]>([])
+  const [mutualLoading, setMutL]  = useState(false)
+  const [mutualResult, setMutR]   = useState<string | null>(null)
 
-  // ── actions ───────────────────────────────────────────
-
-  function applyIdentity() {
-    const id = parseInt(myId, 10)
-    if (!id || id < 1) return
-    setIdentity(id)
-    setConns([])
-    setMutual([])
-    setReqResult(null)
-    setArResult(null)
-  }
+  // Auto-load connections when component mounts if identity is a member
+  useEffect(() => {
+    if (myId) loadConnections(myId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function sendRequest() {
-    if (!identity) return
+    if (!myId) return
     const rid = parseInt(toId, 10)
-    if (!rid || rid < 1) {
-      setReqResult({ success: false, message: 'Enter a valid receiver ID' })
-      return
-    }
+    if (!rid || rid < 1) { setReqResult({ success: false, message: 'Enter a valid receiver ID' }); return }
     setReqL(true)
     setReqResult(null)
     try {
       const r = await apiPost<{ success: boolean; message: string; data?: ConnectionData }>(
-        '/connections/request',
-        { requester_id: identity, receiver_id: rid },
+        '/connections/request', { requester_id: myId, receiver_id: rid },
       )
       setReqResult(r)
+      if (r.success) loadConnections(myId)
     } catch (e) {
       setReqResult({ success: false, message: e instanceof Error ? e.message : 'Request failed' })
     } finally {
@@ -108,19 +78,15 @@ export function ConnectionsPanel() {
 
   async function acceptConn() {
     const id = parseInt(connId, 10)
-    if (!id || id < 1) {
-      setArResult({ success: false, message: 'Enter a valid connection ID' })
-      return
-    }
+    if (!id || id < 1) { setArResult({ success: false, message: 'Enter a valid connection ID' }); return }
     setArL(true)
     setArResult(null)
     try {
       const r = await apiPost<{ success: boolean; message: string }>(
-        '/connections/accept',
-        { connection_id: id },
+        '/connections/accept', { connection_id: id },
       )
       setArResult(r)
-      if (r.success && identity) loadConnections(identity)
+      if (r.success && myId) loadConnections(myId)
     } catch (e) {
       setArResult({ success: false, message: e instanceof Error ? e.message : 'Failed' })
     } finally {
@@ -130,16 +96,12 @@ export function ConnectionsPanel() {
 
   async function rejectConn() {
     const id = parseInt(connId, 10)
-    if (!id || id < 1) {
-      setArResult({ success: false, message: 'Enter a valid connection ID' })
-      return
-    }
+    if (!id || id < 1) { setArResult({ success: false, message: 'Enter a valid connection ID' }); return }
     setArL(true)
     setArResult(null)
     try {
       const r = await apiPost<{ success: boolean; message: string }>(
-        '/connections/reject',
-        { connection_id: id },
+        '/connections/reject', { connection_id: id },
       )
       setArResult(r)
     } catch (e) {
@@ -154,12 +116,11 @@ export function ConnectionsPanel() {
     setConnsErr(null)
     try {
       const r = await apiPost<{ success: boolean; message: string; data: ConnectionData[]; total: number }>(
-        '/connections/list',
-        { user_id: id, page: 1, page_size: 30 },
+        '/connections/list', { user_id: id, page: 1, page_size: 30 },
       )
       if (!r.success) throw new Error(r.message)
       setConns(r.data ?? [])
-      setConnsTotal(r.total ?? 0)
+      setConnsT(r.total ?? 0)
     } catch (e) {
       setConnsErr(e instanceof Error ? e.message : 'Failed to load connections')
     } finally {
@@ -168,233 +129,209 @@ export function ConnectionsPanel() {
   }
 
   async function loadMutual() {
-    if (!identity) return
+    if (!myId) return
     const oid = parseInt(otherId, 10)
-    if (!oid || oid < 1) {
-      setMutualR('Enter a valid other member ID')
-      return
-    }
-    setMutualL(true)
-    setMutualR(null)
+    if (!oid || oid < 1) { setMutR('Enter a valid other member ID'); return }
+    setMutL(true)
+    setMutR(null)
     try {
       const r = await apiPost<{ success: boolean; message: string; data: MutualMember[]; total: number }>(
-        '/connections/mutual',
-        { user_id: identity, other_id: oid },
+        '/connections/mutual', { user_id: myId, other_id: oid },
       )
       if (!r.success) throw new Error(r.message)
       setMutual(r.data ?? [])
-      setMutualR(r.message)
+      setMutR(r.message)
     } catch (e) {
-      setMutualR(e instanceof Error ? e.message : 'Failed')
+      setMutR(e instanceof Error ? e.message : 'Failed')
     } finally {
-      setMutualL(false)
+      setMutL(false)
     }
   }
 
-  // ── render ────────────────────────────────────────────
+  // Not logged in
+  if (!identity) {
+    return (
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">Connections</h2>
+        </div>
+        <div className="auth-prompt-card">
+          <span className="auth-prompt-icon">🔗</span>
+          <p className="auth-prompt-title">Sign in to manage your network</p>
+          <p className="auth-prompt-sub">Connect with other professionals on the platform.</p>
+        </div>
+      </section>
+    )
+  }
+
+  // Recruiter accessing member-only section
+  if (identity.user_type !== 'member') {
+    return (
+      <section className="panel">
+        <div className="panel-header">
+          <h2 className="panel-title">Connections</h2>
+        </div>
+        <div className="auth-prompt-card">
+          <span className="auth-prompt-icon">🔗</span>
+          <p className="auth-prompt-title">Connections are for members</p>
+          <p className="auth-prompt-sub">Log in as a member to send and manage connection requests.</p>
+        </div>
+      </section>
+    )
+  }
 
   return (
     <section className="panel">
-      <h2>Connections</h2>
-
-      {/* Identity bar */}
-      <div className="identity-bar">
-        <span className="identity-label">My member ID:</span>
-        <input
-          type="number"
-          value={myId}
-          min={1}
-          onChange={e => setMyId(e.target.value)}
-          style={{ width: 70 }}
-          placeholder="ID"
-        />
-        <button type="button" className="primary" onClick={applyIdentity}>
-          Set identity
-        </button>
-        {identity && (
-          <span className="identity-badge">member #{identity}</span>
-        )}
+      <div className="panel-header">
+        <h2 className="panel-title">My Network</h2>
+        <p className="panel-subtitle">
+          Signed in as <strong>member #{myId}</strong> · {identity.email}
+        </p>
       </div>
 
-      {!identity && (
-        <p className="hint">Set your member ID above to use connections.</p>
-      )}
-
-      {identity && (
-        <div className="conn-grid">
-
-          {/* ── Send request ─────────────────────────── */}
-          <div className="chart-card">
-            <h3 className="chart-title">Send connection request</h3>
-            <label className="form-label" style={{ marginTop: '0.25rem' }}>
-              Receiver member ID
-              <input
-                type="number"
-                value={toId}
-                min={1}
-                onChange={e => setToId(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && sendRequest()}
-                placeholder="e.g. 2"
-                style={{ width: 100 }}
-              />
-            </label>
-            <button
-              type="button"
-              className="primary"
-              onClick={sendRequest}
-              disabled={reqLoading}
-              style={{ alignSelf: 'flex-start', marginTop: '0.5rem' }}
-            >
-              {reqLoading ? 'Sending…' : 'Send request'}
-            </button>
-            {reqResult && (
-              <>
-                <ResultBanner success={reqResult.success} message={reqResult.message} />
-                {reqResult.success && reqResult.data && (
-                  <div className="conn-detail">
-                    <span>connection_id: <strong>{reqResult.data.connection_id}</strong></span>
-                    <span className={`conn-status status-${reqResult.data.status}`}>
-                      {reqResult.data.status}
-                    </span>
-                    <p className="hint" style={{ margin: '0.4rem 0 0', fontSize: '0.78rem' }}>
-                      Copy this connection_id to accept or reject it below.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* ── Accept / Reject ──────────────────────── */}
-          <div className="chart-card">
-            <h3 className="chart-title">Accept or reject a request</h3>
-            <p className="hint" style={{ margin: '0.25rem 0 0.5rem' }}>
-              Paste the <code>connection_id</code> from a pending request.
-            </p>
-            <label className="form-label">
-              Connection ID
-              <input
-                type="number"
-                value={connId}
-                min={1}
-                onChange={e => setConnId(e.target.value)}
-                placeholder="e.g. 42"
-                style={{ width: 100 }}
-              />
-            </label>
-            <div className="row" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
-              <button
-                type="button"
-                className="primary"
-                onClick={acceptConn}
-                disabled={arLoading}
-              >
-                {arLoading ? '…' : 'Accept'}
-              </button>
-              <button
-                type="button"
-                className="danger-btn"
-                onClick={rejectConn}
-                disabled={arLoading}
-              >
-                {arLoading ? '…' : 'Reject'}
-              </button>
-            </div>
-            {arResult && (
-              <ResultBanner success={arResult.success} message={arResult.message} />
-            )}
-          </div>
-
-          {/* ── My connections ───────────────────────── */}
-          <div className="chart-card">
-            <div className="chart-header">
-              <h3 className="chart-title">My connections</h3>
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => loadConnections(identity)}
-                disabled={connsLoading}
-                title="Refresh"
-              >
-                {connsLoading ? '…' : '↺ Load'}
-              </button>
-            </div>
-            {connsErr && <p className="error">{connsErr}</p>}
-            {connections.length === 0 && !connsLoading && (
-              <p className="hint" style={{ margin: '0.4rem 0 0' }}>
-                Click ↺ Load to fetch accepted connections.
-              </p>
-            )}
-            {connections.length > 0 && (
-              <>
-                <p className="meta">{connsTotal} accepted connection{connsTotal !== 1 ? 's' : ''}</p>
-                <ul className="conn-list">
-                  {connections.map(c => {
-                    const m = c.connected_member
-                    return (
-                      <li key={c.connection_id} className="conn-item">
-                        <div className="conn-item-name">
-                          {m ? m.name : `Member #${c.requester_id === identity ? c.receiver_id : c.requester_id}`}
-                        </div>
-                        {m?.headline && (
-                          <div className="conn-item-headline muted">{m.headline}</div>
-                        )}
-                        <span className={`conn-status status-${c.status}`}>{c.status}</span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </>
-            )}
-          </div>
-
-          {/* ── Mutual connections ───────────────────── */}
-          <div className="chart-card">
-            <h3 className="chart-title">Mutual connections</h3>
-            <p className="hint" style={{ margin: '0.25rem 0 0.5rem' }}>
-              Find connections shared between you (#{identity}) and another member.
-            </p>
-            <label className="form-label">
-              Other member ID
-              <input
-                type="number"
-                value={otherId}
-                min={1}
-                onChange={e => setOtherId(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && loadMutual()}
-                placeholder="e.g. 5"
-                style={{ width: 100 }}
-              />
-            </label>
-            <button
-              type="button"
-              className="primary"
-              onClick={loadMutual}
-              disabled={mutualLoading}
-              style={{ alignSelf: 'flex-start', marginTop: '0.5rem' }}
-            >
-              {mutualLoading ? 'Finding…' : 'Find mutual'}
-            </button>
-            {mutualResult && (
-              <p className="meta" style={{ margin: '0.4rem 0 0' }}>{mutualResult}</p>
-            )}
-            {mutual.length > 0 && (
-              <ul className="conn-list" style={{ marginTop: '0.5rem' }}>
-                {mutual.map(m => (
-                  <li key={m.member_id} className="conn-item">
-                    <div className="conn-item-name">{m.name}</div>
-                    {m.headline && <div className="conn-item-headline muted">{m.headline}</div>}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {mutual.length === 0 && mutualResult && !mutualLoading && (
-              <p className="hint" style={{ marginTop: '0.25rem' }}>No mutual connections found.</p>
-            )}
-          </div>
-
+      {/* Connections count banner */}
+      {connsTotal > 0 && (
+        <div className="identity-bar">
+          <span>🔗</span>
+          <strong>{connsTotal}</strong>
+          <span>accepted connection{connsTotal !== 1 ? 's' : ''}</span>
         </div>
       )}
+
+      <div className="conn-grid">
+        {/* ── Send request ────────────────────────── */}
+        <div className="chart-card">
+          <h3 className="chart-title">Connect with someone</h3>
+          <p className="hint" style={{ marginTop: 0 }}>Enter the member ID of the person you want to connect with.</p>
+          <label className="form-label">
+            Member ID
+            <input
+              type="number"
+              value={toId}
+              min={1}
+              onChange={e => setToId(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendRequest()}
+              placeholder="e.g. 2"
+            />
+          </label>
+          <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading}
+            style={{ alignSelf: 'flex-start' }}>
+            {reqLoading ? 'Sending…' : 'Send request'}
+          </button>
+          {reqResult && (
+            <>
+              <ResultBanner success={reqResult.success} message={reqResult.message} />
+              {reqResult.success && reqResult.data && (
+                <div className="conn-detail">
+                  <span>Connection ID: <strong>#{reqResult.data.connection_id}</strong></span>
+                  <span className={`conn-status status-${reqResult.data.status}`}>{reqResult.data.status}</span>
+                  <p className="hint" style={{ marginTop: 4, fontSize: 11 }}>
+                    Copy this ID to accept or reject the request below.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Accept / Reject ──────────────────────── */}
+        <div className="chart-card">
+          <h3 className="chart-title">Respond to a request</h3>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Paste a <code>connection_id</code> from a pending request to accept or reject it.
+          </p>
+          <label className="form-label">
+            Connection ID
+            <input
+              type="number"
+              value={connId}
+              min={1}
+              onChange={e => setConnId(e.target.value)}
+              placeholder="e.g. 42"
+            />
+          </label>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button type="button" className="primary" onClick={acceptConn} disabled={arLoading}>
+              {arLoading ? '…' : 'Accept'}
+            </button>
+            <button type="button" className="danger-btn" onClick={rejectConn} disabled={arLoading}>
+              {arLoading ? '…' : 'Decline'}
+            </button>
+          </div>
+          {arResult && <ResultBanner success={arResult.success} message={arResult.message} />}
+        </div>
+
+        {/* ── My connections ───────────────────────── */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <h3 className="chart-title">My connections</h3>
+            <button type="button" className="ghost-btn" onClick={() => loadConnections(myId!)} disabled={connsLoading}>
+              {connsLoading ? '…' : '↺ Refresh'}
+            </button>
+          </div>
+          {connsErr && <p className="error">{connsErr}</p>}
+          {connections.length === 0 && !connsLoading && (
+            <p className="hint">No accepted connections yet.</p>
+          )}
+          {connections.length > 0 && (
+            <ul className="conn-list">
+              {connections.map(c => {
+                const m = c.connected_member
+                return (
+                  <li key={c.connection_id} className="conn-item">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="member-avatar" style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0 }}>
+                        {(m?.name ?? '?')[0].toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="conn-item-name">
+                          {m ? m.name : `Member #${c.requester_id === myId ? c.receiver_id : c.requester_id}`}
+                        </div>
+                        {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
+                      </div>
+                      <span className={`conn-status status-${c.status}`}>{c.status}</span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        {/* ── Mutual connections ───────────────────── */}
+        <div className="chart-card">
+          <h3 className="chart-title">Mutual connections</h3>
+          <p className="hint" style={{ marginTop: 0 }}>
+            Find connections you share with another member.
+          </p>
+          <label className="form-label">
+            Other member ID
+            <input
+              type="number"
+              value={otherId}
+              min={1}
+              onChange={e => setOtherId(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && loadMutual()}
+              placeholder="e.g. 5"
+            />
+          </label>
+          <button type="button" className="primary" onClick={loadMutual} disabled={mutualLoading}
+            style={{ alignSelf: 'flex-start' }}>
+            {mutualLoading ? 'Finding…' : 'Find mutual'}
+          </button>
+          {mutualResult && <p className="meta" style={{ marginTop: 4 }}>{mutualResult}</p>}
+          {mutual.length > 0 && (
+            <ul className="conn-list" style={{ marginTop: 8 }}>
+              {mutual.map(m => (
+                <li key={m.member_id} className="conn-item">
+                  <div className="conn-item-name">{m.name}</div>
+                  {m.headline && <div className="conn-item-headline muted">{m.headline}</div>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </section>
   )
 }

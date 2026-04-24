@@ -5,9 +5,10 @@ Provides recruiter and member analytics with MongoDB event logs.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import func as sql_func, desc, asc, extract, case, literal_column
 
+from auth import require_recruiter, require_member, TokenPayload
 from database import get_db, mongo_db, SessionLocal
 from models.job import JobPosting, SavedJob
 from models.application import Application
@@ -62,7 +63,7 @@ async def ingest_event(req: EventIngest):
 
 
 @router.post("/analytics/jobs/top", response_model=AnalyticsResponse, summary="Top jobs by metric")
-async def top_jobs(req: TopJobsRequest):
+async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Get top job postings by metric (applications, views, or saves).
     Used for recruiter dashboard analytics.
@@ -164,7 +165,7 @@ async def job_funnel(req: FunnelRequest):
 
 
 @router.post("/analytics/geo", response_model=AnalyticsResponse, summary="Geographic distribution")
-async def geo_distribution(req: GeoRequest):
+async def geo_distribution(req: GeoRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Get the city/state distribution of applicants for a specific job posting.
     """
@@ -202,10 +203,15 @@ async def geo_distribution(req: GeoRequest):
     response_model=AnalyticsResponse,
     summary="Member dashboard metrics",
 )
-async def member_dashboard(req: MemberDashboardRequest):
+async def member_dashboard(
+    req: MemberDashboardRequest,
+    current_user: TokenPayload = Depends(require_member),
+):
     """
     Get member dashboard metrics: profile views (last 30 days) and application status breakdown.
     """
+    if req.member_id != current_user.user_id:
+        return AnalyticsResponse(success=False, message="Cannot view another member's dashboard")
     db = SessionLocal()
     try:
         member = db.query(Member).filter(Member.member_id == req.member_id).first()
@@ -261,7 +267,7 @@ async def member_dashboard(req: MemberDashboardRequest):
     response_model=AnalyticsResponse,
     summary="Top 10 jobs by applications, grouped by month",
 )
-async def top_jobs_monthly(req: TopJobsRequest):
+async def top_jobs_monthly(req: TopJobsRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Brief requirement: "Top 10 job postings by applications per month."
     Groups applications by calendar month and returns the top N jobs
@@ -318,7 +324,7 @@ async def top_jobs_monthly(req: TopJobsRequest):
     response_model=AnalyticsResponse,
     summary="City-wise applications per month for a job",
 )
-async def geo_monthly(req: GeoRequest):
+async def geo_monthly(req: GeoRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Brief requirement: "City-wise applications per month for a selected job posting."
     Same as /analytics/geo but grouped by calendar month.
@@ -372,7 +378,7 @@ async def geo_monthly(req: GeoRequest):
     response_model=AnalyticsResponse,
     summary="Top 5 jobs with fewest applications",
 )
-async def least_applied_jobs(req: LeastAppliedRequest):
+async def least_applied_jobs(req: LeastAppliedRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Brief requirement: "Top 5 job postings with the fewest applications."
     Returns open jobs ordered ascending by application count.
@@ -420,7 +426,7 @@ async def least_applied_jobs(req: LeastAppliedRequest):
     response_model=AnalyticsResponse,
     summary="Clicks (views) per job posting from event logs",
 )
-async def clicks_per_job(req: ClicksPerJobRequest):
+async def clicks_per_job(req: ClicksPerJobRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Brief requirement: "Clicks per job posting (from logs)."
 
@@ -505,7 +511,7 @@ async def clicks_per_job(req: ClicksPerJobRequest):
     response_model=AnalyticsResponse,
     summary="Saved jobs per day or week",
 )
-async def saves_trend(req: SavesTrendRequest):
+async def saves_trend(req: SavesTrendRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Brief requirement: "Number of saved jobs per day/week (from logs)."
 
