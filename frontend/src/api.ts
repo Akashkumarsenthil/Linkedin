@@ -1,9 +1,11 @@
 /**
  * API base: dev uses Vite proxy (/api -> backend). Production: set VITE_API_URL.
  */
+// Always prefer /api — dev: Vite proxy → backend; prod: nginx proxy → backend.
+// Override with VITE_API_URL for cloud deploys where the backend is on a
+// different host than the frontend.
 const base =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ||
-  (import.meta.env.DEV ? '/api' : 'http://127.0.0.1:8000')
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '/api'
 
 // ── Token storage ─────────────────────────────────────────────────────────────
 
