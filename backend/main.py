@@ -13,11 +13,20 @@ from config import settings
 from kafka_producer import kafka_producer
 from kafka_consumer import kafka_consumer
 from routers import members, recruiters, jobs, applications, messages, connections, analytics, ai_service
+<<<<<<< Updated upstream
 from routers import auth_router, posts, notifications
 from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
 from database import create_mongo_indexes, engine, Base
 import models.user_credentials  # register model with Base.metadata before create_all
 import models.post  # register Post & PostLike so create_all picks them up
+=======
+from routers import auth_router
+from routers import perf_router
+from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
+from database import create_mongo_indexes, engine, Base
+import models.user_credentials      # register model with Base.metadata before create_all
+import models.failed_kafka_event    # register dual-write fallback table
+>>>>>>> Stashed changes
 
 # ─── Logging ────────────────────────────────────────────────────
 logging.basicConfig(
@@ -178,8 +187,12 @@ app.include_router(connections.router)
 app.include_router(analytics.router)
 app.include_router(ai_service.router)
 app.include_router(auth_router.router)
+<<<<<<< Updated upstream
 app.include_router(posts.router)
 app.include_router(notifications.router)
+=======
+app.include_router(perf_router.router)
+>>>>>>> Stashed changes
 
 
 # ─── Health Check ──────────────────────────────────────────────
@@ -229,4 +242,6 @@ async def health_check():
         "services": services,
         # Back-compat keys (flat) so UIs that check root-level still work
         **{k: ("ok" if v else "down") for k, v in services.items()},
+        # Cache hit/miss stats since last restart — useful during load tests
+        "cache_stats": cache.stats(),
     }

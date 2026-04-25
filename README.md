@@ -24,6 +24,7 @@
 5. [API Documentation](#5-api-documentation)
 6. [Running with Docker (recommended)](#6-running-with-docker-recommended)
 7. [Seeding the Database](#7-seeding-the-database)
+   - [7a. Admin Access](#7a-admin-access)
 8. [Local Development Setup](#8-local-development-setup)
 9. [AI Workflow and Ollama](#9-ai-workflow-and-ollama)
 10. [Kafka Topics and Async Processing](#10-kafka-topics-and-async-processing)
@@ -364,10 +365,12 @@ python seed_data.py --yes
 | Members | 10,000 | 60 |
 | Recruiters | **10,000** | 6 |
 | Job postings | 10,000 | 50 |
-| Applications | 15,000 | 120 |
-| Saved jobs | 5,000 | 40 |
+| Applications | **25,000** (Pareto-skewed) | 120 |
+| Saved jobs | 8,000 | 40 |
 | Message threads | 2,000 | 12 |
 | Profile view records | 30,000 | 80 |
+| **Perf-test account** | 1 (always) | 1 (always) |
+| **Admin account** | 1 (always) | 1 (always) |
 
 Full seed takes ~3–5 minutes.
 
@@ -390,6 +393,64 @@ See [`SETUP_AND_RUNBOOK.md`](SETUP_AND_RUNBOOK.md#5-dataset-loading-kaggle) for 
 dataset loading instructions and pipeline details.
 
 > **Note:** Running the seed script a second time on a non-empty database will fail on duplicate email constraints. Run `docker compose down -v && docker compose up -d` first if you want a clean slate.
+
+---
+
+## 7a. Admin Access
+
+The platform has a special **admin** role that is separate from member and recruiter accounts.
+Admin accounts **cannot be created through the UI or API registration forms** — they are provisioned exclusively by the seed script.
+
+### Admin credentials
+
+| Field | Value |
+|---|---|
+| **Email** | `admin@linkedin-perf.io` |
+| **Password** | `admin123` |
+
+### How to log in as admin
+
+1. Seed the database first (see Section 7 above)
+2. Open the app at `http://localhost:5173`
+3. Click **Account** (○) in the top nav
+4. Use the **Sign in** tab — enter the email and password above
+5. The nav badge will show **★ admin** in gold
+
+### What admin can see
+
+Admin has access to **every tab** in the platform:
+
+| Tab | guest | member | recruiter | ★ admin |
+|---|:---:|:---:|:---:|:---:|
+| Overview | ✓ | ✓ | ✓ | ✓ |
+| Jobs | ✓ | ✓ | ✓ | ✓ |
+| Network (Members) | ✕ | ✓ | ✕ | ✓ |
+| Analytics | ✕ | ✕ | ✓ | ✓ |
+| Messaging | ✕ | ✓ | ✓ | ✓ |
+| Connections | ✕ | ✓ | ✕ | ✓ |
+| AI Recruiter | ✕ | ✕ | ✓ | ✓ |
+| **⚡ Performance** | ✕ | ✕ | ✕ | **✓ only** |
+| Account | ✓ | ✓ | ✓ | ✓ |
+
+### Why admin cannot self-register
+
+- The `/auth/register/member` endpoint hardcodes `user_type="member"`
+- The `/auth/register/recruiter` endpoint hardcodes `user_type="recruiter"`
+- There is no `/auth/register/admin` endpoint
+- The UI registration tabs only offer "Join as Member" and "Join as Recruiter"
+- The only way to create an admin is by running `seed_data.py`, which requires shell access to the server
+
+### Perf-test account (for load testing only)
+
+The seed script also creates a second special account used exclusively by the Locust and `perf_comparison.py` load tests:
+
+| Field | Value |
+|---|---|
+| **Email** | `perf.tester@linkedin-perf.io` |
+| **Password** | `perftest123` |
+| **Role** | `member` (limited access) |
+
+This account is **not** for human use — it exists so the authenticated write-path benchmark (Scenario B) can obtain a valid JWT without depending on randomly generated seed emails.
 
 ---
 

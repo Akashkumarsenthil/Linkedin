@@ -176,3 +176,19 @@ CREATE TABLE profile_views_daily (
     UNIQUE KEY unique_daily_view (member_id, view_date),
     INDEX idx_view_date (view_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ─── Failed Kafka Events (dual-write fallback) ───────────────────
+-- When a Kafka publish fails after a successful DB commit, the event
+-- payload is written here so it is not silently lost.
+CREATE TABLE IF NOT EXISTS failed_kafka_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    topic VARCHAR(255) NOT NULL,
+    event_type VARCHAR(255) NOT NULL,
+    entity_id VARCHAR(255),
+    actor_id VARCHAR(255),
+    payload TEXT,           -- JSON-serialised event payload
+    error_message TEXT,     -- Exception message from the failed publish
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_fke_event_type (event_type),
+    INDEX idx_fke_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

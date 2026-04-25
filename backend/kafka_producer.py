@@ -1,6 +1,20 @@
 """
 LinkedIn Platform — Kafka Producer
 Publishes domain events to Kafka topics using the standard JSON envelope.
+
+Idempotency key design
+----------------------
+The caller supplies an optional `idempotency_key`.  When provided it should be
+derived from the business operation so that retrying the same logical action
+produces the same key:
+
+    job_save    → f"job_save:{member_id}:{job_id}"
+    app_submit  → f"app_submit:{member_id}:{job_id}"
+    conn_req    → f"conn_request:{requester_id}:{receiver_id}"
+    job_created → f"job_created:{job_id}"
+
+When no key is provided (e.g. analytics view events where dedup is not
+critical) a random UUID is used as before.
 """
 
 import json
@@ -40,16 +54,24 @@ class KafkaEventProducer:
         entity_id: str,
         payload: Dict[str, Any],
         trace_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
     ) -> str:
         """
         Publish an event following the standard Kafka envelope format.
         Returns the trace_id for correlation.
+
+        idempotency_key should be caller-supplied and derived from the
+        business operation so that retry of the same logical action does not
+        create a new event that bypasses the consumer's dedup check.
+        If omitted a random UUID is used (safe for events where dedup is
+        handled at the application layer).
         """
         if not self.producer:
             raise RuntimeError("Kafka producer not started")
 
         trace_id = trace_id or str(uuid.uuid4())
-        idempotency_key = str(uuid.uuid4())
+        # Use caller-supplied key (business-derived) or fall back to random UUID
+        idem_key = idempotency_key or str(uuid.uuid4())
 
         event = {
             "event_type": event_type,
@@ -61,7 +83,7 @@ class KafkaEventProducer:
                 "entity_id": str(entity_id),
             },
             "payload": payload,
-            "idempotency_key": idempotency_key,
+            "idempotency_key": idem_key,
         }
 
         await self.producer.send_and_wait(

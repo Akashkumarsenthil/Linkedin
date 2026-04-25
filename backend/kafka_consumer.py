@@ -15,17 +15,29 @@ duplicate side-effects if the message was partially processed before the crash.
 
 Commit errors are logged but do not propagate — a failed commit means the offset may be
 recommitted on the next successful delivery, which is handled by idempotency.
+
+Poison pill protection
+----------------------
+A message that permanently fails (bad data, downstream unavailable, schema error) would
+block the consumer forever if the offset is never committed.  To prevent this, delivery
+attempts are tracked per idempotency_key in the MongoDB `processing_attempts` collection.
+After MAX_DELIVERY_ATTEMPTS failures the message is routed to `dead_letters` and the
+offset is committed, unblocking the partition.  The dead-letter document contains the
+full event for manual inspection and replay.
 """
 
 import json
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Callable, Set
 from aiokafka import AIOKafkaConsumer
 from config import settings
 from database import mongo_db
 
 logger = logging.getLogger(__name__)
+
+MAX_DELIVERY_ATTEMPTS = 3   # poison pill threshold
 
 
 class KafkaEventConsumer:
@@ -84,6 +96,26 @@ class KafkaEventConsumer:
                 f"Offset commit failed for {message.topic}:{message.partition}:{message.offset} — {e}"
             )
 
+    async def _get_and_increment_attempts(self, idempotency_key: str, event_type: str) -> int:
+        """
+        Atomically increment and return the delivery attempt count for an event.
+        Uses MongoDB findOneAndUpdate for atomic read-increment.
+        Returns the new attempt count (1 on first attempt).
+        """
+        doc = await mongo_db.processing_attempts.find_one_and_update(
+            {"idempotency_key": idempotency_key},
+            {
+                "$inc": {"attempts": 1},
+                "$setOnInsert": {
+                    "event_type": event_type,
+                    "first_seen": datetime.now(timezone.utc).isoformat(),
+                },
+            },
+            upsert=True,
+            return_document=True,   # return the document AFTER the update
+        )
+        return doc.get("attempts", 1) if doc else 1
+
     async def consume(self):
         """Main consumption loop with idempotent processing and manual commit."""
         if not self.consumer:
@@ -116,6 +148,28 @@ class KafkaEventConsumer:
                     await self._commit(message)
                     continue
 
+                # ── Poison-pill guard — check delivery attempt count ──────────
+                # If this message has failed MAX_DELIVERY_ATTEMPTS times already,
+                # route it to dead_letters and advance the offset so the partition
+                # is not blocked indefinitely.
+                attempt_doc = await mongo_db.processing_attempts.find_one(
+                    {"idempotency_key": idempotency_key}
+                )
+                prior_attempts = attempt_doc.get("attempts", 0) if attempt_doc else 0
+
+                if prior_attempts >= MAX_DELIVERY_ATTEMPTS:
+                    logger.error(
+                        f"Dead-lettering {event_type} ({idempotency_key}) after "
+                        f"{prior_attempts} failed attempts — offset committed to unblock partition"
+                    )
+                    await mongo_db.dead_letters.insert_one({
+                        **event,
+                        "dead_lettered_at": datetime.now(timezone.utc).isoformat(),
+                        "reason": f"exceeded {MAX_DELIVERY_ATTEMPTS} delivery attempts",
+                    })
+                    await self._commit(message)
+                    continue
+
                 # ── Dispatch to registered handler ────────────────────────────
                 handler = self.handlers.get(event_type)
                 if handler:
@@ -132,10 +186,14 @@ class KafkaEventConsumer:
                         # Commit offset only after full, successful processing.
                         await self._commit(message)
                     except Exception as e:
+                        # Increment the attempt counter so the poison-pill guard
+                        # can detect repeated failures and eventually dead-letter.
+                        await self._get_and_increment_attempts(idempotency_key, event_type)
                         # Do NOT commit — offset stays at this message so it will be
                         # redelivered from Kafka on the next consumer start.
                         logger.error(
                             f"Error processing {event_type} ({idempotency_key}): {e} — "
+                            f"attempt {prior_attempts + 1}/{MAX_DELIVERY_ATTEMPTS}; "
                             "offset NOT committed; message will be redelivered"
                         )
                 else:
@@ -151,20 +209,31 @@ class KafkaEventConsumer:
             logger.error(f"Consumer error: {e}")
 
 
-# Event handler functions
+# ── Event handler functions ─────────────────────────────────────────────────
+
 async def handle_job_viewed(event: dict):
-    """Update job view count when a job.viewed event is received."""
+    """
+    Update job view count when a job.viewed event is received.
+
+    Uses an atomic SQL UPDATE (SET views_count = views_count + 1) instead of
+    a read-modify-write to prevent lost updates under concurrent load.
+    """
     from database import SessionLocal
     from models.job import JobPosting
+    from sqlalchemy import update
     from datetime import date
 
-    job_id = event["entity"]["entity_id"]
+    job_id = int(event["entity"]["entity_id"])
+
     db = SessionLocal()
     try:
-        job = db.query(JobPosting).filter(JobPosting.job_id == int(job_id)).first()
-        if job:
-            job.views_count = (job.views_count or 0) + 1
-            db.commit()
+        # Atomic increment — no read-modify-write race
+        db.execute(
+            update(JobPosting)
+            .where(JobPosting.job_id == job_id)
+            .values(views_count=JobPosting.views_count + 1)
+        )
+        db.commit()
     finally:
         db.close()
 
@@ -174,56 +243,71 @@ async def handle_job_viewed(event: dict):
     # Upsert into pre-aggregated daily click summary
     today = str(date.today())
     await mongo_db.analytics_job_clicks_daily.update_one(
-        {"job_id": int(job_id), "date": today},
+        {"job_id": job_id, "date": today},
         {"$inc": {"clicks": 1}},
         upsert=True,
     )
 
 
 async def handle_application_submitted(event: dict):
-    """Update applicant count and log application event."""
-    from database import SessionLocal
-    from models.job import JobPosting
+    """
+    Log application event to MongoDB.
 
-    job_id = event["payload"].get("job_id")
-    if job_id:
-        db = SessionLocal()
-        try:
-            job = db.query(JobPosting).filter(JobPosting.job_id == int(job_id)).first()
-            if job:
-                job.applicants_count = (job.applicants_count or 0) + 1
-                db.commit()
-        finally:
-            db.close()
-
+    NOTE: applicants_count is already atomically incremented in the HTTP handler
+    (routers/applications.py) at the time the application is committed to MySQL.
+    This consumer handler must NOT increment it again — doing so would double-count
+    every application.
+    """
     await mongo_db.event_logs.insert_one(event)
 
 
 async def handle_profile_viewed(event: dict):
-    """Track profile views for analytics."""
+    """
+    Track profile views for analytics.
+
+    Uses an atomic upsert pattern for the daily view count to prevent
+    read-modify-write races under concurrent load.
+    """
     from database import SessionLocal
     from models.member import ProfileViewDaily
+    from sqlalchemy import update
     from datetime import date
 
-    member_id = event["entity"]["entity_id"]
+    member_id = int(event["entity"]["entity_id"])
     today = date.today()
 
     db = SessionLocal()
     try:
-        view = (
-            db.query(ProfileViewDaily)
-            .filter(
-                ProfileViewDaily.member_id == int(member_id),
+        # Try atomic increment first
+        rows_updated = db.execute(
+            update(ProfileViewDaily)
+            .where(
+                ProfileViewDaily.member_id == member_id,
                 ProfileViewDaily.view_date == today,
             )
-            .first()
-        )
-        if view:
-            view.view_count += 1
+            .values(view_count=ProfileViewDaily.view_count + 1)
+        ).rowcount
+
+        if rows_updated == 0:
+            # Row doesn't exist yet — insert it
+            try:
+                view = ProfileViewDaily(member_id=member_id, view_date=today, view_count=1)
+                db.add(view)
+                db.commit()
+            except Exception:
+                # Another concurrent request already inserted the row
+                db.rollback()
+                db.execute(
+                    update(ProfileViewDaily)
+                    .where(
+                        ProfileViewDaily.member_id == member_id,
+                        ProfileViewDaily.view_date == today,
+                    )
+                    .values(view_count=ProfileViewDaily.view_count + 1)
+                )
+                db.commit()
         else:
-            view = ProfileViewDaily(member_id=int(member_id), view_date=today, view_count=1)
-            db.add(view)
-        db.commit()
+            db.commit()
     finally:
         db.close()
 
@@ -240,7 +324,6 @@ async def handle_job_saved(event: dict):
     scanning saved_jobs in MySQL, making it O(days) rather than O(rows).
     """
     from datetime import date
-    import datetime as _dt
 
     await mongo_db.event_logs.insert_one(event)
 
