@@ -1,115 +1,82 @@
 /**
  * SavesTrendChart — saved jobs per day or week.
- * Brief requirement: "Number of saved jobs per day/week (from logs)."
- * Endpoint: POST /analytics/saves/trend
- * Data source: MySQL saved_jobs table (saved_at timestamp).
+ * Auto-loads daily view on mount.
  */
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { apiPost } from '../api'
 
 type Granularity = 'day' | 'week'
 
-interface TrendRow {
-  period: string
-  count: number
-}
-
-interface ApiResp {
-  success: boolean
-  message: string
-  data: TrendRow[]
-}
+interface TrendRow { period: string; count: number }
+interface ApiResp { success: boolean; message: string; data: TrendRow[] }
 
 export function SavesTrendChart() {
   const [granularity, setGranularity] = useState<Granularity>('day')
   const [data, setData]               = useState<TrendRow[]>([])
-  const [loading, setLoading]         = useState(false)
+  const [loading, setLoading]         = useState(true)
   const [err, setErr]                 = useState<string | null>(null)
-  const [loaded, setLoaded]           = useState(false)
 
-  const load = async (g: Granularity) => {
-    setLoading(true)
-    setErr(null)
+  const load = useCallback(async (g: Granularity) => {
+    setLoading(true); setErr(null)
     try {
       const r = await apiPost<ApiResp>('/analytics/saves/trend', {
-        window_days: g === 'week' ? 90 : 30,
-        granularity: g,
+        window_days: g === 'week' ? 90 : 30, granularity: g,
       })
       if (!r.success) throw new Error(r.message)
       setData(r.data ?? [])
-      setLoaded(true)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Request failed')
-    } finally {
-      setLoading(false)
-    }
-  }
+    } finally { setLoading(false) }
+  }, [])
 
-  const switchGranularity = (g: Granularity) => {
-    setGranularity(g)
-    load(g)
-  }
+  useEffect(() => { load('day') }, [load])
 
-  const fmtPeriod = (p: string) => {
-    if (granularity === 'day') return p.slice(5)   // drop year → MM-DD
-    return p                                        // week label as-is
-  }
-
+  const switchGranularity = (g: Granularity) => { setGranularity(g); load(g) }
+  const fmtPeriod = (p: string) => granularity === 'day' ? p.slice(5) : p
   const total = data.reduce((s, d) => s + d.count, 0)
 
   return (
-    <div className="chart-card">
-      <div className="chart-header">
-        <h3 className="chart-title">Saved Jobs Trend</h3>
-        <div className="metric-tabs">
+    <div className="ad-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <h3 className="ad-card-title">Saved Jobs Trend</h3>
+        <div className="ad-metric-tabs">
           {(['day', 'week'] as Granularity[]).map(g => (
-            <button
-              key={g}
-              type="button"
-              className={granularity === g && loaded ? 'metric-btn active' : 'metric-btn'}
-              onClick={() => switchGranularity(g)}
-              disabled={loading}
-            >
-              {g}
-            </button>
+            <button key={g} type="button"
+              className={`ad-metric-tab${granularity === g ? ' active' : ''}`}
+              onClick={() => switchGranularity(g)} disabled={loading}
+            >{g === 'day' ? 'Daily' : 'Weekly'}</button>
           ))}
         </div>
       </div>
 
-      {!loaded && (
-        <button type="button" className="primary" onClick={() => load(granularity)} disabled={loading}>
-          {loading ? 'Loading…' : 'Load chart'}
-        </button>
-      )}
-      {err && <p className="error">{err}</p>}
-      {loaded && data.length === 0 && (
-        <p className="hint">No saved-job data in the selected window.</p>
-      )}
-
-      {loaded && data.length > 0 && (
+      {loading ? (
+        <div className="ad-chart-skeleton">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="ad-skeleton-bar" style={{ width: `${40 + Math.random() * 50}%`, animationDelay: `${i * 0.08}s` }} />
+          ))}
+        </div>
+      ) : err ? <p className="ad-error">{err}</p> : data.length === 0 ? (
+        <p className="ad-empty">No saved-job data in the selected window.</p>
+      ) : (
         <>
-          <p className="hint" style={{ margin: 0, fontSize: '0.8rem' }}>
-            {total} saves over {data.length} {granularity === 'day' ? 'days' : 'weeks'}
-          </p>
+          <p className="ad-card-hint">{total} saves over {data.length} {granularity === 'day' ? 'days' : 'weeks'}</p>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={data} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e8edf2" />
-              <XAxis
-                dataKey="period"
-                tick={{ fontSize: 10 }}
-                tickFormatter={fmtPeriod}
-                interval="preserveStartEnd"
-              />
-              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} width={32} />
-              <Tooltip
-                labelFormatter={(l) => `${granularity === 'day' ? 'Date' : 'Week'}: ${l}`}
-                formatter={(val) => [val, 'saves']}
-              />
-              <Bar dataKey="count" fill="#5fa8e8" radius={[3, 3, 0, 0]} />
-            </BarChart>
+            <AreaChart data={data} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+              <defs>
+                <linearGradient id="savesFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" />
+              <XAxis dataKey="period" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={fmtPeriod} interval="preserveStartEnd" axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} width={32} axisLine={false} tickLine={false} />
+              <Tooltip />
+              <Area type="monotone" dataKey="count" stroke="#0a66c2" strokeWidth={2} fill="url(#savesFill)" />
+            </AreaChart>
           </ResponsiveContainer>
         </>
       )}

@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"task_id":{"$numberInt":"1"}},"name":"task_id_unique","unique":true},{"v":{"$numberInt":"2"},"key":{"status":{"$numberInt":"1"}},"name":"status_1"}],"uuid":"059f1a328c1e4c6f9c6d11cfc84900b8","collectionName":"agent_tasks","type":"collection"}
