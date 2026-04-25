@@ -8,7 +8,7 @@ import { TechMemoryGame } from './TechMemoryGame'
 interface HomeFeedProps {
   me: {
     user_id: number
-    user_type: 'member' | 'recruiter'
+    user_type: 'member' | 'recruiter' | 'admin'
     email: string
     profile: Record<string, unknown>
   } | null
