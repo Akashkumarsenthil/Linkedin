@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { apiPost, setStoredToken, getStoredToken } from '../api'
+import { apiPost, setStoredToken, parseStoredUser } from '../api'
 
 interface TokenResponse {
   access_token: string
@@ -102,7 +102,7 @@ export function AuthPanel({ onAuthChange }: AuthPanelProps) {
     }
   }
 
-  const isLoggedIn = !!getStoredToken()
+  const isLoggedIn = !!parseStoredUser()
 
   // Authenticated users shouldn't see this tab — App.tsx normally routes them
   // to /profile.  If they land here anyway, show a small hint.

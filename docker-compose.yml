@@ -5,11 +5,12 @@ services:
     image: mysql:8.0
     container_name: linkedin-mysql
     restart: unless-stopped
+    env_file: .env
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: linkedin
-      MYSQL_USER: linkedin_user
-      MYSQL_PASSWORD: linkedin_pass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin}
+      MYSQL_USER: ${MYSQL_USER:-linkedin_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-linkedin_pass}
     ports:
       - "3306:3306"
     volumes:
@@ -26,10 +27,11 @@ services:
     image: mongo:7
     container_name: linkedin-mongodb
     restart: unless-stopped
+    env_file: .env
     environment:
-      MONGO_INITDB_ROOT_USERNAME: mongo_user
-      MONGO_INITDB_ROOT_PASSWORD: mongo_pass
-      MONGO_INITDB_DATABASE: linkedin
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-mongo_user}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongo_pass}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-linkedin}
     # Host 27018 avoids clashing with a local mongod on 27017 (common on dev laptops).
     ports:
       - "27018:27017"
@@ -105,6 +107,7 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file: .env
     environment:
       # ── MySQL (use Docker service name, internal port) ──
       MYSQL_HOST: 3.80.47.57
@@ -122,11 +125,8 @@ services:
       # ── Redis ──
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      # ── Kafka (PLAINTEXT internal listener) ──
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      # ── Ollama ──
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: llama3.2
     depends_on:
       mysql:
         condition: service_healthy
