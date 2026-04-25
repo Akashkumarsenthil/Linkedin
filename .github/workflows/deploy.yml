@@ -26,6 +26,11 @@ jobs:
               git reset --hard origin/main
             fi
             
+            # Create .env from example if it doesn't exist
+            if [ ! -f ".env" ]; then
+              cp .env.example .env
+            fi
+            
             # Restart all containers in detached mode
             sudo docker-compose down
             sudo docker-compose up --build -d
