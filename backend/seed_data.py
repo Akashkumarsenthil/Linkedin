@@ -98,6 +98,19 @@ PROFILE_QUICK = SeedProfile(
     batch_size=100,
 )
 
+PROFILE_1K = SeedProfile(
+    members=1_000,
+    recruiters=100,
+    jobs=500,
+    applications=2_500,
+    connections=2_000,
+    threads=200,
+    msg_per_thread=3,
+    saved_jobs=800,
+    profile_views=3_000,
+    batch_size=500,
+)
+
 
 # ─── Constants ──────────────────────────────────────────────────
 
@@ -213,7 +226,9 @@ def seed_members(db, profile: SeedProfile):
     count = profile.members
     print(f"\n📝 Seeding {count} members...")
     members = []
-    used_emails = set()
+    # Pre-load existing emails to avoid duplicates on --append runs
+    existing = {row[0] for row in db.execute(text("SELECT email FROM members")).fetchall()}
+    used_emails = set(existing)
 
     for i in tqdm(range(count)):
         city, state, country = random.choice(CITIES)
@@ -222,10 +237,10 @@ def seed_members(db, profile: SeedProfile):
         years = random.randint(0, 15)
         company = random.choice(COMPANIES)
 
-        # Generate unique email
+        # Generate unique email (checked against DB + current batch)
         email = f"{fake.first_name().lower()}.{fake.last_name().lower()}{random.randint(1, 9999)}@{fake.free_email_domain()}"
         while email in used_emails:
-            email = f"{fake.first_name().lower()}{random.randint(1, 99999)}@{fake.free_email_domain()}"
+            email = f"{fake.first_name().lower()}{random.randint(1, 9999999)}@{fake.free_email_domain()}"
         used_emails.add(email)
 
         headline_template = random.choice(HEADLINE_TEMPLATES)
@@ -279,13 +294,14 @@ def seed_recruiters(db, profile: SeedProfile):
     count = profile.recruiters
     print(f"\n👔 Seeding {count} recruiters...")
     recruiters = []
-    used_emails = set()
+    existing = {row[0] for row in db.execute(text("SELECT email FROM recruiters")).fetchall()}
+    used_emails = set(existing)
 
     for i in tqdm(range(count)):
         company = random.choice(COMPANIES)
         email = f"recruiter.{fake.last_name().lower()}{random.randint(1, 9999)}@{company.lower().replace(' ', '').replace('/', '')}.com"
         while email in used_emails:
-            email = f"hr{random.randint(1, 99999)}@{company.lower().replace(' ', '')}.com"
+            email = f"hr{random.randint(1, 9999999)}@{company.lower().replace(' ', '')}.com"
         used_emails.add(email)
 
         recruiter = Recruiter(
@@ -685,26 +701,52 @@ def seed_admin_user(db) -> int:
     return member.member_id
 
 
-def run_seed(db, profile: SeedProfile, assume_yes: bool) -> None:
+def run_seed(db, profile: SeedProfile, assume_yes: bool, append: bool = False) -> None:
     existing = db.execute(text("SELECT COUNT(*) FROM members")).scalar()
-    if existing > 0:
-        if not assume_yes:
-            response = input(
-                f"\n⚠️  Database already has {existing} members. Clear and re-seed? (y/N): "
-            )
-            if response.lower() != "y":
-                print("Aborted.")
-                return
+    if existing > 0 and not append:
+        if assume_yes:
+            print(f"\n⚠️  Database already has {existing} members.")
+            print("   Use --admin-only to add just the admin account without clearing data.")
+            print("   Use --append to add more records without clearing.")
+            print("   Aborted to protect existing data.")
+            return
+        response = input(
+            f"\n⚠️  Database already has {existing} members. Clear and re-seed? (y/N): "
+        )
+        if response.lower() != "y":
+            print("Aborted.")
+            return
         _clear_tables(db)
 
     seed_members(db, profile)
     seed_recruiters(db, profile)
     seed_jobs(db, profile)
-    seed_applications(db, profile)
-    seed_connections(db, profile)
-    seed_messages(db, profile)
-    seed_saved_jobs(db, profile)
-    seed_profile_views(db, profile)
+
+    if append:
+        # Query actual max IDs so relationships reference valid rows (existing + new)
+        total_mem = db.execute(text("SELECT MAX(member_id) FROM members")).scalar() or profile.members
+        total_rec = db.execute(text("SELECT MAX(recruiter_id) FROM recruiters")).scalar() or profile.recruiters
+        total_job = db.execute(text("SELECT MAX(job_id) FROM job_postings")).scalar() or profile.jobs
+        rel_profile = SeedProfile(
+            members=total_mem,
+            recruiters=total_rec,
+            jobs=total_job,
+            applications=profile.applications,
+            connections=profile.connections,
+            threads=profile.threads,
+            msg_per_thread=profile.msg_per_thread,
+            saved_jobs=profile.saved_jobs,
+            profile_views=profile.profile_views,
+            batch_size=profile.batch_size,
+        )
+    else:
+        rel_profile = profile
+
+    seed_applications(db, rel_profile)
+    seed_connections(db, rel_profile)
+    seed_messages(db, rel_profile)
+    seed_saved_jobs(db, rel_profile)
+    seed_profile_views(db, rel_profile)
 
     print("\n🔑 Seeding performance-test user for load tests...")
     seed_perf_test_user(db)
@@ -737,18 +779,60 @@ def main():
         action="store_true",
         help="Do not prompt; clear existing rows and re-seed if needed.",
     )
+    parser.add_argument(
+        "--admin-only",
+        action="store_true",
+        help="Only create the admin and perf-test accounts. Never clears existing data.",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Add records without clearing existing data. Relationships use actual DB IDs.",
+    )
+    parser.add_argument(
+        "--1k",
+        dest="onek",
+        action="store_true",
+        help="Use the 1 000-record profile (members=1000, jobs=500, applications=2500).",
+    )
+    parser.add_argument(
+        "--10k",
+        dest="tenk",
+        action="store_true",
+        help="Use the full 10 000-record profile (members=10000, jobs=10000, applications=25000).",
+    )
     args = parser.parse_args()
-    profile = PROFILE_QUICK if args.quick else PROFILE_FULL
+
+    if args.tenk:
+        profile = PROFILE_FULL
+    elif args.onek:
+        profile = PROFILE_1K
+    elif args.quick:
+        profile = PROFILE_QUICK
+    else:
+        profile = PROFILE_FULL
 
     print("=" * 60)
     print("  LinkedIn Platform — Data Seeder")
-    if args.quick:
+    if args.tenk:
+        print("  (10k profile)")
+    elif args.onek:
+        print("  (1k profile)")
+    elif args.quick:
         print("  (quick profile)")
+    if args.append:
+        print("  (append mode — existing data preserved)")
     print("=" * 60)
 
     db = SessionLocal()
     try:
-        run_seed(db, profile, assume_yes=args.yes)
+        if args.admin_only:
+            print("\n🔑 Admin-only mode — existing data will not be touched.\n")
+            seed_perf_test_user(db)
+            seed_admin_user(db)
+            print("\n✅ Done.")
+            return
+        run_seed(db, profile, assume_yes=args.yes, append=args.append)
     finally:
         db.close()
 
