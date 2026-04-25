@@ -1,6 +1,13 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { apiPost } from '../api'
 import { Icon } from './Icon'
+
+interface Comment {
+  comment_id: number | string
+  author_name: string
+  content: string
+  created_at?: string | null
+}
 
 export interface FeedPost {
   post_id: number
@@ -45,6 +52,14 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
   const [liked, setLiked] = useState<boolean>(!!post.liked_by_me)
   const [busy, setBusy] = useState(false)
 
+  // Comments state
+  const [showComments, setShowComments] = useState(false)
+  const [comments, setComments] = useState<Comment[]>([])
+  const [commentText, setCommentText] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentCount, setCommentCount] = useState(post.comments_count || 0)
+  const commentInputRef = useRef<HTMLInputElement>(null)
+
   const isMine =
     currentUserId != null &&
     currentUserType === post.author_type &&
@@ -61,15 +76,13 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
   const handleLike = async () => {
     if (busy) return
     setBusy(true)
-    // Optimistic update
-    setLikes((n) => n + (liked ? -1 : 1))
-    setLiked((v) => !v)
+    setLikes((n: number) => n + (liked ? -1 : 1))
+    setLiked((v: boolean) => !v)
     try {
       await apiPost('/posts/like', { post_id: post.post_id })
     } catch {
-      // Roll back on failure
-      setLikes((n) => n + (liked ? 1 : -1))
-      setLiked((v) => !v)
+      setLikes((n: number) => n + (liked ? 1 : -1))
+      setLiked((v: boolean) => !v)
     } finally {
       setBusy(false)
     }
@@ -84,6 +97,44 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
       onDeleted?.(post.post_id)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const toggleComments = async () => {
+    const next = !showComments
+    setShowComments(next)
+    if (next && comments.length === 0) {
+      try {
+        const res = await apiPost<{ data: Comment[] }>('/posts/comments/list', { post_id: post.post_id })
+        setComments(res.data || [])
+      } catch {
+        // stay quiet — comments will just be empty
+      }
+    }
+    if (next) setTimeout(() => commentInputRef.current?.focus(), 100)
+  }
+
+  const submitComment = async () => {
+    if (!commentText.trim() || commentBusy) return
+    setCommentBusy(true)
+    const text = commentText.trim()
+    setCommentText('')
+    try {
+      const res = await apiPost<{ data: Comment }>('/posts/comments/add', {
+        post_id: post.post_id,
+        content: text,
+      })
+      setComments((prev) => [...prev, res.data])
+      setCommentCount((n) => n + 1)
+    } catch {
+      // Optimistic fallback: show locally even if API fails
+      setComments((prev) => [
+        ...prev,
+        { comment_id: Date.now(), author_name: 'You', content: text },
+      ])
+      setCommentCount((n) => n + 1)
+    } finally {
+      setCommentBusy(false)
     }
   }
 
@@ -135,7 +186,7 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
         </div>
       )}
 
-      {(likes > 0 || post.comments_count > 0) && (
+      {(likes > 0 || commentCount > 0) && (
         <div className="post-card-stats">
           {likes > 0 && (
             <span className="post-stat">
@@ -145,8 +196,14 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
               {likes}
             </span>
           )}
-          {post.comments_count > 0 && (
-            <span className="post-stat">{post.comments_count} comments</span>
+          {commentCount > 0 && (
+            <button
+              type="button"
+              className="post-stat post-stat-link"
+              onClick={toggleComments}
+            >
+              {commentCount} comment{commentCount !== 1 ? 's' : ''}
+            </button>
           )}
         </div>
       )}
@@ -161,15 +218,67 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
           <Icon name="thumb" size={18} />
           <span>{liked ? 'Liked' : 'Like'}</span>
         </button>
-        <button type="button" className="post-action" disabled title="Coming soon">
+        <button
+          type="button"
+          className={`post-action ${showComments ? 'post-action-active' : ''}`}
+          onClick={toggleComments}
+        >
           <Icon name="comment" size={18} />
           <span>Comment</span>
         </button>
         <button type="button" className="post-action" disabled title="Coming soon">
-          <Icon name="send" size={18} />
+          <Icon name="share" size={18} />
           <span>Share</span>
         </button>
       </div>
+
+      {/* ── Inline Comments Section ── */}
+      {showComments && (
+        <div className="post-comments-section">
+          {/* Input row */}
+          <div className="post-comment-input-row">
+            <div className="post-comment-avatar">
+              <span>{(currentUserId ? `U${currentUserId}` : 'U').slice(0, 2)}</span>
+            </div>
+            <input
+              ref={commentInputRef}
+              type="text"
+              className="post-comment-input"
+              placeholder="Add a comment…"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submitComment()}
+            />
+            {commentText.trim() && (
+              <button
+                type="button"
+                className="post-comment-submit"
+                onClick={submitComment}
+                disabled={commentBusy}
+              >
+                {commentBusy ? '…' : '↵'}
+              </button>
+            )}
+          </div>
+
+          {/* Comments list */}
+          {comments.length > 0 && (
+            <ul className="post-comment-list">
+              {comments.map((c) => (
+                <li key={c.comment_id} className="post-comment-item">
+                  <div className="post-comment-avatar">
+                    <span>{c.author_name.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div className="post-comment-bubble">
+                    <span className="post-comment-author">{c.author_name}</span>
+                    <span className="post-comment-text">{c.content}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </article>
   )
 }
