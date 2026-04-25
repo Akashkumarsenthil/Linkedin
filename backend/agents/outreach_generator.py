@@ -6,19 +6,19 @@ Generates personalized recruiter outreach messages using Ollama LLM or templates
 import logging
 import re
 import json
-import httpx
 from typing import Dict, Any
 from config import settings
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
 
-async def generate_outreach_with_ollama(
+async def generate_outreach_with_llm(
     job_data: Dict[str, Any],
     candidate_data: Dict[str, Any],
     match_result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Generate a personalized outreach draft using Ollama."""
+    """Generate a personalized outreach draft using Groq LLM."""
     candidate_name = f"{candidate_data.get('first_name', '')} {candidate_data.get('last_name', '')}".strip()
     job_title = job_data.get("title", "this position")
     company = job_data.get("company_name", "our company")
@@ -46,30 +46,34 @@ Write a concise, personalized outreach message (150-250 words) that:
 Respond with ONLY the message text, no subject line or extra formatting."""
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json={
-                    "model": settings.OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.7},
-                },
-            )
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        completion = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+              {
+                "role": "user",
+                "content": prompt
+              }
+            ],
+            temperature=0.7,
+            max_completion_tokens=1024,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
 
-            if response.status_code == 200:
-                result = response.json()
-                message = result.get("response", "").strip()
-                if message and len(message) > 50:
-                    return {
-                        "success": True,
-                        "method": "ollama",
-                        "subject": f"Exciting {job_title} opportunity at {company}",
-                        "body": message,
-                        "candidate_name": candidate_name,
-                    }
-    except (httpx.ConnectError, httpx.TimeoutException) as e:
-        logger.warning(f"Ollama not available for outreach generation: {e}")
+        message = completion.choices[0].message.content or ""
+        message = message.strip()
+        if message and len(message) > 50:
+            return {
+                "success": True,
+                "method": "groq",
+                "subject": f"Exciting {job_title} opportunity at {company}",
+                "body": message,
+                "candidate_name": candidate_name,
+            }
+    except Exception as e:
+        logger.warning(f"Groq API not available for outreach generation: {e}")
 
     return generate_outreach_template(job_data, candidate_data, match_result)
 
