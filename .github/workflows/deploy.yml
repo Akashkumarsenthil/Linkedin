@@ -1,0 +1,31 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            if [ ! -d "Linkedin" ]; then
+              git clone https://github.com/Akashkumarsenthil/Linkedin.git
+              cd Linkedin
+            else
+              cd Linkedin
+              git fetch origin main
+              git reset --hard origin/main
+            fi
+            
+            # Restart all containers in detached mode
+            sudo docker-compose down
+            sudo docker-compose up --build -d
