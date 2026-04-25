@@ -20,8 +20,9 @@ import { AiDashboard } from './components/AiDashboard'
 import { CountUp } from './components/CountUp'
 import { ActivityFeed } from './components/ActivityFeed'
 import { Icon } from './components/Icon'
+import { SearchPage } from './components/SearchPage'
 
-type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'notifications' | 'auth' | 'profile'
+type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'notifications' | 'auth' | 'profile' | 'search'
 type AuthUser = { user_id: number; user_type: 'member' | 'recruiter'; email: string } | null
 
 const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter'>> = {
@@ -35,6 +36,7 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter'>> = {
   ai:            ['recruiter'],
   auth:          ['guest'],
   profile:       ['member', 'recruiter'],
+  search:        ['guest', 'member', 'recruiter'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -77,6 +79,9 @@ function App() {
   const [me, setMe] = useState<MePayload | null>(null)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
+  const [searchDropdownResults, setSearchDropdownResults] = useState<{ people: any[], jobs: any[] }>({ people: [], jobs: [] })
+  const [isSearching, setIsSearching] = useState(false)
 
   const handleAuthChange = () => {
     setAuthUser(parseStoredUser())
@@ -126,6 +131,39 @@ function App() {
     return () => clearInterval(id)
   }, [authUser, loadNotifications])
 
+  // Handle debounced search dropdown
+  const [recentSearches] = useState<string[]>(['Software Engineer', 'Google', 'Project Manager'])
+  const trendingSearches = ['AI Agents', 'Remote Work', 'Product Management', 'Cybersecurity']
+
+  useEffect(() => {
+    if (!searchVal.trim() || searchVal.length < 2) {
+      setSearchDropdownResults({ people: [], jobs: [] })
+      setIsSearching(false)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true)
+      try {
+        const [peopleRes, jobsRes] = await Promise.all([
+          apiPost<any>('/members/search', { keyword: searchVal, page_size: 4 }),
+          apiPost<any>('/jobs/search', { keyword: searchVal, page_size: 4 }),
+        ])
+        setSearchDropdownResults({
+          people: peopleRes.data || [],
+          jobs: jobsRes.data || [],
+        })
+        setShowSearchDropdown(true)
+      } catch (err) {
+        console.error("Search failed", err)
+      } finally {
+        setIsSearching(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [searchVal])
+
   const profilePhoto = (me?.profile?.profile_photo_url as string | undefined) || null
   const firstName = (me?.profile?.first_name as string | undefined) || ''
   const lastName  = (me?.profile?.last_name  as string | undefined) || ''
@@ -142,14 +180,94 @@ function App() {
             <div className="logo-mark"><span className="logo-in">in</span></div>
           </button>
 
-          <div className="nav-search">
-            <Icon name="search" size={16} className="nav-search-icon" />
-            <input
-              value={searchVal}
-              onChange={e => setSearchVal(e.target.value)}
-              placeholder="Search"
-              aria-label="Search"
-            />
+          <div className="nav-search-container">
+            <div className="nav-search">
+              <Icon name="search" size={16} className="nav-search-icon" />
+              <input
+                value={searchVal}
+                onChange={e => setSearchVal(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && searchVal.trim()) {
+                    setTab('search')
+                    setShowSearchDropdown(false)
+                  }
+                }}
+                onFocus={() => setShowSearchDropdown(true)}
+                placeholder="Search"
+                aria-label="Search"
+              />
+            </div>
+
+            {showSearchDropdown && (
+              <div className="search-dropdown li-card">
+                {(!searchVal.trim() || searchVal.length < 2) ? (
+                  <>
+                    <div className="dropdown-section">
+                      <div className="dropdown-header" style={{ padding: '8px 16px', fontWeight: 600 }}>Recent</div>
+                      {recentSearches.map((s, idx) => (
+                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false); }}>
+                          <Icon name="clock" size={16} className="item-icon" />
+                          <div className="item-info">
+                            <div className="item-title" style={{ fontWeight: 600 }}>{s}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="dropdown-section" style={{ marginTop: '8px' }}>
+                      <div className="dropdown-header" style={{ padding: '8px 16px', fontWeight: 600 }}>Try searching for</div>
+                      {trendingSearches.map((s, idx) => (
+                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false); }}>
+                          <Icon name="search" size={16} className="item-icon" />
+                          <div className="item-info">
+                            <div className="item-title" style={{ fontWeight: 600, color: 'var(--ln-blue)' }}>{s}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {isSearching ? (
+                      <div className="dropdown-loading">Searching...</div>
+                    ) : (
+                      <>
+                        {searchDropdownResults.people.length > 0 && (
+                          <div className="dropdown-section">
+                            {searchDropdownResults.people.map((p: any) => (
+                              <div key={p.member_id} className="dropdown-item" onClick={() => { setSearchVal(`${p.first_name} ${p.last_name}`); setTab('search'); setShowSearchDropdown(false); }}>
+                                <div className="item-avatar">{(p.first_name?.[0] || '') + (p.last_name?.[0] || '')}</div>
+                                <div className="item-info">
+                                  <div className="item-title">{p.first_name} {p.last_name}</div>
+                                  <div className="item-sub">{p.headline}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {searchDropdownResults.jobs.length > 0 && (
+                          <div className="dropdown-section">
+                            {searchDropdownResults.jobs.map((j: any) => (
+                              <div key={j.job_id} className="dropdown-item" onClick={() => { setSearchVal(j.title); setTab('search'); setShowSearchDropdown(false); }}>
+                                <div className="item-avatar-company"><Icon name="jobs" size={16} /></div>
+                                <div className="item-info">
+                                  <div className="item-title">{j.title}</div>
+                                  <div className="item-sub">Job • {j.company_name}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="dropdown-footer" onClick={() => { setTab('search'); setShowSearchDropdown(false); }}>
+                          See all results for "{searchVal}"
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+            {showSearchDropdown && <div className="dropdown-overlay" onClick={() => setShowSearchDropdown(false)} />}
           </div>
 
           <nav className="nav" aria-label="Primary">
@@ -244,6 +362,7 @@ function App() {
             />
           )}
           {tab === 'ai'          && <AiDashboard />}
+          {tab === 'search'      && <SearchPage query={searchVal} />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
           {tab === 'profile'     && <ProfilePage onAuthChange={handleAuthChange} />}
         </div>
