@@ -105,8 +105,8 @@ def optional_current_user(
 def require_member(
     current_user: TokenPayload = Depends(get_current_user),
 ) -> TokenPayload:
-    """Require the caller to be a member. Raises 403 for recruiters."""
-    if current_user.user_type != "member":
+    """Require the caller to be a member or admin."""
+    if current_user.user_type not in ("member", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Member account required for this action",
@@ -117,8 +117,8 @@ def require_member(
 def require_recruiter(
     current_user: TokenPayload = Depends(get_current_user),
 ) -> TokenPayload:
-    """Require the caller to be a recruiter. Raises 403 for members."""
-    if current_user.user_type != "recruiter":
+    """Require the caller to be a recruiter or admin."""
+    if current_user.user_type not in ("recruiter", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Recruiter account required for this action",
