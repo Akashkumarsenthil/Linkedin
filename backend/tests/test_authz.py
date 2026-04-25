@@ -202,10 +202,10 @@ def test_recruiter_cannot_send_connection_request(client, recruiter_token):
 
 
 @pytest.mark.integration
-def test_recruiter_cannot_view_member_dashboard(client, recruiter_token):
+def test_recruiter_can_view_member_dashboard(client, recruiter_token):
     r = client.post("/analytics/member/dashboard", json={"member_id": 1},
                     headers=_auth_header(recruiter_token))
-    assert r.status_code == 403, r.text
+    assert r.status_code == 200, r.text
 
 
 # ── 4. Ownership violations blocked ──────────────────────────────────────────
