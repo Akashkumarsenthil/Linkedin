@@ -205,13 +205,12 @@ async def geo_distribution(req: GeoRequest, current_user: TokenPayload = Depends
 )
 async def member_dashboard(
     req: MemberDashboardRequest,
-    current_user: TokenPayload = Depends(require_member),
+    current_user: TokenPayload = Depends(require_recruiter),
 ):
     """
     Get member dashboard metrics: profile views (last 30 days) and application status breakdown.
+    Recruiters can view any member's dashboard.
     """
-    if req.member_id != current_user.user_id:
-        return AnalyticsResponse(success=False, message="Cannot view another member's dashboard")
     db = SessionLocal()
     try:
         member = db.query(Member).filter(Member.member_id == req.member_id).first()
