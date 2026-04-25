@@ -931,18 +931,17 @@ function MembersPanel() {
 
 function AnalyticsPanel() {
   return (
-    <section className="panel">
+    <section className="panel analytics-dashboard">
       <div className="panel-header">
         <h2 className="panel-title">Analytics</h2>
         <p className="panel-subtitle">
-          Live metrics from backend SQL aggregates. Seed with{' '}
-          <code>python seed_data.py --quick --yes</code> from <code>backend/</code>
+          Recruiter KPIs, applicant trends, and platform metrics
         </p>
       </div>
 
-      <div className="analytics-tab-section">
-        <h3 className="analytics-section-title">Recruiter Insights</h3>
-        <div className="analytics-grid">
+      <div className="ad-section">
+        <h3 className="ad-section-title">Recruiter Insights</h3>
+        <div className="ad-grid">
           <TopMonthlyChart />
           <LeastAppliedChart />
           <ClicksPerJobChart />
@@ -951,9 +950,9 @@ function AnalyticsPanel() {
         </div>
       </div>
 
-      <div className="analytics-tab-section">
-        <h3 className="analytics-section-title">Platform Overview</h3>
-        <div className="analytics-grid">
+      <div className="ad-section">
+        <h3 className="ad-section-title">Platform Overview</h3>
+        <div className="ad-grid">
           <TopJobsChart />
           <FunnelChart />
           <GeoTable />

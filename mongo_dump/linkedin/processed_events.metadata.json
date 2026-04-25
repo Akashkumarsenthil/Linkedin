@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"idempotency_key":{"$numberInt":"1"}},"name":"idempotency_key_unique","unique":true}],"uuid":"431f3cf8ecc7468bbf2263da96a0e188","collectionName":"processed_events","type":"collection"}

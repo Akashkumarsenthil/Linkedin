@@ -1,85 +1,61 @@
 /**
  * GeoMonthlyChart — city-wise applications per month for a selected job.
- * Brief requirement: "City-wise applications per month for a selected job posting."
- * Endpoint: POST /analytics/geo/monthly
- * Data source: MySQL applications + members (JOIN + GROUP BY month, city).
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { apiPost } from '../api'
 
-interface GeoMonthRow {
-  month: string
-  city: string
-  state: string
-  count: number
-}
-
-interface ApiResp {
-  success: boolean
-  message: string
-  data: GeoMonthRow[]
-}
+interface GeoMonthRow { month: string; city: string; state: string; count: number }
+interface ApiResp { success: boolean; message: string; data: GeoMonthRow[] }
 
 export function GeoMonthlyChart() {
   const [jobId, setJobId]     = useState('1')
   const [data, setData]       = useState<GeoMonthRow[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [err, setErr]         = useState<string | null>(null)
-  const [loaded, setLoaded]   = useState(false)
 
-  const load = async () => {
-    const id = parseInt(jobId, 10)
-    if (!id || id < 1) { setErr('Enter a valid job ID'); return }
-    setLoading(true)
-    setErr(null)
+  const load = async (id?: string) => {
+    const numId = parseInt(id ?? jobId, 10)
+    if (!numId || numId < 1) { setErr('Enter a valid job ID'); return }
+    setLoading(true); setErr(null)
     try {
-      const r = await apiPost<ApiResp>('/analytics/geo/monthly', {
-        job_id: id,
-        window_days: 365,
-      })
+      const r = await apiPost<ApiResp>('/analytics/geo/monthly', { job_id: numId, window_days: 365 })
       if (!r.success) throw new Error(r.message)
       setData(r.data ?? [])
-      setLoaded(true)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Request failed')
-    } finally {
-      setLoading(false)
-    }
+    } finally { setLoading(false) }
   }
 
-  // Group data by month for display
+  useEffect(() => { load('1') }, [])
+
   const months = [...new Set(data.map(d => d.month))].sort()
   const total  = data.reduce((s, d) => s + d.count, 0)
 
   return (
-    <div className="chart-card">
-      <div className="chart-header">
-        <h3 className="chart-title">City Applications by Month</h3>
-      </div>
+    <div className="ad-card">
+      <h3 className="ad-card-title">City Applications by Month</h3>
 
-      <div className="row">
-        <label>
+      <div className="ad-inline-controls">
+        <label className="ad-inline-label">
           Job ID
-          <input
-            type="number"
-            value={jobId}
-            min={1}
+          <input className="ad-inline-input" type="number" value={jobId} min={1}
             onChange={e => setJobId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && load()}
-            style={{ width: 80 }}
-          />
+            onKeyDown={e => e.key === 'Enter' && load()} />
         </label>
-        <button type="button" className="primary" onClick={load} disabled={loading}>
-          {loading ? 'Loading…' : 'Load'}
+        <button type="button" className="ad-load-btn" onClick={() => load()} disabled={loading}>
+          {loading ? 'Loading…' : 'Go'}
         </button>
       </div>
 
-      {err && <p className="error">{err}</p>}
-      {loaded && data.length === 0 && (
-        <p className="hint">No application data for this job.</p>
-      )}
+      {err && <p className="ad-error">{err}</p>}
 
-      {data.length > 0 && (
+      {loading && data.length === 0 ? (
+        <div className="ad-chart-skeleton">
+          {[1,2,3].map(i => <div key={i} className="ad-skeleton-bar" style={{ width: `${80 - i*15}%` }} />)}
+        </div>
+      ) : data.length === 0 ? (
+        <p className="ad-empty">No application data for this job.</p>
+      ) : (
         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
           {months.map(month => {
             const rows = data.filter(d => d.month === month)
