@@ -21,22 +21,41 @@ import { CountUp } from './components/CountUp'
 import { ActivityFeed } from './components/ActivityFeed'
 import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
+import { PerformanceDashboard } from './components/PerformanceDashboard'
 
-type Tab = 'overview' | 'jobs' | 'members' | 'analytics' | 'ai' | 'messages' | 'connections' | 'notifications' | 'auth' | 'profile' | 'search'
-type AuthUser = { user_id: number; user_type: 'member' | 'recruiter'; email: string } | null
+type Tab =
+  | 'overview'
+  | 'jobs'
+  | 'members'
+  | 'analytics'
+  | 'ai'
+  | 'messages'
+  | 'connections'
+  | 'notifications'
+  | 'auth'
+  | 'profile'
+  | 'search'
+  | 'perf'
 
-const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter'>> = {
-  overview:      ['guest', 'member', 'recruiter'],
-  jobs:          ['guest', 'member', 'recruiter'],
-  members:       ['guest', 'member'],
-  analytics:     ['recruiter'],
-  messages:      ['member', 'recruiter'],
-  connections:   ['member'],
-  notifications: ['member', 'recruiter'],
-  ai:            ['recruiter'],
-  auth:          ['guest'],
-  profile:       ['member', 'recruiter'],
-  search:        ['guest', 'member', 'recruiter'],
+type AuthUser = {
+  user_id: number
+  user_type: 'member' | 'recruiter' | 'admin'
+  email: string
+} | null
+
+const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admin'>> = {
+  overview:      ['guest', 'member', 'recruiter', 'admin'],
+  jobs:          ['guest', 'member', 'recruiter', 'admin'],
+  members:       ['guest', 'member', 'admin'],
+  analytics:     ['recruiter', 'admin'],
+  messages:      ['member', 'recruiter', 'admin'],
+  connections:   ['member', 'admin'],
+  notifications: ['member', 'recruiter', 'admin'],
+  ai:            ['recruiter', 'admin'],
+  auth:          ['guest', 'member', 'recruiter', 'admin'],
+  profile:       ['member', 'recruiter', 'admin'],
+  search:        ['guest', 'member', 'recruiter', 'admin'],
+  perf:          ['admin'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -48,12 +67,14 @@ const ALL_NAV: [Tab, string, string][] = [
   ['connections',   'Connections',  'connections'],
   ['notifications', 'Notifications','bell'],
   ['ai',            'AI Recruiter', 'ai'],
+  ['perf',          'Performance',  'analytics'],
   ['auth',          'Sign In',      'user'],
   ['profile',       'Me',           'user'],
+  ['search',        'Search',       'search'],
 ]
 
 interface MePayload {
-  user_type: 'member' | 'recruiter'
+  user_type: 'member' | 'recruiter' | 'admin'
   user_id: number
   email: string
   profile: Record<string, unknown>
@@ -90,14 +111,13 @@ function App() {
     setUnreadCount(0)
   }
 
-  const role: 'guest' | 'member' | 'recruiter' = authUser?.user_type ?? 'guest'
+  const role: 'guest' | 'member' | 'recruiter' | 'admin' = authUser?.user_type ?? 'guest'
   const visibleTabs = ALL_NAV.filter(([id]) => TAB_VISIBILITY[id].includes(role))
 
   useEffect(() => {
     if (!TAB_VISIBILITY[tab].includes(role)) setTab('overview')
   }, [role, tab])
 
-  // Load my profile (for avatar photo) when signed in
   useEffect(() => {
     if (!authUser) {
       setMe(null)
@@ -106,11 +126,10 @@ function App() {
     let cancelled = false
     apiGet<MePayload>('/auth/me')
       .then((data) => { if (!cancelled) setMe(data) })
-      .catch(() => { /* stay quiet — avatar will fall back to initials */ })
+      .catch(() => { /* avatar falls back to initials */ })
     return () => { cancelled = true }
   }, [authUser])
 
-  // Poll notifications while signed in
   const loadNotifications = useCallback(async () => {
     if (!authUser) return
     try {
@@ -120,7 +139,7 @@ function App() {
       setNotifications(res.data || [])
       setUnreadCount(res.unread_count || 0)
     } catch {
-      // keep prior values on transient errors
+      // preserve prior state on transient errors
     }
   }, [authUser])
 
@@ -131,7 +150,6 @@ function App() {
     return () => clearInterval(id)
   }, [authUser, loadNotifications])
 
-  // Handle debounced search dropdown
   const [recentSearches] = useState<string[]>(['Software Engineer', 'Google', 'Project Manager'])
   const trendingSearches = ['AI Agents', 'Remote Work', 'Product Management', 'Cybersecurity']
 
@@ -155,7 +173,7 @@ function App() {
         })
         setShowSearchDropdown(true)
       } catch (err) {
-        console.error("Search failed", err)
+        console.error('Search failed', err)
       } finally {
         setIsSearching(false)
       }
@@ -205,7 +223,7 @@ function App() {
                     <div className="dropdown-section">
                       <div className="dropdown-header" style={{ padding: '8px 16px', fontWeight: 600 }}>Recent</div>
                       {recentSearches.map((s, idx) => (
-                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false); }}>
+                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false) }}>
                           <Icon name="clock" size={16} className="item-icon" />
                           <div className="item-info">
                             <div className="item-title" style={{ fontWeight: 600 }}>{s}</div>
@@ -216,7 +234,7 @@ function App() {
                     <div className="dropdown-section" style={{ marginTop: '8px' }}>
                       <div className="dropdown-header" style={{ padding: '8px 16px', fontWeight: 600 }}>Try searching for</div>
                       {trendingSearches.map((s, idx) => (
-                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false); }}>
+                        <div key={idx} className="dropdown-item" onClick={() => { setSearchVal(s); setTab('search'); setShowSearchDropdown(false) }}>
                           <Icon name="search" size={16} className="item-icon" />
                           <div className="item-info">
                             <div className="item-title" style={{ fontWeight: 600, color: 'var(--ln-blue)' }}>{s}</div>
@@ -234,7 +252,7 @@ function App() {
                         {searchDropdownResults.people.length > 0 && (
                           <div className="dropdown-section">
                             {searchDropdownResults.people.map((p: any) => (
-                              <div key={p.member_id} className="dropdown-item" onClick={() => { setSearchVal(`${p.first_name} ${p.last_name}`); setTab('search'); setShowSearchDropdown(false); }}>
+                              <div key={p.member_id} className="dropdown-item" onClick={() => { setSearchVal(`${p.first_name} ${p.last_name}`); setTab('search'); setShowSearchDropdown(false) }}>
                                 <div className="item-avatar">{(p.first_name?.[0] || '') + (p.last_name?.[0] || '')}</div>
                                 <div className="item-info">
                                   <div className="item-title">{p.first_name} {p.last_name}</div>
@@ -248,7 +266,7 @@ function App() {
                         {searchDropdownResults.jobs.length > 0 && (
                           <div className="dropdown-section">
                             {searchDropdownResults.jobs.map((j: any) => (
-                              <div key={j.job_id} className="dropdown-item" onClick={() => { setSearchVal(j.title); setTab('search'); setShowSearchDropdown(false); }}>
+                              <div key={j.job_id} className="dropdown-item" onClick={() => { setSearchVal(j.title); setTab('search'); setShowSearchDropdown(false) }}>
                                 <div className="item-avatar-company"><Icon name="jobs" size={16} /></div>
                                 <div className="item-info">
                                   <div className="item-title">{j.title}</div>
@@ -258,7 +276,7 @@ function App() {
                             ))}
                           </div>
                         )}
-                        <div className="dropdown-footer" onClick={() => { setTab('search'); setShowSearchDropdown(false); }}>
+                        <div className="dropdown-footer" onClick={() => { setTab('search'); setShowSearchDropdown(false) }}>
                           See all results for "{searchVal}"
                         </div>
                       </>
@@ -332,8 +350,12 @@ function App() {
             )}
 
             {authUser && (
-              <span className="nav-role-badge">
-                {authUser.user_type}
+              <span
+                className="nav-role-badge"
+                title={authUser.email}
+                style={authUser.user_type === 'admin' ? { background: '#854d0e', color: '#fef08a', border: '1px solid #ca8a04' } : undefined}
+              >
+                {authUser.user_type === 'admin' ? '★ admin' : authUser.user_type}
               </span>
             )}
           </nav>
@@ -361,10 +383,11 @@ function App() {
               onOpenConnections={() => setTab('connections')}
             />
           )}
-          {tab === 'ai'          && <AiDashboard />}
-          {tab === 'search'      && <SearchPage query={searchVal} />}
-          {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
-          {tab === 'profile'     && <ProfilePage onAuthChange={handleAuthChange} />}
+          {tab === 'ai'            && <AiDashboard />}
+          {tab === 'search'        && <SearchPage query={searchVal} />}
+          {tab === 'perf'          && <PerformanceDashboard />}
+          {tab === 'auth'          && <AuthPanel onAuthChange={handleAuthChange} />}
+          {tab === 'profile'       && <ProfilePage onAuthChange={handleAuthChange} />}
         </div>
       </main>
 
@@ -383,8 +406,6 @@ function App() {
     </div>
   )
 }
-
-// ── Overview ──────────────────────────────────────────────────────────────────
 
 type ServiceStatus = 'online' | 'offline' | 'checking'
 
@@ -435,7 +456,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   useEffect(() => { checkHealth() }, [checkHealth])
 
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
         const [members, jobs] = await Promise.all([
           apiPost<{ total: number | null }>('/members/search', { page_size: 1 }).catch(() => ({ total: null })),
@@ -465,11 +486,11 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   const services: ServiceInfo[] = [
-    { key: 'api',   name: 'API Gateway', description: 'FastAPI · 45 endpoints',  status: !checked ? 'checking' : err ? 'offline' : 'online' },
-    { key: 'mysql', name: 'MySQL',       description: 'Transactional DB',         status: svcState('mysql', 'mysql') },
-    { key: 'mongo', name: 'MongoDB',     description: 'Event & trace store',      status: svcState('mongo', 'mongodb') },
-    { key: 'redis', name: 'Redis',       description: 'Cache layer',              status: svcState('redis', 'redis') },
-    { key: 'kafka', name: 'Kafka',       description: 'Event streaming',          status: svcState('kafka', 'kafka_producer') },
+    { key: 'api',   name: 'API Gateway', description: 'FastAPI · 45 endpoints', status: !checked ? 'checking' : err ? 'offline' : 'online' },
+    { key: 'mysql', name: 'MySQL',       description: 'Transactional DB (AWS)',  status: svcState('mysql', 'mysql') },
+    { key: 'mongo', name: 'MongoDB',     description: 'Event store (AWS)',       status: svcState('mongo', 'mongodb') },
+    { key: 'redis', name: 'Redis',       description: 'Cache layer',             status: svcState('redis', 'redis') },
+    { key: 'kafka', name: 'Kafka',       description: 'Event streaming',         status: svcState('kafka', 'kafka_producer') },
   ]
 
   const onlineCount = services.filter((s) => s.status === 'online').length
@@ -477,16 +498,15 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   const exploreItems = [
     { tab: 'jobs' as Tab,        icon: 'jobs',        title: 'Job Search',       desc: 'Search open positions, view details, and submit applications.' },
-    { tab: 'members' as Tab,     icon: 'network',     title: 'Member Directory',  desc: 'Find professionals, browse profiles, and add new members.' },
-    { tab: 'analytics' as Tab,   icon: 'analytics',   title: 'Analytics',         desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
-    { tab: 'ai' as Tab,          icon: 'ai',          title: 'AI Recruiter',      desc: 'Candidate matching with shortlist scoring and outreach drafts.' },
-    { tab: 'messages' as Tab,    icon: 'messaging',   title: 'Messaging',         desc: 'Thread-based professional messaging between platform members.' },
-    { tab: 'connections' as Tab, icon: 'connections',  title: 'Connections',       desc: 'Send and manage professional connection requests.' },
+    { tab: 'members' as Tab,     icon: 'network',     title: 'Member Directory', desc: 'Find professionals, browse profiles, and add new members.' },
+    { tab: 'analytics' as Tab,   icon: 'analytics',   title: 'Analytics',        desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
+    { tab: 'ai' as Tab,          icon: 'ai',          title: 'AI Recruiter',     desc: 'Candidate matching with shortlist scoring and outreach drafts.' },
+    { tab: 'messages' as Tab,    icon: 'messaging',   title: 'Messaging',        desc: 'Thread-based professional messaging between platform members.' },
+    { tab: 'connections' as Tab, icon: 'connections', title: 'Connections',      desc: 'Send and manage professional connection requests.' },
   ]
 
   return (
     <div className="overview-page">
-      {/* Hero */}
       <div className="overview-hero">
         <div className="overview-hero-row">
           <div className="overview-hero-content">
@@ -543,7 +563,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           <div className="hero-stat">
             <span className="hero-stat-label">Applications</span>
             <span className="hero-stat-value"><CountUp value={stats.applications} /></span>
-            <span className="hero-stat-trend">Processed via Kafka</span>
+            <span className="hero-stat-trend">Processed via Kafka · tracked in MySQL</span>
           </div>
           <div className="hero-stat">
             <span className="hero-stat-label">AI Workflows</span>
@@ -553,40 +573,34 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </div>
       </div>
 
-      {/* Two-column: services + activity */}
-      <section className="overview-split">
-        <div className="overview-section">
-          <div className="overview-section-hdr">
-            <h2 className="overview-section-title">System Health</h2>
-            {err && (
-              <span className="overview-warn">
-                Start backend: <code>docker compose up backend</code>
-              </span>
-            )}
-          </div>
-          <div className="service-status-grid">
-            {services.map((svc) => (
-              <div key={svc.key} className={`service-card svc-${svc.status}`}>
-                <div className="svc-icon-wrap">
-                  <span className="svc-initial">{svc.name[0]}</span>
-                </div>
-                <span className={`svc-dot dot-${svc.status}`} />
-                <div className="svc-info">
-                  <span className="svc-name">{svc.name}</span>
-                  <span className="svc-desc">{svc.description}</span>
-                </div>
-                <span className={`svc-badge badge-${svc.status}`}>
-                  {svc.status === 'online' ? 'OK' : svc.status === 'offline' ? 'Down' : '...'}
-                </span>
-              </div>
-            ))}
-          </div>
+      <section className="overview-section">
+        <div className="overview-section-hdr">
+          <h2 className="overview-section-title">System Health</h2>
+          {err && (
+            <span className="overview-warn">
+              Start backend: <code>docker compose up backend</code>
+            </span>
+          )}
         </div>
-
-        <ActivityFeed />
+        <div className="service-status-grid">
+          {services.map((svc) => (
+            <div key={svc.key} className={`service-card svc-${svc.status}`}>
+              <div className="svc-icon-wrap">
+                <span className="svc-initial">{svc.name[0]}</span>
+              </div>
+              <span className={`svc-dot dot-${svc.status}`} />
+              <div className="svc-info">
+                <span className="svc-name">{svc.name}</span>
+                <span className="svc-desc">{svc.description}</span>
+              </div>
+              <span className={`svc-badge badge-${svc.status}`}>
+                {svc.status === 'online' ? 'OK' : svc.status === 'offline' ? 'Down' : '...'}
+              </span>
+            </div>
+          ))}
+        </div>
       </section>
 
-      {/* Explore */}
       <section className="overview-section">
         <h2 className="overview-section-title">Explore the Platform</h2>
         <div className="explore-grid">
@@ -608,28 +622,29 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </div>
       </section>
 
-      {/* Architecture */}
       <section className="overview-section">
         <div className="tech-stack-card">
           <div className="tech-stack-top">
             <h2 className="overview-section-title" style={{ margin: 0 }}>Architecture</h2>
-            <span className="tech-sub">3-tier + Kafka + Agentic AI</span>
+            <span className="tech-sub">3-tier + Kafka + Event Streaming + Agentic AI · FastAPI + React 19</span>
           </div>
           <div className="tech-pills">
             {[
               'FastAPI', 'MySQL', 'Redis', 'Apache Kafka',
-              'MongoDB', 'React + TS', 'WebSockets', 'Ollama', 'Docker', 'Kubernetes',
+              'MongoDB', 'React + TS', 'Docker', 'Kubernetes',
             ].map((t) => (
               <span key={t} className="tech-pill">{t}</span>
             ))}
           </div>
         </div>
       </section>
+
+      <section className="overview-section">
+        <ActivityFeed />
+      </section>
     </div>
   )
 }
-
-// ── Jobs panel ────────────────────────────────────────────────────────────────
 
 function JobsPanel() {
   const [keyword, setKeyword] = useState('engineer')
@@ -677,7 +692,7 @@ function JobsPanel() {
   const search = () => doSearch(null)
   const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
 
-  useEffect(() => { doSearch(null) /* eslint-disable-line react-hooks/exhaustive-deps */ }, [])
+  useEffect(() => { void doSearch(null) }, [])
 
   return (
     <section className="panel">
@@ -785,8 +800,6 @@ function JobsPanel() {
   )
 }
 
-// ── Members panel ─────────────────────────────────────────────────────────────
-
 const AVATAR_COLORS = [
   '#0a66c2', '#0d7764', '#b24020', '#9c45c2', '#b87a0a', '#1a7a34',
 ]
@@ -835,7 +848,7 @@ function MembersPanel() {
   const search = () => doSearch(null)
   const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
 
-  useEffect(() => { doSearch(null) /* eslint-disable-line react-hooks/exhaustive-deps */ }, [])
+  useEffect(() => { void doSearch(null) }, [])
 
   return (
     <section className="panel">
@@ -919,8 +932,6 @@ function MembersPanel() {
     </section>
   )
 }
-
-// ── Analytics panel ───────────────────────────────────────────────────────────
 
 function AnalyticsPanel() {
   return (

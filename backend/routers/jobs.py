@@ -6,13 +6,14 @@ Includes Redis caching, Kafka event publishing, and search filters.
 import base64
 import json
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc, text
 
-from database import get_db
+from database import get_db, SessionLocal
 from models.job import JobPosting, SavedJob
 from models.recruiter import Recruiter
+from models.failed_kafka_event import FailedKafkaEvent
 from auth import require_recruiter, require_member, TokenPayload
 from schemas.job import (
     JobCreate, JobGet, JobUpdate, JobSearch, JobClose, JobByRecruiter,
@@ -23,6 +24,30 @@ from kafka_producer import kafka_producer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["Job Service"])
+
+
+def _log_failed_kafka_event(
+    topic: str, event_type: str, entity_id: str, actor_id: str, payload: dict, error: Exception
+) -> None:
+    """Persist a failed Kafka publish so it is not silently lost (dual-write fallback)."""
+    try:
+        fke = FailedKafkaEvent(
+            topic=topic,
+            event_type=event_type,
+            entity_id=str(entity_id),
+            actor_id=str(actor_id),
+            payload=json.dumps(payload, default=str),
+            error_message=str(error)[:500],
+        )
+        db = SessionLocal()
+        try:
+            db.add(fke)
+            db.commit()
+            logger.warning(f"Kafka publish failed for {event_type} → recorded in failed_kafka_events (id={fke.id})")
+        finally:
+            db.close()
+    except Exception as fb_err:
+        logger.error(f"Could not write to failed_kafka_events: {fb_err}")
 
 
 # ── Cursor helpers ───────────────────────────────────────────────────────────
@@ -73,7 +98,7 @@ async def create_job(
     db.commit()
     db.refresh(job)
 
-    # Publish Kafka event
+    # Publish Kafka event with business-derived idempotency key
     try:
         await kafka_producer.publish(
             topic="job.created",
@@ -82,9 +107,14 @@ async def create_job(
             entity_type="job",
             entity_id=str(job.job_id),
             payload={"title": job.title, "location": job.location},
+            idempotency_key=f"job_created:{job.job_id}",
         )
     except Exception as e:
         logger.warning(f"Kafka publish failed for job.created: {e}")
+        _log_failed_kafka_event(
+            "job.created", "job.created", str(job.job_id), str(req.recruiter_id),
+            {"title": job.title, "location": job.location}, e,
+        )
 
     cache.delete_pattern("jobs:search:*")
     return JobResponse(success=True, message="Job posting created successfully", data=job.to_dict())
@@ -368,7 +398,6 @@ async def close_job(
     db.commit()
     db.refresh(job)
 
-    # Publish event
     try:
         await kafka_producer.publish(
             topic="job.closed",
@@ -377,9 +406,13 @@ async def close_job(
             entity_type="job",
             entity_id=str(req.job_id),
             payload={"title": job.title},
+            idempotency_key=f"job_closed:{req.job_id}",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        _log_failed_kafka_event(
+            "job.closed", "job.closed", str(req.job_id), str(job.recruiter_id),
+            {"title": job.title}, e,
+        )
 
     cache.delete(f"jobs:get:{req.job_id}")
     cache.delete_pattern("jobs:search:*")
@@ -432,6 +465,7 @@ async def save_job(
             entity_type="job",
             entity_id=str(req.job_id),
             payload={},
+            idempotency_key=f"job_save:{req.member_id}:{req.job_id}",
         )
     except Exception:
         pass

@@ -1,179 +1,183 @@
 """
 LinkedIn Platform — Locust Load Test
-=====================================
-Tests three endpoint groups with a realistic read-heavy / write-light split:
+Models realistic read-heavy LinkedIn traffic (95% reads / 5% writes).
 
-  ReadUser  (weight 7) — member search + job search
-  WriteUser (weight 3) — application submit (+ incidental reads)
+Read/Write split
+----------------
+  ReadUser  (weight 19) — job search, job detail view, member profile view
+  WriteUser (weight  1) — application submit with valid JWT authentication
 
-Seed data assumptions
----------------------
-Run `python seed_data.py --quick --yes` (60 members, 50 jobs) before a quick
-smoke test, or `python seed_data.py --yes` for the full 10 k dataset.
-IDs are sequential starting at 1; adjust MEMBER_ID_MAX / JOB_ID_MAX below if
-your database has been partially wiped and auto-increment has advanced.
+Authentication
+--------------
+WriteUser.on_start() calls POST /auth/login using the dedicated performance-test
+account seeded by seed_data.seed_perf_test_user().  The JWT is cached on the
+user instance and reused for all subsequent write requests.
+
+  Credentials (seeded by seed_data.py):
+    email:    perf.tester@linkedin-perf.io
+    password: perftest123
+
+  Run seed first:
+    cd backend && python seed_data.py [--quick] --yes
+
+ID ranges
+---------
+Set MEMBER_ID_MAX / JOB_ID_MAX to match the seeded dataset:
+  --quick seed : MEMBER_ID_MAX=60,   JOB_ID_MAX=50
+  --full  seed : MEMBER_ID_MAX=10000, JOB_ID_MAX=10000
 
 Usage
 -----
-  cd load_tests
   locust -f locustfile.py --host http://localhost:8000
-
-Then open http://localhost:8089 and set:
-  Number of users : 20
-  Spawn rate      : 2
-  Run time        : 60s (optional)
-
-Headless (CI / scripted):
-  locust -f locustfile.py --host http://localhost:8000 \
-         --users 20 --spawn-rate 2 --run-time 60s --headless \
-         --html results/report.html --csv results/summary
+  locust -f locustfile.py --host http://localhost:8000 --headless -u 100 -r 10 -t 60s
 """
 
+import json
 import random
-from locust import HttpUser, task, between, constant_throughput
+from locust import HttpUser, task, between, events
 
-# ── Seed data ID ranges ───────────────────────────────────────────────────────
-# Change these to match the actual row count in your database.
-MEMBER_ID_MAX = 60     # quick seed; use 10_000 for full seed
-JOB_ID_MAX    = 50     # quick seed; use 10_000 for full seed
+# ── Dataset bounds — match your seed profile ──────────────────────────────────
+# Change these to 60 / 50 if running against the --quick seed.
+MEMBER_ID_MAX = 10_000
+JOB_ID_MAX    = 10_000
 
-# ── Realistic search terms ────────────────────────────────────────────────────
-MEMBER_KEYWORDS = ["engineer", "python", "data", "manager", "analyst", "developer",
-                   "java", "cloud", "machine learning", "backend"]
-JOB_KEYWORDS    = ["engineer", "python", "data scientist", "product manager",
-                   "frontend", "backend", "devops", "remote", "senior", "analyst"]
-LOCATIONS       = ["San Jose", "San Francisco", "New York", "Austin", "Seattle", ""]
-WORK_MODES      = ["remote", "hybrid", "onsite", ""]
-EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", ""]
-SENIORITY_LEVELS = ["junior", "mid", "senior", "lead", ""]
+# Perf-test account credentials (seeded by seed_data.py → seed_perf_test_user)
+PERF_TEST_EMAIL    = "perf.tester@linkedin-perf.io"
+PERF_TEST_PASSWORD = "perftest123"
+
+JOB_KEYWORDS = [
+    "engineer", "python", "data scientist", "product manager",
+    "frontend", "backend", "devops", "remote", "senior", "machine learning",
+]
+
+WORK_MODES = ["remote", "hybrid", "onsite"]
 
 
 class ReadUser(HttpUser):
     """
-    Simulates a user browsing job listings and searching for profiles.
-    Read operations dominate real-world traffic (70 % of virtual users).
+    Simulates a member browsing jobs and profiles.
+    Covers Scenario A: job search + job detail view.
+    Weight 19 → ~95% of all simulated users are readers.
     """
-    weight = 7
-    wait_time = between(0.5, 2.0)
+    weight = 19
+    wait_time = between(0.5, 1.5)
 
-    @task(4)
+    @task(6)
     def search_jobs(self):
-        """Search job postings — hits Redis cache on repeated queries."""
-        payload = {
-            "keyword": random.choice(JOB_KEYWORDS),
-            "location": random.choice(LOCATIONS),
-            "work_mode": random.choice(WORK_MODES),
-            "employment_type": random.choice(EMPLOYMENT_TYPES),
-            "seniority_level": random.choice(SENIORITY_LEVELS),
-            "page": random.randint(1, 3),
-            "page_size": 10,
-        }
-        # Strip empty strings so the server treats them as unset filters
-        payload = {k: v for k, v in payload.items() if v != ""}
-        with self.client.post(
+        """Job search — primary cache-hit driver."""
+        keyword = random.choice(JOB_KEYWORDS)
+        self.client.post(
             "/jobs/search",
-            json=payload,
+            json={
+                "keyword": keyword,
+                "page": 1,
+                "page_size": 10,
+                "work_mode": random.choice([None, *WORK_MODES]),
+            },
             name="/jobs/search",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
+        )
 
     @task(3)
-    def search_members(self):
-        """Full-text member profile search — exercises MySQL LIKE queries."""
-        payload = {
-            "keyword": random.choice(MEMBER_KEYWORDS),
-            "page": random.randint(1, 3),
-            "page_size": 10,
-        }
-        with self.client.post(
-            "/members/search",
-            json=payload,
-            name="/members/search",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
-
-    @task(2)
     def get_job(self):
-        """Fetch a single job by ID — warms and reads the Redis cache."""
+        """Job detail view — exercises jobs:get:{id} cache key."""
         job_id = random.randint(1, JOB_ID_MAX)
-        with self.client.post(
+        self.client.post(
             "/jobs/get",
             json={"job_id": job_id},
             name="/jobs/get",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
+        )
+
+    @task(2)
+    def search_members(self):
+        """Member search — exercises members:search cache key."""
+        self.client.post(
+            "/members/search",
+            json={"keyword": random.choice(JOB_KEYWORDS), "page": 1, "page_size": 10},
+            name="/members/search",
+        )
 
     @task(1)
     def get_member(self):
-        """Fetch a single member profile by ID — warms and reads the Redis cache."""
+        """Member profile view — exercises members:get:{id} cache key."""
         member_id = random.randint(1, MEMBER_ID_MAX)
-        with self.client.post(
+        self.client.post(
             "/members/get",
             json={"member_id": member_id},
             name="/members/get",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
+        )
 
 
 class WriteUser(HttpUser):
     """
-    Simulates a job-seeker submitting applications.
-    Write operations are the minority (30 % of virtual users) but are the most
-    expensive — each triggers a MySQL INSERT + Kafka publish.
+    Simulates a member submitting a job application.
+    Covers Scenario B: DB write + Kafka event via /applications/submit.
+    Weight 1 → ~5% of all simulated users are writers.
 
-    Note: the application endpoint returns HTTP 200 even for duplicates
-    (success:False in JSON). Locust counts these as non-failures because the
-    server handled the request correctly. The duplicate path still exercises
-    the full DB read path and is valid throughput load.
+    on_start() logs in to obtain a JWT.  All requests include the
+    Authorization header so the endpoint's require_member guard is satisfied.
     """
-    weight = 3
-    wait_time = between(1.0, 4.0)
+    weight = 1
+    wait_time = between(2, 5)
 
-    @task(3)
-    def submit_application(self):
-        """Submit a job application — MySQL INSERT + Kafka publish."""
-        payload = {
-            "member_id": random.randint(1, MEMBER_ID_MAX),
-            "job_id":    random.randint(1, JOB_ID_MAX),
-            "cover_letter": "I am excited to apply for this position.",
-        }
-        with self.client.post(
-            "/applications/submit",
-            json=payload,
-            name="/applications/submit",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
-
-    @task(2)
-    def search_jobs_before_applying(self):
-        """A write user also browses jobs before applying."""
-        with self.client.post(
-            "/jobs/search",
-            json={"keyword": random.choice(JOB_KEYWORDS), "page": 1, "page_size": 5},
-            name="/jobs/search",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
+    def on_start(self):
+        """Log in once and cache the JWT for all subsequent write requests."""
+        self.token = None
+        self.member_id = None
+        try:
+            resp = self.client.post(
+                "/auth/login",
+                json={"email": PERF_TEST_EMAIL, "password": PERF_TEST_PASSWORD},
+                name="/auth/login [on_start]",
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self.token = data.get("access_token")
+                self.member_id = data.get("user_id")
+            else:
+                print(
+                    f"[WriteUser] Login failed ({resp.status_code}). "
+                    "Run: cd backend && python seed_data.py --yes  to create the perf-test user."
+                )
+        except Exception as e:
+            print(f"[WriteUser] Login error: {e}")
 
     @task(1)
-    def search_members(self):
-        """Occasional member search (recruiter perspective mixed in)."""
-        with self.client.post(
-            "/members/search",
-            json={"keyword": random.choice(MEMBER_KEYWORDS), "page": 1, "page_size": 5},
-            name="/members/search",
-            catch_response=True,
-        ) as response:
-            if response.status_code != 200:
-                response.failure(f"HTTP {response.status_code}")
+    def submit_application(self):
+        """Application submit — DB write + Kafka event (Scenario B)."""
+        if not self.token or not self.member_id:
+            return   # skip if login failed
+
+        job_id = random.randint(1, JOB_ID_MAX)
+        self.client.post(
+            "/applications/submit",
+            json={
+                "member_id": self.member_id,
+                "job_id": job_id,
+                "cover_letter": "Performance test application — automated.",
+            },
+            headers={"Authorization": f"Bearer {self.token}"},
+            name="/applications/submit",
+        )
+
+
+# ── Event hooks for reporting ─────────────────────────────────────────────────
+
+@events.test_start.add_listener
+def on_test_start(environment, **kwargs):
+    print("=" * 60)
+    print("  LinkedIn Platform — Locust Load Test")
+    print(f"  MEMBER_ID_MAX={MEMBER_ID_MAX}  JOB_ID_MAX={JOB_ID_MAX}")
+    print(f"  ReadUser weight=19 (~95%)  WriteUser weight=1 (~5%)")
+    print("=" * 60)
+
+@events.test_stop.add_listener
+def on_test_stop(environment, **kwargs):
+    stats = environment.stats.total
+    print("\n" + "=" * 60)
+    print("  Test Complete")
+    print(f"  Requests:  {stats.num_requests:,}")
+    print(f"  Failures:  {stats.num_failures:,}")
+    print(f"  RPS:       {stats.current_rps:.1f}")
+    print(f"  P50:       {stats.get_response_time_percentile(0.50):.1f} ms")
+    print(f"  P95:       {stats.get_response_time_percentile(0.95):.1f} ms")
+    print("=" * 60)

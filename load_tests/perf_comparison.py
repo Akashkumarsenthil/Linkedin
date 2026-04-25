@@ -91,8 +91,12 @@ except ImportError:
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-MEMBER_ID_MAX = 60   # --quick seed; set to 10000 for full seed
-JOB_ID_MAX    = 50
+MEMBER_ID_MAX = 10_000   # match PROFILE_FULL; use 60 for --quick seed
+JOB_ID_MAX    = 10_000   # match PROFILE_FULL; use 50 for --quick seed
+
+# Perf-test account credentials — created by seed_data.seed_perf_test_user()
+PERF_TEST_EMAIL    = "perf.tester@linkedin-perf.io"
+PERF_TEST_PASSWORD = "perftest123"
 
 JOB_KEYWORDS = ["engineer", "python", "data scientist", "product manager",
                 "frontend", "backend", "devops", "remote", "senior"]
@@ -170,6 +174,46 @@ def _do_request(client: httpx.Client, host: str, path: str, payload: dict) -> tu
         return latency, False
 
 
+def _do_request_with_headers(
+    client: httpx.Client, host: str, path: str, payload: dict, headers: dict
+) -> tuple:
+    """Returns (latency_ms, success_bool). Sends extra headers (e.g. Authorization)."""
+    t0 = time.perf_counter()
+    try:
+        r = client.post(f"{host}{path}", json=payload, headers=headers, timeout=15)
+        latency = (time.perf_counter() - t0) * 1000
+        ok = r.status_code == 200
+        return latency, ok
+    except Exception:
+        latency = (time.perf_counter() - t0) * 1000
+        return latency, False
+
+
+def _get_auth_token(host: str) -> tuple:
+    """
+    Login as the perf-test user and return (jwt_token, member_id).
+    Returns (None, None) if login fails — Scenario B will be skipped.
+    Ensure seed_data.py has been run first to create the perf-test account.
+    """
+    try:
+        with httpx.Client() as client:
+            resp = client.post(
+                f"{host}/auth/login",
+                json={"email": PERF_TEST_EMAIL, "password": PERF_TEST_PASSWORD},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("access_token"), data.get("user_id")
+            print(
+                f"  [auth] Login failed ({resp.status_code}). "
+                "Run: cd backend && python seed_data.py --yes"
+            )
+    except Exception as e:
+        print(f"  [auth] Login error: {e}")
+    return None, None
+
+
 # ── Scenario workloads ────────────────────────────────────────────────────────
 
 def scenario_a_worker(host: str, duration_s: int) -> tuple:
@@ -195,26 +239,31 @@ def scenario_a_worker(host: str, duration_s: int) -> tuple:
             latencies.append(lat)
             if not ok:
                 failures += 1
-            # Small think time
             time.sleep(random.uniform(0.05, 0.15))
 
     return latencies, failures
 
 
-def scenario_b_worker(host: str, duration_s: int) -> tuple:
+def scenario_b_worker(host: str, duration_s: int, token: str = None, member_id: int = None) -> tuple:
     """Scenario B: Application submit (DB write + Kafka event). Returns (latencies, failures)."""
     latencies = []
     failures = 0
     deadline = time.time() + duration_s
 
+    if not token:
+        print("  [warn] No auth token — Scenario B skipped. Run seed_data.py first.")
+        return latencies, failures
+
+    headers = {"Authorization": f"Bearer {token}"}
+
     with httpx.Client() as client:
         while time.time() < deadline:
             payload = {
-                "member_id": random.randint(1, MEMBER_ID_MAX),
+                "member_id": member_id,
                 "job_id": random.randint(1, JOB_ID_MAX),
                 "cover_letter": "Performance test application.",
             }
-            lat, ok = _do_request(client, host, "/applications/submit", payload)
+            lat, ok = _do_request_with_headers(client, host, "/applications/submit", payload, headers)
             latencies.append(lat)
             if not ok:
                 failures += 1
@@ -279,19 +328,24 @@ def setup_mode(mode: str, host: str, rc):
 def run_benchmark(
     mode: str, scenario: str, host: str,
     users: int, duration_s: int,
-    rc,
+    rc, token: str = None, member_id: int = None,
 ) -> RunResult:
     """Run a single benchmark: N concurrent threads for duration_s seconds."""
     setup_mode(mode, host, rc)
 
-    worker_fn = scenario_a_worker if scenario == "A" else scenario_b_worker
     all_latencies = []
     all_failures = 0
-
     t0 = time.time()
 
     with ThreadPoolExecutor(max_workers=users) as pool:
-        futures = [pool.submit(worker_fn, host, duration_s) for _ in range(users)]
+        if scenario == "A":
+            futures = [pool.submit(scenario_a_worker, host, duration_s) for _ in range(users)]
+        else:
+            # Pass the pre-obtained token to every Scenario B thread
+            futures = [
+                pool.submit(scenario_b_worker, host, duration_s, token, member_id)
+                for _ in range(users)
+            ]
         for f in as_completed(futures):
             lats, fails = f.result()
             all_latencies.extend(lats)
@@ -540,6 +594,16 @@ def main():
     print(f"  Modes: {', '.join(modes)}  |  Scenarios: {', '.join(scenarios)}")
     print(f"{'═'*72}")
 
+    # Obtain auth token once — needed for Scenario B (application submit requires JWT)
+    auth_token, perf_member_id = None, None
+    if "B" in scenarios:
+        print("  [auth] Logging in as perf-test user for Scenario B ...")
+        auth_token, perf_member_id = _get_auth_token(args.host)
+        if auth_token:
+            print(f"  [auth] OK  member_id={perf_member_id}")
+        else:
+            print("  [auth] FAILED — Scenario B will be skipped. Run: cd backend && python seed_data.py --yes")
+
     all_results = []
 
     for scenario in scenarios:
@@ -547,7 +611,10 @@ def main():
         for mode in modes:
             print(f"\n▶ Running: Mode={mode}, Scenario={scenario_label}, "
                   f"Users={args.users}, Duration={args.duration}s")
-            result = run_benchmark(mode, scenario, args.host, args.users, args.duration, rc)
+            result = run_benchmark(
+                mode, scenario, args.host, args.users, args.duration, rc,
+                token=auth_token, member_id=perf_member_id,
+            )
             print_result(result)
             all_results.append(result)
             # Brief pause between runs to let the system settle

@@ -5,7 +5,7 @@ Connection Service — Connection Request, Accept, Reject, List, and Mutual APIs
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, update
 
 from database import get_db
 from models.connection import Connection
@@ -107,13 +107,17 @@ async def accept_connection(
 
     conn.status = "accepted"
 
-    # Update connection counts for both members
-    requester = db.query(Member).filter(Member.member_id == conn.requester_id).first()
-    receiver = db.query(Member).filter(Member.member_id == conn.receiver_id).first()
-    if requester:
-        requester.connections_count = (requester.connections_count or 0) + 1
-    if receiver:
-        receiver.connections_count = (receiver.connections_count or 0) + 1
+    # Atomic counter increments — avoids read-modify-write race under concurrent accepts
+    db.execute(
+        update(Member)
+        .where(Member.member_id == conn.requester_id)
+        .values(connections_count=Member.connections_count + 1)
+    )
+    db.execute(
+        update(Member)
+        .where(Member.member_id == conn.receiver_id)
+        .values(connections_count=Member.connections_count + 1)
+    )
 
     db.commit()
     db.refresh(conn)

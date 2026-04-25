@@ -64,14 +64,26 @@ PROFILE_FULL = SeedProfile(
     members=10_000,
     recruiters=10_000,
     jobs=10_000,
-    applications=15_000,
+    applications=25_000,   # increased from 15k for richer analytics + Pareto skew
     connections=20_000,
     threads=2_000,
     msg_per_thread=3,
-    saved_jobs=5_000,
+    saved_jobs=8_000,
     profile_views=30_000,
     batch_size=500,
 )
+
+# Performance-test credentials — seeded by seed_perf_test_user() so load tests can log in
+PERF_TEST_EMAIL = "perf.tester@linkedin-perf.io"
+PERF_TEST_PASSWORD = "perftest123"
+
+# Admin credentials — user_type='admin'; can access all frontend tabs including Performance Dashboard
+ADMIN_EMAIL    = "admin@linkedin-perf.io"
+ADMIN_PASSWORD = "admin123"
+
+# Pareto hot-job fraction: 5% of jobs get ~40% of all applications
+HOT_JOB_COUNT_FRACTION = 0.05   # 500 "viral" jobs out of 10k
+HOT_JOB_APP_FRACTION   = 0.40   # 40% of all applications land on those jobs
 
 PROFILE_QUICK = SeedProfile(
     members=60,
@@ -339,17 +351,32 @@ def seed_jobs(db, profile: SeedProfile):
 
 
 def seed_applications(db, profile: SeedProfile):
-    """Seed job applications."""
+    """Seed job applications with a Pareto (skewed) distribution.
+
+    A small fraction of 'hot' jobs receive a disproportionate share of
+    applications, mirroring real-world traffic patterns and making the
+    caching benefit measurable: the same few jobs get hit repeatedly,
+    so cached responses save many DB round-trips.
+    """
     count = profile.applications
     n_mem = max(1, profile.members)
     n_job = max(1, profile.jobs)
-    print(f"\n📋 Seeding {count} applications...")
+    print(f"\n📋 Seeding {count} applications (Pareto distribution)...")
     apps = []
     used_combos = set()
 
+    # Designate the first HOT_JOB_COUNT_FRACTION of jobs as "hot"
+    hot_count = max(1, int(n_job * HOT_JOB_COUNT_FRACTION))
+    hot_jobs = list(range(1, hot_count + 1))
+
     for i in tqdm(range(count)):
         member_id = random.randint(1, n_mem)
-        job_id = random.randint(1, n_job)
+
+        # 40% of apps go to hot jobs, 60% distributed across all jobs
+        if random.random() < HOT_JOB_APP_FRACTION:
+            job_id = random.choice(hot_jobs)
+        else:
+            job_id = random.randint(1, n_job)
 
         combo = (member_id, job_id)
         if combo in used_combos:
@@ -359,7 +386,7 @@ def seed_applications(db, profile: SeedProfile):
         app = Application(
             job_id=job_id,
             member_id=member_id,
-            resume_text=f"Resume for application #{i}",
+            resume_text=None,   # consumer will use member's resume_text
             cover_letter=fake.paragraph(nb_sentences=3) if random.random() > 0.3 else None,
             application_datetime=_dt_between_days_ago(90),
             status=random.choices(
@@ -380,7 +407,7 @@ def seed_applications(db, profile: SeedProfile):
         db.bulk_save_objects(apps)
         db.commit()
 
-    print(f"   ✓ {len(used_combos)} applications created")
+    print(f"   ✓ {len(used_combos)} applications created  ({hot_count} hot jobs = top {int(HOT_JOB_COUNT_FRACTION*100)}%)")
 
 
 def seed_connections(db, profile: SeedProfile):
@@ -557,6 +584,107 @@ def _clear_tables(db):
     print("   ✓ All tables cleared")
 
 
+def seed_perf_test_user(db) -> int:
+    """
+    Seed a dedicated performance-test member + UserCredentials with known credentials.
+
+    This user is used by the Locust and perf_comparison load tests so that
+    Scenario B (application submit) can obtain a valid JWT without depending
+    on any randomly generated seed email/password.
+
+    Credentials:
+        Email    : perf.tester@linkedin-perf.io
+        Password : perftest123
+
+    Returns the member_id of the created (or already-existing) user.
+    """
+    from models.user_credentials import UserCredentials
+    from auth import hash_password
+
+    existing_cred = db.query(UserCredentials).filter(
+        UserCredentials.email == PERF_TEST_EMAIL
+    ).first()
+    if existing_cred:
+        print(f"   ✓ Perf-test user already exists (member_id={existing_cred.user_id})")
+        return existing_cred.user_id
+
+    member = Member(
+        first_name="Perf",
+        last_name="Tester",
+        email=PERF_TEST_EMAIL,
+        headline="Performance test account — do not delete",
+        location_city="San Francisco",
+        location_state="California",
+        location_country="USA",
+        skills=json.dumps(["Python", "Load Testing"]),
+        resume_text="Performance test user account.",
+    )
+    db.add(member)
+    db.flush()  # get member_id
+
+    cred = UserCredentials(
+        user_type="member",
+        user_id=member.member_id,
+        email=PERF_TEST_EMAIL,
+        password_hash=hash_password(PERF_TEST_PASSWORD),
+    )
+    db.add(cred)
+    db.commit()
+    print(f"   ✓ Perf-test user created  email={PERF_TEST_EMAIL}  member_id={member.member_id}")
+    return member.member_id
+
+
+def seed_admin_user(db) -> int:
+    """
+    Seed a dedicated admin account with user_type='admin'.
+
+    The frontend grants admin users access to every tab, including the
+    Performance Dashboard which is restricted to this role only.
+    The backend auth router passes user_type through to the JWT verbatim,
+    so no backend changes are needed — just seeding this credential.
+
+    Credentials:
+        Email    : admin@linkedin-perf.io
+        Password : admin123
+
+    Returns the member_id of the created (or already-existing) admin user.
+    """
+    from models.user_credentials import UserCredentials
+    from auth import hash_password
+
+    existing_cred = db.query(UserCredentials).filter(
+        UserCredentials.email == ADMIN_EMAIL
+    ).first()
+    if existing_cred:
+        print(f"   ✓ Admin user already exists (member_id={existing_cred.user_id})")
+        return existing_cred.user_id
+
+    member = Member(
+        first_name="Platform",
+        last_name="Admin",
+        email=ADMIN_EMAIL,
+        headline="Admin account — full access to all tabs",
+        location_city="San Francisco",
+        location_state="California",
+        location_country="USA",
+        skills=json.dumps(["Administration", "Performance"]),
+        resume_text="Platform admin account.",
+    )
+    db.add(member)
+    db.flush()  # get member_id
+
+    cred = UserCredentials(
+        user_type="admin",          # frontend reads this from the JWT
+        user_id=member.member_id,
+        email=ADMIN_EMAIL,
+        password_hash=hash_password(ADMIN_PASSWORD),
+    )
+    db.add(cred)
+    db.commit()
+    print(f"   ✓ Admin user created  email={ADMIN_EMAIL}  member_id={member.member_id}")
+    return member.member_id
+
+
 def run_seed(db, profile: SeedProfile, assume_yes: bool) -> None:
     existing = db.execute(text("SELECT COUNT(*) FROM members")).scalar()
     if existing > 0:
@@ -577,6 +705,12 @@ def run_seed(db, profile: SeedProfile, assume_yes: bool) -> None:
     seed_messages(db, profile)
     seed_saved_jobs(db, profile)
     seed_profile_views(db, profile)
+
+    print("\n🔑 Seeding performance-test user for load tests...")
+    seed_perf_test_user(db)
+
+    print("🔑 Seeding admin user (full tab access)...")
+    seed_admin_user(db)
 
     print("\n" + "=" * 60)
     print("  ✅ Seeding complete!")

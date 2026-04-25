@@ -9,6 +9,7 @@ interface Activity {
 }
 
 const SEED: Omit<Activity, 'id' | 'time'>[] = [
+<<<<<<< Updated upstream
   { initial: 'M', title: 'Senior ML Engineer posted by Acme Corp', accent: 'blue' },
   { initial: 'A', title: 'AI shortlist approved for Backend Engineer role', accent: 'green' },
   { initial: 'J', title: 'Jane Smith accepted your connection', accent: 'purple' },
@@ -17,6 +18,15 @@ const SEED: Omit<Activity, 'id' | 'time'>[] = [
   { initial: 'H', title: 'Hiring Assistant completed 3 workflows', accent: 'green' },
   { initial: 'K', title: 'Kafka processed 12.4k events in the last hour', accent: 'blue' },
   { initial: 'R', title: 'Resume parser extracted 48 skills', accent: 'purple' },
+=======
+  { icon: '💼', title: 'Senior ML Engineer posted by Acme Corp', accent: 'blue' },
+  { icon: '🎯', title: 'AI shortlist approved for Backend Engineer role', accent: 'green' },
+  { icon: '🤝', title: 'Jane Smith accepted your connection', accent: 'purple' },
+  { icon: '✉', title: 'New message from recruiter at Globex', accent: 'blue' },
+  { icon: '📈', title: '1,247 profile views this week', accent: 'orange' },
+  { icon: '🚀', title: 'Hiring Assistant completed 3 workflows', accent: 'green' },
+  { icon: '🧠', title: 'Resume parser extracted 48 skills', accent: 'purple' },
+>>>>>>> Stashed changes
 ]
 
 function timeAgo(ms: number): string {
@@ -51,7 +61,10 @@ export function ActivityFeed() {
           <span className="live-pulse" />
           <h3 className="activity-title">Network Activity</h3>
         </div>
+<<<<<<< Updated upstream
         <span className="activity-sub">Live</span>
+=======
+>>>>>>> Stashed changes
       </div>
       <ul className="activity-list">
         {items.map((it) => (
