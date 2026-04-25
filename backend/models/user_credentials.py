@@ -13,7 +13,7 @@ class UserCredentials(Base):
     __tablename__ = "user_credentials"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_type = Column(Enum("member", "recruiter"), nullable=False)
+    user_type = Column(Enum("member", "recruiter", "admin"), nullable=False)
     user_id = Column(Integer, nullable=False)
     email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)

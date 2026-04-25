@@ -12,10 +12,19 @@ continuously, these counts reflect live streaming activity — not cached number
 
 import logging
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import func, text
 
-from database import mongo_db
+from database import mongo_db, get_db
 from cache import cache
+from models.member import Member
+from models.recruiter import Recruiter
+from models.job import JobPosting
+from models.application import Application
+from models.connection import Connection
+from models.message import Message
+from models.post import Post
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/perf", tags=["Performance"])
@@ -120,3 +129,66 @@ async def perf_cache_stats():
         "redis_online": healthy,
         **stats,
     }
+
+
+@router.get("/mysql-stats", summary="Live MySQL table counts and top-N breakdowns")
+def mysql_stats(db: Session = Depends(get_db)):
+    """
+    Returns live row counts and simple aggregates from MySQL.
+    Used by the Performance Dashboard to show the relational layer is active.
+    """
+    try:
+        members      = db.query(func.count(Member.member_id)).scalar() or 0
+        recruiters   = db.query(func.count(Recruiter.recruiter_id)).scalar() or 0
+        jobs         = db.query(func.count(JobPosting.job_id)).scalar() or 0
+        applications = db.query(func.count(Application.application_id)).scalar() or 0
+        connections  = db.query(func.count(Connection.connection_id)).scalar() or 0
+        messages     = db.query(func.count(Message.message_id)).scalar() or 0
+        posts        = db.query(func.count(Post.post_id)).scalar() or 0
+
+        # Applications by status
+        app_by_status = (
+            db.query(Application.status, func.count(Application.application_id).label("cnt"))
+            .group_by(Application.status)
+            .order_by(text("cnt DESC"))
+            .all()
+        )
+
+        # Top 5 locations by member count
+        top_locations = (
+            db.query(Member.location_city, func.count(Member.member_id).label("cnt"))
+            .filter(Member.location_city.isnot(None))
+            .group_by(Member.location_city)
+            .order_by(text("cnt DESC"))
+            .limit(5)
+            .all()
+        )
+
+        # Top 5 job titles
+        top_jobs = (
+            db.query(JobPosting.title, func.count(JobPosting.job_id).label("cnt"))
+            .group_by(JobPosting.title)
+            .order_by(text("cnt DESC"))
+            .limit(5)
+            .all()
+        )
+
+        return {
+            "status": "ok",
+            "totals": {
+                "members": members,
+                "recruiters": recruiters,
+                "jobs": jobs,
+                "applications": applications,
+                "connections": connections,
+                "messages": messages,
+                "posts": posts,
+            },
+            "applications_by_status": [{"status": s, "count": c} for s, c in app_by_status],
+            "top_locations": [{"city": city, "count": cnt} for city, cnt in top_locations],
+            "top_job_titles": [{"title": title, "count": cnt} for title, cnt in top_jobs],
+        }
+
+    except Exception as e:
+        logger.error(f"mysql_stats error: {e}")
+        return {"status": "error", "error": str(e)}

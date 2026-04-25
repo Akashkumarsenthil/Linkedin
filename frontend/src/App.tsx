@@ -18,7 +18,6 @@ import { GeoMonthlyChart } from './components/GeoMonthlyChart'
 import { SavesTrendChart } from './components/SavesTrendChart'
 import { AiDashboard } from './components/AiDashboard'
 import { CountUp } from './components/CountUp'
-import { ActivityFeed } from './components/ActivityFeed'
 import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
 import { PerformanceDashboard } from './components/PerformanceDashboard'
@@ -639,9 +638,6 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </div>
       </section>
 
-      <section className="overview-section">
-        <ActivityFeed />
-      </section>
     </div>
   )
 }
