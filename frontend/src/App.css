@@ -1567,19 +1567,162 @@ button { cursor: pointer; outline-offset: 2px; }
   gap: 4px;
 }
 
-/* ── 19. Analytics Panel ─────────────────────────────────────────── */
+/* ── 19. Analytics Dashboard ─────────────────────────────────────── */
 
-.analytics-tab-section { display: flex; flex-direction: column; gap: 12px; }
-.analytics-section-title {
+.analytics-dashboard { gap: 20px !important; }
+
+/* Sections */
+.ad-section { display: flex; flex-direction: column; gap: 12px; }
+.ad-section-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
 }
-.analytics-grid {
+
+/* Grid */
+.ad-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 12px;
 }
+
+/* Cards */
+.ad-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ad-card:hover { box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.ad-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ad-card-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+.ad-card-hint code {
+  font-size: 11px;
+  background: rgba(0,0,0,.04);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* KPI row */
+.ad-kpi-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.ad-kpi {
+  flex: 1;
+  min-width: 70px;
+  background: rgba(0,0,0,.02);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+.ad-kpi-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ad-kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+/* Metric tabs */
+.ad-metric-tabs {
+  display: flex;
+  gap: 2px;
+  background: rgba(0,0,0,.04);
+  padding: 2px;
+  border-radius: var(--r-sm);
+}
+.ad-metric-tab {
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-sec);
+  cursor: pointer;
+  transition: all .12s;
+}
+.ad-metric-tab:hover { color: var(--text); }
+.ad-metric-tab.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  font-weight: 600;
+}
+
+/* Inline controls */
+.ad-inline-controls { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.ad-inline-label {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 11px; font-weight: 500; color: var(--text-sec);
+}
+.ad-inline-input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 13px; width: 70px; outline: none;
+  background: var(--surface); color: var(--text);
+}
+.ad-inline-input:focus { border-color: var(--accent); }
+.ad-load-btn {
+  padding: 6px 14px;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: var(--r-sm);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ad-load-btn:hover { opacity: .9; }
+.ad-load-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Skeleton loader */
+.ad-chart-skeleton { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+.ad-skeleton-bar {
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(0,0,0,.05) 25%, rgba(0,0,0,.09) 50%, rgba(0,0,0,.05) 75%);
+  background-size: 200% 100%;
+  animation: ad-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes ad-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Empty / Error states */
+.ad-empty {
+  font-size: 13px; color: var(--text-muted);
+  text-align: center; padding: 16px;
+  background: rgba(0,0,0,.02); border-radius: var(--r-sm);
+}
+.ad-error {
+  font-size: 13px; color: var(--error, #dc2626);
+  padding: 8px 12px;
+  background: rgba(220,38,38,.05);
+  border: 1px solid rgba(220,38,38,.12);
+  border-radius: var(--r-sm);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .ad-grid { grid-template-columns: 1fr; }
+}
+
 
 /* ── 20. AI Dashboard ────────────────────────────────────────────── */
 
@@ -2092,7 +2235,7 @@ button { cursor: pointer; outline-offset: 2px; }
   .overview-hero-row { flex-direction: column; }
   .form-grid { grid-template-columns: 1fr; }
   .conn-grid { grid-template-columns: 1fr; }
-  .analytics-grid { grid-template-columns: 1fr; }
+  .ad-grid { grid-template-columns: 1fr; }
   .member-card-grid { grid-template-columns: 1fr 1fr; }
   .candidate-grid { grid-template-columns: 1fr; }
 }

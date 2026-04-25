@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"date":{"$numberInt":"1"}},"name":"date_unique","unique":true},{"v":{"$numberInt":"2"},"key":{"week":{"$numberInt":"1"}},"name":"week_1"}],"uuid":"dffb54e7b5cc49109fc141b17810af36","collectionName":"analytics_saves_daily","type":"collection"}
