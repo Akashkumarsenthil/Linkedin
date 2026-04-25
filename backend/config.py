@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
 
+    # ─── Groq ───────────────────────────────────────
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+
     # ─── Auth / JWT ─────────────────────────────────────────────────
     # Accepts JWT_SECRET_KEY (preferred) or legacy JWT_SECRET env var.
     JWT_SECRET: str = os.getenv("JWT_SECRET_KEY", os.getenv("JWT_SECRET", "linkedin-demo-secret-change-in-prod"))
