@@ -78,9 +78,29 @@ async def create_post(
 async def list_feed(
     req: PostFeedRequest,
     db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
 ):
-    """Return posts newest-first, optionally filtered by author. Public."""
+    """Return posts newest-first, filtered by connections and own posts."""
     q = db.query(Post)
+
+    # Get user's accepted connections (assuming member-to-member connections)
+    from models.connection import Connection
+    conns = db.query(Connection).filter(
+        (Connection.status == "accepted") &
+        ((Connection.requester_id == current_user.user_id) | (Connection.receiver_id == current_user.user_id))
+    ).all()
+    conn_ids = [c.receiver_id if c.requester_id == current_user.user_id else c.requester_id for c in conns]
+    
+    # Filter logic: own posts OR (if member) posts from accepted connections
+    if current_user.user_type == "member":
+        q = q.filter(
+            ((Post.author_id == current_user.user_id) & (Post.author_type == current_user.user_type)) |
+            ((Post.author_id.in_(conn_ids)) & (Post.author_type == "member"))
+        )
+    else:
+        # Recruiters only see their own posts
+        q = q.filter(Post.author_id == current_user.user_id, Post.author_type == current_user.user_type)
+
     if req.author_id is not None:
         q = q.filter(Post.author_id == req.author_id)
     if req.author_type:
