@@ -6,9 +6,9 @@ Extracts structured fields from resume text using Ollama LLM or regex fallback.
 import re
 import json
 import logging
-import httpx
 from typing import Dict, Any
 from config import settings
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ COMMON_SKILLS = [
 ]
 
 
-async def parse_resume_with_ollama(resume_text: str) -> Dict[str, Any]:
-    """Use Ollama local LLM to extract structured data from resume text."""
+async def parse_resume_with_llm(resume_text: str) -> Dict[str, Any]:
+    """Use Groq LLM to extract structured data from resume text."""
     prompt = f"""Extract the following information from this resume text and respond ONLY with valid JSON (no markdown, no explanation):
 
 {{
@@ -45,32 +45,35 @@ Resume text:
 {resume_text[:3000]}"""
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                f"{settings.OLLAMA_BASE_URL}/api/generate",
-                json={
-                    "model": settings.OLLAMA_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.1},
-                },
-            )
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        completion = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+              {
+                "role": "user",
+                "content": prompt
+              }
+            ],
+            temperature=0.1,
+            max_completion_tokens=1024,
+            top_p=1,
+            stream=False,
+            stop=None
+        )
 
-            if response.status_code == 200:
-                result = response.json()
-                text = result.get("response", "")
-                # Try to parse JSON from the response
-                try:
-                    # Find JSON block in response
-                    json_match = re.search(r'\{[\s\S]*\}', text)
-                    if json_match:
-                        parsed = json.loads(json_match.group())
-                        return {"success": True, "method": "ollama", "data": parsed}
-                except json.JSONDecodeError:
-                    logger.warning("Ollama returned non-JSON response, falling back to regex")
+        text = completion.choices[0].message.content or ""
+        # Try to parse JSON from the response
+        try:
+            # Find JSON block in response
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                parsed = json.loads(json_match.group())
+                return {"success": True, "method": "groq", "data": parsed}
+        except json.JSONDecodeError:
+            logger.warning("Groq returned non-JSON response, falling back to regex")
 
-    except (httpx.ConnectError, httpx.TimeoutException) as e:
-        logger.warning(f"Ollama not available ({e}), using regex fallback")
+    except Exception as e:
+        logger.warning(f"Groq API error ({e}), using regex fallback")
 
     return await parse_resume_with_regex(resume_text)
 
