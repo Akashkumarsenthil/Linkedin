@@ -37,9 +37,9 @@ from database import SessionLocal, mongo_db
 from models.job import JobPosting
 from models.application import Application
 from models.member import Member
-from agents.resume_parser import parse_resume_with_ollama
+from agents.resume_parser import parse_resume_with_llm
 from agents.job_matcher import match_candidate_to_job
-from agents.outreach_generator import generate_outreach_with_ollama
+from agents.outreach_generator import generate_outreach_with_llm
 from kafka_producer import kafka_producer
 
 logger = logging.getLogger(__name__)
@@ -264,7 +264,7 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
         for member in members:
             resume_text = member.resume_text or member.about or ""
             if resume_text:
-                parsed = await parse_resume_with_ollama(resume_text)
+                parsed = await parse_resume_with_llm(resume_text)
                 parsed_resumes[member.member_id] = parsed
 
             await mongo_db.agent_traces.insert_one({
@@ -320,7 +320,7 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             candidate_id = match["candidate_id"]
             member = db.query(Member).filter(Member.member_id == candidate_id).first()
             if member:
-                outreach = await generate_outreach_with_ollama(
+                outreach = await generate_outreach_with_llm(
                     job_data, member.to_dict(), match
                 )
                 outreach["match_score"] = match["overall_score"]

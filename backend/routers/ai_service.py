@@ -12,7 +12,7 @@ from agents.hiring_assistant import (
     start_task, get_task_status, approve_task,
     ws_connections, active_tasks, get_queue_stats,
 )
-from agents.resume_parser import parse_resume_with_ollama
+from agents.resume_parser import parse_resume_with_llm
 from agents.job_matcher import match_candidate_to_job
 
 logger = logging.getLogger(__name__)
@@ -144,10 +144,10 @@ async def approve_output(
 @router.post("/parse-resume", response_model=AIResponse, summary="Parse a resume (standalone skill)")
 async def parse_resume(req: ParseResumeRequest):
     """
-    Standalone resume parsing endpoint. Uses Ollama LLM with regex fallback.
+    Standalone resume parsing endpoint. Uses Groq LLM with regex fallback.
     Extracts: skills, experience, education, contact info, summary.
     """
-    result = await parse_resume_with_ollama(req.resume_text)
+    result = await parse_resume_with_llm(req.resume_text)
     return AIResponse(
         success=result["success"],
         message=f"Resume parsed using {result['method']}",
