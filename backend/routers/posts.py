@@ -91,20 +91,21 @@ async def list_feed(
     ).all()
     conn_ids = [c.receiver_id if c.requester_id == current_user.user_id else c.requester_id for c in conns]
     
-    # Filter logic: own posts OR (if member) posts from accepted connections
-    if current_user.user_type == "member":
-        q = q.filter(
-            ((Post.author_id == current_user.user_id) & (Post.author_type == current_user.user_type)) |
-            ((Post.author_id.in_(conn_ids)) & (Post.author_type == "member"))
-        )
-    else:
-        # Recruiters only see their own posts
-        q = q.filter(Post.author_id == current_user.user_id, Post.author_type == current_user.user_type)
-
+    # Filter logic: if author_id is provided, just filter by author_id (allow public profile viewing)
     if req.author_id is not None:
         q = q.filter(Post.author_id == req.author_id)
-    if req.author_type:
-        q = q.filter(Post.author_type == req.author_type)
+        if req.author_type:
+            q = q.filter(Post.author_type == req.author_type)
+    else:
+        # Normal feed logic: own posts OR (if member) posts from accepted connections
+        if current_user.user_type == "member":
+            q = q.filter(
+                ((Post.author_id == current_user.user_id) & (Post.author_type == current_user.user_type)) |
+                ((Post.author_id.in_(conn_ids)) & (Post.author_type == "member"))
+            )
+        else:
+            # Recruiters only see their own posts
+            q = q.filter(Post.author_id == current_user.user_id, Post.author_type == current_user.user_type)
 
     total = q.count()
     offset = (req.page - 1) * req.page_size
