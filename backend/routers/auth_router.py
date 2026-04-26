@@ -44,10 +44,15 @@ async def login(req: LoginRequest, db: Session = Depends(get_db)):
     button.
     """
     cred = db.query(UserCredentials).filter(UserCredentials.email == req.email).first()
-    if not cred or not verify_password(req.password, cred.password_hash):
+    if not cred:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Account not found",
+        )
+    if not verify_password(req.password, cred.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
         )
 
     token = create_access_token(
@@ -78,10 +83,15 @@ async def login_form(
     cred = db.query(UserCredentials).filter(
         UserCredentials.email == form_data.username
     ).first()
-    if not cred or not verify_password(form_data.password, cred.password_hash):
+    if not cred:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+            detail="Account not found",
+        )
+    if not verify_password(form_data.password, cred.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect password",
         )
 
     token = create_access_token(
