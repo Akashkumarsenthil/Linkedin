@@ -12,7 +12,6 @@ x-backend-common: &backend-common
     MONGO_HOST: mongodb
     REDIS_HOST: redis
     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-    OLLAMA_BASE_URL: http://ollama:11434
   depends_on:
     mysql:
       condition: service_healthy
@@ -95,14 +94,6 @@ services:
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: linkedin-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
 
   # ─── Microservices ─────────────────────────────────────────────────────────
   profile-service:
@@ -199,4 +190,3 @@ volumes:
   mongo_data:
   redis_data:
   kafka_data:
-  ollama_data:
