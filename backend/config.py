@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     @property
     def MONGO_URL(self) -> str:
+        if not self.MONGO_USER:
+            return f"mongodb://{self.MONGO_HOST}:{self.MONGO_PORT}"
         user = quote_plus(self.MONGO_USER)
         password = quote_plus(self.MONGO_PASSWORD)
         return (
