@@ -54,7 +54,7 @@ This is a LinkedIn-style professional networking platform built as a distributed
 - Live analytics charts: top jobs, application funnel, geo distribution, member dashboards
 - A React demo console that exercises all of the above
 
-The backend is a FastAPI monolith with clean service boundaries. The infrastructure runs entirely in Docker Compose with one command.
+The system is built as a distributed microservices architecture. Each service is independent, with its own entry point and containerized environment, coordinated via an Nginx API Gateway and communicating asynchronously through Kafka.
 
 ---
 
@@ -69,15 +69,20 @@ The backend is a FastAPI monolith with clean service boundaries. The infrastruct
                               │ HTTP (dev: Vite proxy /api → :8000)
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                      FastAPI Backend (:8000)                      │
-│                                                                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │ Members  │ │   Jobs   │ │  Apps    │ │ Messages │           │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │Recruiters│ │Connections│ │Analytics │ │ AI Agent │           │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
-│                                                                   │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ API Gateway (Nginx) :8000                                    │  │
+│  └─────┬──────────┬───────────┬───────────┬────────────┬─────────┘  │
+│        │          │           │           │            │            │
+│  ┌─────▼────┐ ┌───▼────┐ ┌────▼────┐ ┌────▼────┐ ┌─────▼────┐     │
+│  │Profile   │ │ Job    │ │ App     │ │Message  │ │Connection│     │
+│  │Service   │ │ Service│ │ Service │ │Service  │ │Service   │     │
+│  └──────────┘ └──────────┘ └───────────┘ └───────────┘ └────────────┘     │
+│        │          │           │           │            │            │
+│  ┌─────▼──────────▼───────────▼───────────▼────────────▼─────────┐  │
+│  │                    Analytics & AI Services                    │  │
+│  │    (Kafka Consumer, Event Logging, AI Agent Dispatcher)       │  │
+│  └────────────────────────────────┬──────────────────────────────┘  │
+│                                   │                                  │
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │ Kafka Producer  ──►  Kafka Broker  ◄──  Kafka Consumer     │  │
 │  └────────────────────────────────────────────────────────────┘  │
@@ -154,7 +159,14 @@ Linkedin/
 ├── .env.example                    # Copy to backend/.env for local dev
 │
 ├── backend/
-│   ├── main.py                     # FastAPI app entry point; lifespan startup
+│   ├── main_profile.py             # Entry point: Profile & Recruiter
+│   ├── main_job.py                 # Entry point: Job & Saved Jobs
+│   ├── main_application.py         # Entry point: Applications
+│   ├── main_messaging.py           # Entry point: Messaging & Threads
+│   ├── main_connection.py          # Entry point: Connections
+│   ├── main_analytics.py           # Entry point: Analytics & Ingestion
+│   ├── main_ai.py                  # Entry point: AI Agent Skills
+│   ├── main.py                     # Monolith fallback entry point
 │   ├── config.py                   # Environment variable settings
 │   ├── database.py                 # MySQL + MongoDB connections; index creation
 │   ├── cache.py                    # Redis cache wrapper
@@ -223,18 +235,21 @@ Linkedin/
     └── openapi.json                # Static OpenAPI 3.x spec
 ```
 
-### Backend services
+### Microservices overview
 
-| Service | Routes | Key behaviour |
-|---------|--------|---------------|
-| **Members** | `/members/create`, `get`, `update`, `delete`, `search` | Duplicate-email guard; Redis caches profiles (TTL 300 s) and search results (TTL 60 s); cache invalidated on write |
-| **Recruiters** | `/recruiters/create`, `get`, `update`, `delete` | Duplicate-email guard; Redis cache (TTL 300 s) |
-| **Jobs** | `/jobs/create`, `get`, `update`, `search`, `close`, `save`, `byRecruiter` | Redis caches search (TTL 60 s) and individual jobs (TTL 300 s); `job.viewed` Kafka event on GET |
-| **Applications** | `/applications/submit`, `get`, `byJob`, `byMember`, `updateStatus`, `addNote` | Application-layer duplicate check; closed-job check; 3-retry loop on DB insert with rollback |
-| **Messaging** | `/threads/open`, `get`, `byUser` + `/messages/send`, `list` | Thread participants stored per user_id + user_type (member/recruiter); messages newest-first |
-| **Connections** | `/connections/request`, `accept`, `reject`, `list`, `mutual` | Bidirectional duplicate check; rejected connections can be re-requested; `/list` returns accepted only, enriched with member name and headline |
-| **Analytics** | `/events/ingest`, `/analytics/jobs/top`, `funnel`, `geo`, `member/dashboard` | SQL aggregates over MySQL; event ingestion writes to MongoDB + Kafka |
-| **AI Agents** | `/ai/parse-resume`, `match`, `analyze-candidates`, `task-status`, `approve`, `tasks/list` + WebSocket `/ai/ws/{task_id}` | Full hiring workflow; MongoDB is source of truth for task state; startup rehydration restores `awaiting_approval` tasks |
+The system is split into 7 functional microservices, each running its own FastAPI instance and (where applicable) its own Kafka consumer thread.
+
+| Service | Internal Port | Entry Point | Routes | Key Responsibility |
+|---------|---------------|-------------|--------|---------------------|
+| **Profile** | 8000 | `main_profile.py` | `/members/*`, `/recruiters/*`, `/auth/*` | Identity, profile management, and caching. |
+| **Job** | 8000 | `main_job.py` | `/jobs/*` | Job postings, industry filtering, and saved jobs. |
+| **Application** | 8000 | `main_application.py` | `/applications/*` | Submission, status tracking, and notes. |
+| **Messaging** | 8000 | `main_messaging.py` | `/threads/*`, `/messages/*` | Peer-to-peer messaging and thread management. |
+| **Connection** | 8000 | `main_connection.py` | `/connections/*` | Relationship graph and mutual connections. |
+| **Analytics** | 8000 | `main_analytics.py` | `/analytics/*`, `/events/*` | Event ingestion and dashboard aggregation. |
+| **AI Agent** | 8000 | `main_ai.py` | `/ai/*` | Agentic workflows, Ollama integration, and task state. |
+
+**API Gateway:** An Nginx container acts as the single entry point (`:8000`), routing traffic to the appropriate microservice based on the URL path.
 
 ---
 
