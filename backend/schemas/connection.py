@@ -25,6 +25,11 @@ class ConnectionReject(BaseModel):
     connection_id: int = Field(..., description="Connection request ID to reject")
 
 
+class ConnectionRemove(BaseModel):
+    user_id: int = Field(..., description="Current user ID")
+    other_id: int = Field(..., description="The user to disconnect from")
+
+
 class ConnectionList(BaseModel):
     user_id: int = Field(..., description="Member ID")
     page: int = Field(1, ge=1)
