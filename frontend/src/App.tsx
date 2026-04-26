@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import './App.css'
-import { apiGet, apiPost, parseStoredUser } from './api'
+import { apiGet, apiPost, clearStoredToken, parseStoredUser } from './api'
 import { TopJobsChart } from './components/TopJobsChart'
 import { FunnelChart } from './components/FunnelChart'
 import { GeoTable } from './components/GeoTable'
@@ -35,6 +35,7 @@ type Tab =
   | 'profile'
   | 'search'
   | 'perf'
+  | 'settings'
 
 type AuthUser = {
   user_id: number
@@ -48,13 +49,14 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   members:       ['guest', 'member', 'admin'],
   analytics:     ['recruiter', 'admin'],
   messages:      ['member', 'recruiter', 'admin'],
-  connections:   ['member', 'admin'],
+  connections:   ['member', 'recruiter', 'admin'],
   notifications: ['member', 'recruiter', 'admin'],
   ai:            ['recruiter', 'admin'],
   auth:          ['guest', 'member', 'recruiter', 'admin'],
   profile:       ['member', 'recruiter', 'admin'],
   search:        ['guest', 'member', 'recruiter', 'admin'],
   perf:          ['admin'],
+  settings:      ['member', 'recruiter', 'admin'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -102,12 +104,15 @@ function App() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const [searchDropdownResults, setSearchDropdownResults] = useState<{ people: any[], jobs: any[] }>({ people: [], jobs: [] })
   const [isSearching, setIsSearching] = useState(false)
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false)
+  const [viewProfileId, setViewProfileId] = useState<number | null>(null)
 
   const handleAuthChange = () => {
     setAuthUser(parseStoredUser())
     setMe(null)
     setNotifications([])
     setUnreadCount(0)
+    setTab('overview')
   }
 
   const role: 'guest' | 'member' | 'recruiter' | 'admin' = authUser?.user_type ?? 'guest'
@@ -162,12 +167,17 @@ function App() {
     const timer = setTimeout(async () => {
       setIsSearching(true)
       try {
-        const [peopleRes, jobsRes] = await Promise.all([
+      const [peopleRes, jobsRes, recruiterRes] = await Promise.all([
           apiPost<any>('/members/search', { keyword: searchVal, page_size: 4 }),
           apiPost<any>('/jobs/search', { keyword: searchVal, page_size: 4 }),
+          apiPost<any>('/recruiters/search', { keyword: searchVal, page_size: 4 }).catch(() => ({ data: [] })),
         ])
+        const allPeople = [
+          ...(peopleRes.data || []).map((p: any) => ({ ...p, _type: 'member' })),
+          ...(recruiterRes.data || []).map((r: any) => ({ ...r, member_id: r.recruiter_id, _type: 'recruiter', headline: r.company_name || r.role || 'Recruiter' })),
+        ]
         setSearchDropdownResults({
-          people: peopleRes.data || [],
+          people: allPeople.slice(0, 6),
           jobs: jobsRes.data || [],
         })
         setShowSearchDropdown(true)
@@ -183,10 +193,10 @@ function App() {
 
   const profilePhoto = (me?.profile?.profile_photo_url as string | undefined) || null
   const firstName = (me?.profile?.first_name as string | undefined) || ''
-  const lastName  = (me?.profile?.last_name  as string | undefined) || ''
+  const lastName = (me?.profile?.last_name as string | undefined) || ''
   const initials = authUser
     ? `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase() ||
-      authUser.email.substring(0, 2).toUpperCase()
+    authUser.email.substring(0, 2).toUpperCase()
     : null
 
   return (
@@ -251,7 +261,12 @@ function App() {
                         {searchDropdownResults.people.length > 0 && (
                           <div className="dropdown-section">
                             {searchDropdownResults.people.map((p: any) => (
-                              <div key={p.member_id} className="dropdown-item" onClick={() => { setSearchVal(`${p.first_name} ${p.last_name}`); setTab('search'); setShowSearchDropdown(false) }}>
+                              <div key={p.member_id} className="dropdown-item" onClick={() => { 
+                                setViewProfileId(p.member_id);
+                                setTab('profile');
+                                setShowSearchDropdown(false);
+                                setSearchVal('');
+                              }}>
                                 <div className="item-avatar">{(p.first_name?.[0] || '') + (p.last_name?.[0] || '')}</div>
                                 <div className="item-info">
                                   <div className="item-title">{p.first_name} {p.last_name}</div>
@@ -325,18 +340,42 @@ function App() {
             <div className="nav-divider" />
 
             {authUser ? (
-              <button
-                type="button"
-                className={tab === 'profile' ? 'nav-avatar nav-avatar-active' : 'nav-avatar'}
-                onClick={() => setTab('profile')}
-                title={`${authUser.email} — View profile`}
-              >
-                {profilePhoto ? (
-                  <img src={profilePhoto} alt="Me" className="nav-avatar-img" />
-                ) : (
-                  initials
+              <div className="nav-avatar-wrap">
+                <button
+                  type="button"
+                  className={tab === 'profile' || tab === 'settings' ? 'nav-avatar nav-avatar-active' : 'nav-avatar'}
+                  onClick={() => setShowAvatarMenu(v => !v)}
+                  title={`${authUser.email}`}
+                >
+                  {profilePhoto ? (
+                    <img src={profilePhoto} alt="Me" className="nav-avatar-img" />
+                  ) : (
+                    initials
+                  )}
+                </button>
+                <span className="nav-label">Me</span>
+                {showAvatarMenu && (
+                  <>
+                    <div className="avatar-menu-overlay" onClick={() => setShowAvatarMenu(false)} />
+                    <div className="avatar-menu">
+                      <div className="avatar-menu-header">
+                        <span className="avatar-menu-name">{firstName} {lastName}</span>
+                        <span className="avatar-menu-email">{authUser.email}</span>
+                      </div>
+                      <button type="button" className="avatar-menu-item" onClick={() => { setViewProfileId(null); setTab('profile'); setShowAvatarMenu(false) }}>
+                        View Profile
+                      </button>
+                      <button type="button" className="avatar-menu-item" onClick={() => { setTab('settings'); setShowAvatarMenu(false) }}>
+                        Settings
+                      </button>
+                      <div className="avatar-menu-divider" />
+                      <button type="button" className="avatar-menu-item avatar-menu-signout" onClick={() => { clearStoredToken(); setShowAvatarMenu(false); handleAuthChange() }}>
+                        Sign out
+                      </button>
+                    </div>
+                  </>
                 )}
-              </button>
+              </div>
             ) : (
               <button
                 type="button"
@@ -365,15 +404,15 @@ function App() {
         <div className="page-fade">
           {tab === 'overview' &&
             (authUser && me ? (
-              <HomeFeed me={me} onNavigateProfile={() => setTab('profile')} />
+              <HomeFeed me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
-          {tab === 'jobs'          && <JobsPanel />}
-          {tab === 'members'       && <MembersPanel />}
-          {tab === 'analytics'     && <AnalyticsPanel />}
-          {tab === 'messages'      && <MessagingPanel />}
-          {tab === 'connections'   && <ConnectionsPanel />}
+          {tab === 'jobs' && <JobsPanel />}
+          {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'analytics' && <AnalyticsPanel />}
+          {tab === 'messages' && <MessagingPanel />}
+          {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'notifications' && (
             <NotificationsPanel
               notifications={notifications}
@@ -382,11 +421,12 @@ function App() {
               onOpenConnections={() => setTab('connections')}
             />
           )}
-          {tab === 'ai'            && <AiDashboard />}
-          {tab === 'search'        && <SearchPage query={searchVal} />}
-          {tab === 'perf'          && <PerformanceDashboard />}
-          {tab === 'auth'          && <AuthPanel onAuthChange={handleAuthChange} />}
-          {tab === 'profile'       && <ProfilePage onAuthChange={handleAuthChange} />}
+          {tab === 'ai'          && <AiDashboard />}
+          {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'perf'        && <PerformanceDashboard />}
+          {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
+          {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
         </div>
       </main>
 
@@ -455,7 +495,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   useEffect(() => { checkHealth() }, [checkHealth])
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
         const [members, jobs] = await Promise.all([
           apiPost<{ total: number | null }>('/members/search', { page_size: 1 }).catch(() => ({ total: null })),
@@ -485,23 +525,23 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   const services: ServiceInfo[] = [
-    { key: 'api',   name: 'API Gateway', description: 'FastAPI · 45 endpoints', status: !checked ? 'checking' : err ? 'offline' : 'online' },
-    { key: 'mysql', name: 'MySQL',       description: 'Transactional DB (AWS)',  status: svcState('mysql', 'mysql') },
-    { key: 'mongo', name: 'MongoDB',     description: 'Event store (AWS)',       status: svcState('mongo', 'mongodb') },
-    { key: 'redis', name: 'Redis',       description: 'Cache layer',             status: svcState('redis', 'redis') },
-    { key: 'kafka', name: 'Kafka',       description: 'Event streaming',         status: svcState('kafka', 'kafka_producer') },
+    { key: 'api', name: 'API Gateway', description: 'FastAPI · 45 endpoints', status: !checked ? 'checking' : err ? 'offline' : 'online' },
+    { key: 'mysql', name: 'MySQL', description: 'Transactional DB (AWS)', status: svcState('mysql', 'mysql') },
+    { key: 'mongo', name: 'MongoDB', description: 'Event store (AWS)', status: svcState('mongo', 'mongodb') },
+    { key: 'redis', name: 'Redis', description: 'Cache layer', status: svcState('redis', 'redis') },
+    { key: 'kafka', name: 'Kafka', description: 'Event streaming', status: svcState('kafka', 'kafka_producer') },
   ]
 
   const onlineCount = services.filter((s) => s.status === 'online').length
   const platformOnline = checked && !err && onlineCount === services.length
 
   const exploreItems = [
-    { tab: 'jobs' as Tab,        icon: 'jobs',        title: 'Job Search',       desc: 'Search open positions, view details, and submit applications.' },
-    { tab: 'members' as Tab,     icon: 'network',     title: 'Member Directory', desc: 'Find professionals, browse profiles, and add new members.' },
-    { tab: 'analytics' as Tab,   icon: 'analytics',   title: 'Analytics',        desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
-    { tab: 'ai' as Tab,          icon: 'ai',          title: 'AI Recruiter',     desc: 'Candidate matching with shortlist scoring and outreach drafts.' },
-    { tab: 'messages' as Tab,    icon: 'messaging',   title: 'Messaging',        desc: 'Thread-based professional messaging between platform members.' },
-    { tab: 'connections' as Tab, icon: 'connections', title: 'Connections',      desc: 'Send and manage professional connection requests.' },
+    { tab: 'jobs' as Tab, icon: 'jobs', title: 'Job Search', desc: 'Search open positions, view details, and submit applications.' },
+    { tab: 'members' as Tab, icon: 'network', title: 'Member Directory', desc: 'Find professionals, browse profiles, and add new members.' },
+    { tab: 'analytics' as Tab, icon: 'analytics', title: 'Analytics', desc: 'Funnel analysis, geo trends, recruiter KPIs, and engagement charts.' },
+    { tab: 'ai' as Tab, icon: 'ai', title: 'AI Recruiter', desc: 'Candidate matching with shortlist scoring and outreach drafts.' },
+    { tab: 'messages' as Tab, icon: 'messaging', title: 'Messaging', desc: 'Thread-based professional messaging between platform members.' },
+    { tab: 'connections' as Tab, icon: 'connections', title: 'Connections', desc: 'Send and manage professional connection requests.' },
   ]
 
   return (
@@ -532,8 +572,8 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
                 {!checked
                   ? 'Connecting to API...'
                   : err
-                  ? 'API Offline'
-                  : `${onlineCount}/${services.length} services online`}
+                    ? 'API Offline'
+                    : `${onlineCount}/${services.length} services online`}
               </span>
             </div>
             <button
@@ -800,7 +840,7 @@ const AVATAR_COLORS = [
   '#0a66c2', '#0d7764', '#b24020', '#9c45c2', '#b87a0a', '#1a7a34',
 ]
 
-function MembersPanel() {
+function MembersPanel({ onNavigateProfile }: { onNavigateProfile: (id: number) => void }) {
   const [keyword, setKeyword] = useState('data')
   const [sortBy, setSortBy] = useState('id')
   const [members, setMembers] = useState<Record<string, unknown>[]>([])
@@ -809,6 +849,24 @@ function MembersPanel() {
   const [hasMore, setHasMore] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [connections, setConnections] = useState<number[]>([])
+  const [pendingConnections, setPendingConnections] = useState<number[]>([])
+
+  useEffect(() => {
+    const user = parseStoredUser()
+    if (user && user.user_type === 'member') {
+      apiPost<any>('/connections/list', { user_id: user.user_id, page: 1, page_size: 100 })
+        .then(res => {
+          if (res.success && res.data) {
+            const connIds = res.data.map((c: any) =>
+              c.requester_id === user.user_id ? c.receiver_id : c.requester_id
+            )
+            setConnections(connIds)
+          }
+        })
+        .catch(() => { })
+    }
+  }, [])
 
   const doSearch = async (cursor: string | null) => {
     setLoading(true)
@@ -902,16 +960,56 @@ function MembersPanel() {
               <li key={String(m.member_id)} className="member-card">
                 <div
                   className="member-avatar"
-                  style={{ background: AVATAR_COLORS[colorIndex] }}
+                  style={{ background: AVATAR_COLORS[colorIndex], cursor: 'pointer' }}
+                  onClick={() => onNavigateProfile(Number(m.member_id))}
                 >
                   {initials}
                 </div>
                 <div className="member-card-body">
-                  <h3 className="member-card-name">{firstName} {lastName}</h3>
+                  <h3
+                    className="member-card-name"
+                    onClick={() => onNavigateProfile(Number(m.member_id))}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    {firstName} {lastName}
+                  </h3>
                   {m.headline ? <p className="member-card-headline">{String(m.headline)}</p> : null}
                   <div className="member-card-meta">
                     {m.location_city ? <span className="pill"><Icon name="location" size={11} className="meta-icon" /> {String(m.location_city)}</span> : null}
                     <span className="member-id-chip">#{String(m.member_id)}</span>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    {connections.includes(Number(m.member_id)) ? (
+                      <button type="button" className="btn-message" style={{ width: '100%', justifyContent: 'center' }}>
+                        Message
+                      </button>
+                    ) : pendingConnections.includes(Number(m.member_id)) ? (
+                      <button type="button" className="btn-pending" style={{ width: '100%', justifyContent: 'center', cursor: 'default' }}>
+                        Pending
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-connect"
+                        style={{ width: '100%', justifyContent: 'center' }}
+                        onClick={() => {
+                          const user = parseStoredUser()
+                          if (!user || user.user_type !== 'member') return
+                          apiPost<any>('/connections/request', {
+                            requester_id: user.user_id,
+                            receiver_id: Number(m.member_id)
+                          }).then(res => {
+                            if (res.success || res.message?.includes('pending')) {
+                              setPendingConnections(prev => [...prev, Number(m.member_id)])
+                            } else {
+                              alert(res.message)
+                            }
+                          })
+                        }}
+                      >
+                        Connect
+                      </button>
+                    )}
                   </div>
                 </div>
               </li>
@@ -958,6 +1056,85 @@ function AnalyticsPanel() {
           <GeoTable />
           <MemberDashboard />
         </div>
+      </div>
+    </section>
+  )
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+function SettingsPage({ onAuthChange }: { onAuthChange: () => void }) {
+  const user = parseStoredUser()
+  const [deleting, setDeleting] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!user) return null
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    setError(null)
+    try {
+      const endpoint = user.user_type === 'member' ? '/members/delete' : '/recruiters/delete'
+      const idKey = user.user_type === 'member' ? 'member_id' : 'recruiter_id'
+      const res = await apiPost<{ success: boolean; message: string }>(endpoint, { [idKey]: user.user_id })
+      if (!res.success) throw new Error(res.message || 'Delete failed')
+      clearStoredToken()
+      onAuthChange()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeleting(false)
+      setShowConfirm(false)
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2 className="panel-title">Settings</h2>
+        <p className="panel-subtitle">Manage your account preferences</p>
+      </div>
+
+      <div className="settings-section">
+        <h3 className="settings-section-title">Account</h3>
+        <div className="settings-row">
+          <div>
+            <span className="settings-row-label">Email</span>
+            <span className="settings-row-value">{user.email}</span>
+          </div>
+        </div>
+        <div className="settings-row">
+          <div>
+            <span className="settings-row-label">Account type</span>
+            <span className="settings-row-value" style={{ textTransform: 'capitalize' }}>{user.user_type}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="profile-danger-zone">
+        <h3 className="profile-danger-title">Delete account</h3>
+        <p className="profile-danger-desc">
+          Permanently delete your account and all associated data. This action cannot be undone.
+        </p>
+        {error && <p className="error" style={{ marginBottom: 10 }}>{error}</p>}
+        {!showConfirm ? (
+          <button type="button" className="profile-delete-btn" onClick={() => setShowConfirm(true)}>
+            Delete my account
+          </button>
+        ) : (
+          <div className="profile-delete-confirm">
+            <p className="profile-delete-warn">Are you sure? This is permanent.</p>
+            <div className="profile-delete-actions">
+              <button type="button" className="profile-delete-btn" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting\u2026' : 'Yes, delete my account'}
+              </button>
+              <button type="button" className="ghost-btn" onClick={() => setShowConfirm(false)} disabled={deleting}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   )

@@ -50,12 +50,40 @@ function authHeaders(): Record<string, string> {
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
+async function handleResponse<T>(res: Response): Promise<T> {
+  const text = await res.text()
+  if (!res.ok) {
+    if (res.status === 502 || text.includes('502 Bad Gateway')) {
+      throw new Error('Service temporarily unavailable (502 Bad Gateway). Please try again in a few moments.')
+    }
+    try {
+      const parsed = JSON.parse(text)
+      const detail = parsed.detail
+      if (typeof detail === 'string') throw new Error(detail)
+      if (Array.isArray(detail)) {
+        // Handle FastAPI validation error list
+        const msg = detail.map((d: any) => d.msg).join(', ')
+        throw new Error(msg)
+      }
+      throw new Error(parsed.message || res.statusText)
+    } catch (e) {
+      // If the error was one we explicitly threw above, re-throw it.
+      // But if it's a SyntaxError from JSON.parse, ignore it and fall back.
+      if (e instanceof Error && e.name !== 'SyntaxError') throw e
+      
+      if (text.trim().startsWith('<')) {
+        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`)
+      }
+      throw new Error(text || res.statusText)
+    }
+  }
+  return text ? (JSON.parse(text) as T) : ({} as T)
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
   const res = await fetch(url, { headers: authHeaders() })
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || res.statusText)
-  return text ? (JSON.parse(text) as T) : ({} as T)
+  return handleResponse<T>(res)
 }
 
 export async function apiPost<T>(path: string, body: object): Promise<T> {
@@ -65,9 +93,7 @@ export async function apiPost<T>(path: string, body: object): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   })
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || res.statusText)
-  return text ? (JSON.parse(text) as T) : ({} as T)
+  return handleResponse<T>(res)
 }
 
 export async function apiPostForm<T>(path: string, body: Record<string, string>): Promise<T> {
@@ -77,7 +103,5 @@ export async function apiPostForm<T>(path: string, body: Record<string, string>)
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body).toString(),
   })
-  const text = await res.text()
-  if (!res.ok) throw new Error(text || res.statusText)
-  return text ? (JSON.parse(text) as T) : ({} as T)
+  return handleResponse<T>(res)
 }
