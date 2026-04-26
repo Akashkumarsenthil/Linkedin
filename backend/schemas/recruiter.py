@@ -51,6 +51,8 @@ class RecruiterUpdate(BaseModel):
     company_size: Optional[str] = None
     role: Optional[str] = None
     access_level: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    cover_photo_url: Optional[str] = None
 
 
 class RecruiterDelete(BaseModel):
