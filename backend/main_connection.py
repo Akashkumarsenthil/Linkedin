@@ -1,0 +1,29 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from config import settings
+from kafka_producer import kafka_producer
+from routers import connections
+from database import engine, Base
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+logger = logging.getLogger("connection-service")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await kafka_producer.start()
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+    yield
+    await kafka_producer.stop()
+
+app = FastAPI(title="Connection Service", version=settings.APP_VERSION, lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+app.include_router(connections.router)
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "connection-service"}
