@@ -5,6 +5,7 @@ import { Icon } from './Icon'
 interface Comment {
   comment_id: number | string
   author_name: string
+  author_photo_url?: string | null
   content: string
   created_at?: string | null
 }
@@ -31,7 +32,10 @@ interface PostCardProps {
   post: FeedPost
   currentUserId?: number
   currentUserType?: string
+  currentUserPhoto?: string | null
+  currentUserName?: string
   onDeleted?: (post_id: number) => void
+  onNavigateProfile?: (id: number) => void
 }
 
 function formatRelativeTime(iso?: string | null): string {
@@ -47,7 +51,7 @@ function formatRelativeTime(iso?: string | null): string {
   return d.toLocaleDateString()
 }
 
-export function PostCard({ post, currentUserId, currentUserType, onDeleted }: PostCardProps) {
+export function PostCard({ post, currentUserId, currentUserType, currentUserPhoto, currentUserName, onDeleted, onNavigateProfile }: PostCardProps) {
   const [likes, setLikes] = useState<number>(post.likes_count || 0)
   const [liked, setLiked] = useState<boolean>(!!post.liked_by_me)
   const [busy, setBusy] = useState(false)
@@ -130,7 +134,7 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
       // Optimistic fallback: show locally even if API fails
       setComments((prev) => [
         ...prev,
-        { comment_id: Date.now(), author_name: 'You', content: text },
+        { comment_id: Date.now(), author_name: currentUserName || 'You', author_photo_url: currentUserPhoto, content: text },
       ])
       setCommentCount((n) => n + 1)
     } finally {
@@ -141,7 +145,11 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
   return (
     <article className="post-card">
       <header className="post-card-header">
-        <div className="post-card-avatar">
+        <div 
+          className="post-card-avatar"
+          onClick={() => post.author_type === 'member' && onNavigateProfile?.(post.author_id)}
+          style={{ cursor: post.author_type === 'member' && onNavigateProfile ? 'pointer' : 'default' }}
+        >
           {post.author.photo_url ? (
             <img src={post.author.photo_url} alt={post.author.name} />
           ) : (
@@ -150,7 +158,13 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
         </div>
         <div className="post-card-meta">
           <div className="post-card-name-row">
-            <strong className="post-card-name">{post.author.name}</strong>
+            <strong 
+              className="post-card-name" 
+              onClick={() => post.author_type === 'member' && onNavigateProfile?.(post.author_id)}
+              style={{ cursor: post.author_type === 'member' && onNavigateProfile ? 'pointer' : 'default' }}
+            >
+              {post.author.name}
+            </strong>
             {post.author_type === 'recruiter' && (
               <span className="post-card-badge">Recruiter</span>
             )}
@@ -238,7 +252,11 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
           {/* Input row */}
           <div className="post-comment-input-row">
             <div className="post-comment-avatar">
-              <span>{(currentUserId ? `U${currentUserId}` : 'U').slice(0, 2)}</span>
+              {currentUserPhoto ? (
+                <img src={currentUserPhoto} alt="You" />
+              ) : (
+                <span>{(currentUserId ? `U${currentUserId}` : 'U').slice(0, 2)}</span>
+              )}
             </div>
             <input
               ref={commentInputRef}
@@ -267,7 +285,11 @@ export function PostCard({ post, currentUserId, currentUserType, onDeleted }: Po
               {comments.map((c) => (
                 <li key={c.comment_id} className="post-comment-item">
                   <div className="post-comment-avatar">
-                    <span>{c.author_name.charAt(0).toUpperCase()}</span>
+                    {c.author_photo_url ? (
+                      <img src={c.author_photo_url} alt={c.author_name} />
+                    ) : (
+                      <span>{c.author_name.charAt(0).toUpperCase()}</span>
+                    )}
                   </div>
                   <div className="post-comment-bubble">
                     <span className="post-comment-author">{c.author_name}</span>
