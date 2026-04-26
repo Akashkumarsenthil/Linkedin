@@ -10,10 +10,11 @@ from sqlalchemy import or_, and_, update
 from database import get_db
 from models.connection import Connection
 from models.member import Member
-from auth import require_member, TokenPayload
+from models.recruiter import Recruiter
+from auth import get_current_user, TokenPayload
 from schemas.connection import (
-    ConnectionRequest, ConnectionAccept, ConnectionReject, ConnectionList,
-    MutualConnections, ConnectionResponse, ConnectionListResponse,
+    ConnectionRequest, ConnectionAccept, ConnectionReject, ConnectionRemove,
+    ConnectionList, MutualConnections, ConnectionResponse, ConnectionListResponse,
 )
 from kafka_producer import kafka_producer
 
@@ -21,30 +22,58 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/connections", tags=["Connection Service"])
 
 
+def _user_exists(db: Session, user_id: int) -> bool:
+    """Check if a user exists as either a member or a recruiter."""
+    if db.query(Member).filter(Member.member_id == user_id).first():
+        return True
+    if db.query(Recruiter).filter(Recruiter.recruiter_id == user_id).first():
+        return True
+    return False
+
+
+def _get_user_name(db: Session, user_id: int) -> dict | None:
+    """Get basic info for a user (member or recruiter)."""
+    member = db.query(Member).filter(Member.member_id == user_id).first()
+    if member:
+        return {
+            "member_id": member.member_id,
+            "name": f"{member.first_name} {member.last_name}",
+            "headline": member.headline,
+            "user_type": "member",
+        }
+    recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == user_id).first()
+    if recruiter:
+        return {
+            "member_id": recruiter.recruiter_id,
+            "name": f"{recruiter.first_name} {recruiter.last_name}",
+            "headline": recruiter.company_name or recruiter.role or "Recruiter",
+            "user_type": "recruiter",
+        }
+    return None
+
+
 @router.post("/request", response_model=ConnectionResponse, summary="Send a connection request")
 async def send_connection_request(
     req: ConnectionRequest,
     db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
+    current_user: TokenPayload = Depends(get_current_user),
 ):
     """
-    Send a connection request from one member to another.
-    Handles: self-connection, duplicate request, and already connected errors.
+    Send a connection request from one user to another.
+    Works for both members and recruiters.
     """
     if req.requester_id != current_user.user_id:
-        return ConnectionResponse(success=False, message="Cannot send connection request on behalf of another member")
+        return ConnectionResponse(success=False, message="Cannot send connection request on behalf of another user")
 
     if req.requester_id == req.receiver_id:
         return ConnectionResponse(success=False, message="Cannot connect with yourself")
 
-    # Verify both members exist
-    requester = db.query(Member).filter(Member.member_id == req.requester_id).first()
-    if not requester:
-        return ConnectionResponse(success=False, message=f"Member {req.requester_id} not found")
+    # Verify both users exist (in either members or recruiters table)
+    if not _user_exists(db, req.requester_id):
+        return ConnectionResponse(success=False, message=f"User {req.requester_id} not found")
 
-    receiver = db.query(Member).filter(Member.member_id == req.receiver_id).first()
-    if not receiver:
-        return ConnectionResponse(success=False, message=f"Member {req.receiver_id} not found")
+    if not _user_exists(db, req.receiver_id):
+        return ConnectionResponse(success=False, message=f"User {req.receiver_id} not found")
 
     # Check for existing connection (in either direction)
     existing = db.query(Connection).filter(
@@ -92,7 +121,7 @@ async def send_connection_request(
 async def accept_connection(
     req: ConnectionAccept,
     db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
+    current_user: TokenPayload = Depends(get_current_user),
 ):
     """Accept a pending connection request. Updates both members' connection counts."""
     conn = db.query(Connection).filter(Connection.connection_id == req.connection_id).first()
@@ -107,17 +136,19 @@ async def accept_connection(
 
     conn.status = "accepted"
 
-    # Atomic counter increments — avoids read-modify-write race under concurrent accepts
-    db.execute(
-        update(Member)
-        .where(Member.member_id == conn.requester_id)
-        .values(connections_count=Member.connections_count + 1)
-    )
-    db.execute(
-        update(Member)
-        .where(Member.member_id == conn.receiver_id)
-        .values(connections_count=Member.connections_count + 1)
-    )
+    # Atomic counter increments — only for members (recruiters don't have this field)
+    if db.query(Member).filter(Member.member_id == conn.requester_id).first():
+        db.execute(
+            update(Member)
+            .where(Member.member_id == conn.requester_id)
+            .values(connections_count=Member.connections_count + 1)
+        )
+    if db.query(Member).filter(Member.member_id == conn.receiver_id).first():
+        db.execute(
+            update(Member)
+            .where(Member.member_id == conn.receiver_id)
+            .values(connections_count=Member.connections_count + 1)
+        )
 
     db.commit()
     db.refresh(conn)
@@ -141,7 +172,7 @@ async def accept_connection(
 async def reject_connection(
     req: ConnectionReject,
     db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
+    current_user: TokenPayload = Depends(get_current_user),
 ):
     """Reject a pending connection request."""
     conn = db.query(Connection).filter(Connection.connection_id == req.connection_id).first()
@@ -176,23 +207,48 @@ async def list_connections(req: ConnectionList, db: Session = Depends(get_db)):
     offset = (req.page - 1) * req.page_size
     connections = query.offset(offset).limit(req.page_size).all()
 
-    # Enrich with member names
+    # Enrich with user names (member or recruiter)
     result = []
     for conn in connections:
         data = conn.to_dict()
         other_id = conn.receiver_id if conn.requester_id == req.user_id else conn.requester_id
-        other_member = db.query(Member).filter(Member.member_id == other_id).first()
-        if other_member:
-            data["connected_member"] = {
-                "member_id": other_member.member_id,
-                "name": f"{other_member.first_name} {other_member.last_name}",
-                "headline": other_member.headline,
-            }
+        user_info = _get_user_name(db, other_id)
+        if user_info:
+            data["connected_member"] = user_info
         result.append(data)
 
     return ConnectionListResponse(
         success=True,
         message=f"Found {total} connections",
+        data=result,
+        total=total,
+    )
+
+
+@router.post("/pending", response_model=ConnectionListResponse, summary="List pending connection requests")
+async def pending_connections(req: ConnectionList, db: Session = Depends(get_db)):
+    """List all pending connection requests received by the user."""
+    query = db.query(Connection).filter(
+        Connection.receiver_id == req.user_id,
+        Connection.status == "pending",
+    )
+
+    total = query.count()
+    offset = (req.page - 1) * req.page_size
+    connections = query.offset(offset).limit(req.page_size).all()
+
+    # Enrich with user names (member or recruiter) of the requester
+    result = []
+    for conn in connections:
+        data = conn.to_dict()
+        user_info = _get_user_name(db, conn.requester_id)
+        if user_info:
+            data["connected_member"] = user_info
+        result.append(data)
+
+    return ConnectionListResponse(
+        success=True,
+        message=f"Found {total} pending requests",
         data=result,
         total=total,
     )
@@ -236,3 +292,33 @@ async def mutual_connections(req: MutualConnections, db: Session = Depends(get_d
         ],
         total=len(mutual_members),
     )
+
+
+@router.post("/remove", response_model=ConnectionResponse, summary="Remove an existing connection")
+async def remove_connection(
+    req: ConnectionRemove,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    """
+    Remove an existing connection between two users.
+    Deletes the row from the connections table.
+    """
+    if req.user_id != current_user.user_id:
+        return ConnectionResponse(success=False, message="Unauthorized")
+
+    # Find connection in either direction
+    connection = db.query(Connection).filter(
+        or_(
+            and_(Connection.requester_id == req.user_id, Connection.receiver_id == req.other_id),
+            and_(Connection.requester_id == req.other_id, Connection.receiver_id == req.user_id),
+        )
+    ).first()
+
+    if not connection:
+        return ConnectionResponse(success=False, message="Connection not found")
+
+    db.delete(connection)
+    db.commit()
+
+    return ConnectionResponse(success=True, message="Connection removed")
