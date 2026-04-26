@@ -45,10 +45,10 @@ from kafka_producer import kafka_producer
 logger = logging.getLogger(__name__)
 
 # ── Concurrency controls ──────────────────────────────────────────────────────
-# Limit how many full hiring workflows run concurrently.  Each workflow makes
-# multiple sequential HTTP calls to Ollama (a single-threaded LLM server), so
-# running many workflows simultaneously only queues work inside Ollama while
-# consuming memory here.  Two concurrent workflows is enough for a demo platform.
+# Limit how many full hiring workflows run concurrently. Each workflow makes
+# multiple sequential HTTP calls to the OpenAI API, so limiting concurrency
+# helps prevent rate limits and reduces memory usage. Two concurrent workflows
+# is enough for a demo platform.
 MAX_CONCURRENT_WORKFLOWS = 2
 
 # Bounded queue: tasks wait here until a dispatcher coroutine picks them up.
