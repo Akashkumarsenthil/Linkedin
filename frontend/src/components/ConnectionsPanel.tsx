@@ -29,15 +29,16 @@ function ResultBanner({ success, message }: { success: boolean; message: string 
   return <p className={success ? 'result-ok' : 'error'} style={{ marginTop: 6 }}>{message}</p>
 }
 
-export function ConnectionsPanel() {
+export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (id: number) => void }) {
   const identity = parseStoredUser()
-  const myId = identity?.user_type === 'member' ? identity.user_id : null
+  const myId = identity ? identity.user_id : null
 
   const [toId, setToId]           = useState('')
+  const [toName, setToName]       = useState('')
+  const [toResults, setToResults] = useState<any[]>([])
   const [reqLoading, setReqL]     = useState(false)
   const [reqResult, setReqResult] = useState<{ success: boolean; message: string; data?: ConnectionData } | null>(null)
 
-  const [connId, setConnId]       = useState('')
   const [arLoading, setArL]       = useState(false)
   const [arResult, setArResult]   = useState<{ success: boolean; message: string } | null>(null)
 
@@ -45,22 +46,56 @@ export function ConnectionsPanel() {
   const [connsLoading, setConnsL] = useState(false)
   const [connsErr, setConnsErr]   = useState<string | null>(null)
   const [connsTotal, setConnsT]   = useState(0)
+  const [connsFilter, setConnsFilter] = useState('')
+
+  const [pending, setPending]     = useState<ConnectionData[]>([])
+  const [pendingLoading, setPendingL] = useState(false)
+  const [pendingErr, setPendingErr]   = useState<string | null>(null)
+  const [pendingTotal, setPendingT]   = useState(0)
+
 
   const [otherId, setOtherId]     = useState('')
+  const [otherName, setOtherName] = useState('')
+  const [otherResults, setOtherResults] = useState<any[]>([])
   const [mutual, setMutual]       = useState<MutualMember[]>([])
   const [mutualLoading, setMutL]  = useState(false)
   const [mutualResult, setMutR]   = useState<string | null>(null)
 
-  // Auto-load connections when component mounts if identity is a member
+  // Auto-load connections when component mounts if identity is present
   useEffect(() => {
-    if (myId) loadConnections(myId)
+    if (myId) {
+      loadConnections(myId)
+      loadPending(myId)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Name Search Helpers ──────────────────────────────────────────────────
+
+  async function searchPeople(query: string, setResults: (vals: any[]) => void) {
+    if (query.length < 2) { setResults([]); return }
+    try {
+      const res = await apiPost<{ data: any[] }>('/members/search', { keyword: query, page_size: 5 })
+      setResults(res.data || [])
+    } catch {
+      setResults([])
+    }
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => searchPeople(toName, setToResults), 300)
+    return () => clearTimeout(t)
+  }, [toName])
+
+  useEffect(() => {
+    const t = setTimeout(() => searchPeople(otherName, setOtherResults), 300)
+    return () => clearTimeout(t)
+  }, [otherName])
 
   async function sendRequest() {
     if (!myId) return
     const rid = parseInt(toId, 10)
-    if (!rid || rid < 1) { setReqResult({ success: false, message: 'Enter a valid receiver ID' }); return }
+    if (!rid || rid < 1) { setReqResult({ success: false, message: 'Select a member from the search results' }); return }
     setReqL(true)
     setReqResult(null)
     try {
@@ -68,7 +103,12 @@ export function ConnectionsPanel() {
         '/connections/request', { requester_id: myId, receiver_id: rid },
       )
       setReqResult(r)
-      if (r.success) loadConnections(myId)
+      if (r.success) {
+        loadConnections(myId)
+        setToId('')
+        setToName('')
+        setToResults([])
+      }
     } catch (e) {
       setReqResult({ success: false, message: e instanceof Error ? e.message : 'Request failed' })
     } finally {
@@ -76,9 +116,8 @@ export function ConnectionsPanel() {
     }
   }
 
-  async function acceptConn() {
-    const id = parseInt(connId, 10)
-    if (!id || id < 1) { setArResult({ success: false, message: 'Enter a valid connection ID' }); return }
+  async function acceptConn(id: number) {
+    if (!id || id < 1) { setArResult({ success: false, message: 'Invalid connection ID' }); return }
     setArL(true)
     setArResult(null)
     try {
@@ -86,7 +125,10 @@ export function ConnectionsPanel() {
         '/connections/accept', { connection_id: id },
       )
       setArResult(r)
-      if (r.success && myId) loadConnections(myId)
+      if (r.success && myId) {
+        loadConnections(myId)
+        loadPending(myId)
+      }
     } catch (e) {
       setArResult({ success: false, message: e instanceof Error ? e.message : 'Failed' })
     } finally {
@@ -94,9 +136,8 @@ export function ConnectionsPanel() {
     }
   }
 
-  async function rejectConn() {
-    const id = parseInt(connId, 10)
-    if (!id || id < 1) { setArResult({ success: false, message: 'Enter a valid connection ID' }); return }
+  async function rejectConn(id: number) {
+    if (!id || id < 1) { setArResult({ success: false, message: 'Invalid connection ID' }); return }
     setArL(true)
     setArResult(null)
     try {
@@ -104,10 +145,30 @@ export function ConnectionsPanel() {
         '/connections/reject', { connection_id: id },
       )
       setArResult(r)
+      if (r.success && myId) {
+        loadPending(myId)
+      }
     } catch (e) {
       setArResult({ success: false, message: e instanceof Error ? e.message : 'Failed' })
     } finally {
       setArL(false)
+    }
+  }
+
+  async function loadPending(id: number) {
+    setPendingL(true)
+    setPendingErr(null)
+    try {
+      const r = await apiPost<{ success: boolean; message: string; data: ConnectionData[]; total: number }>(
+        '/connections/pending', { user_id: id, page: 1, page_size: 30 },
+      )
+      if (!r.success) throw new Error(r.message)
+      setPending(r.data ?? [])
+      setPendingT(r.total ?? 0)
+    } catch (e) {
+      setPendingErr(e instanceof Error ? e.message : 'Failed to load pending requests')
+    } finally {
+      setPendingL(false)
     }
   }
 
@@ -116,7 +177,7 @@ export function ConnectionsPanel() {
     setConnsErr(null)
     try {
       const r = await apiPost<{ success: boolean; message: string; data: ConnectionData[]; total: number }>(
-        '/connections/list', { user_id: id, page: 1, page_size: 30 },
+        '/connections/list', { user_id: id, page: 1, page_size: 100 },
       )
       if (!r.success) throw new Error(r.message)
       setConns(r.data ?? [])
@@ -131,7 +192,7 @@ export function ConnectionsPanel() {
   async function loadMutual() {
     if (!myId) return
     const oid = parseInt(otherId, 10)
-    if (!oid || oid < 1) { setMutR('Enter a valid other member ID'); return }
+    if (!oid || oid < 1) { setMutR('Select a member from the search results'); return }
     setMutL(true)
     setMutR(null)
     try {
@@ -163,27 +224,18 @@ export function ConnectionsPanel() {
     )
   }
 
-  // Recruiter accessing member-only section
-  if (identity.user_type !== 'member') {
-    return (
-      <section className="panel">
-        <div className="panel-header">
-          <h2 className="panel-title">Connections</h2>
-        </div>
-        <div className="auth-prompt-card">
-          <p className="auth-prompt-title">Connections are for members</p>
-          <p className="auth-prompt-sub">Log in as a member to send and manage connection requests.</p>
-        </div>
-      </section>
-    )
-  }
+  const filteredConnections = connections.filter(c => {
+    const name = (c.connected_member?.name || '').toLowerCase()
+    return name.includes(connsFilter.toLowerCase())
+  })
 
+  // Allow both members and recruiters to access the connections section
   return (
     <section className="panel">
       <div className="panel-header">
         <h2 className="panel-title">My Network</h2>
         <p className="panel-subtitle">
-          Signed in as <strong>member #{myId}</strong> · {identity.email}
+          Signed in as <strong>{identity.user_type} #{myId}</strong> · {identity.email}
         </p>
       </div>
 
@@ -199,63 +251,97 @@ export function ConnectionsPanel() {
         {/* ── Send request ────────────────────────── */}
         <div className="chart-card">
           <h3 className="chart-title">Connect with someone</h3>
-          <p className="hint" style={{ marginTop: 0 }}>Enter the member ID of the person you want to connect with.</p>
-          <label className="form-label">
-            Member ID
+          <p className="hint" style={{ marginTop: 0 }}>Search by name to find someone to connect with.</p>
+          
+          <div className="search-input-wrap">
             <input
-              type="number"
-              value={toId}
-              min={1}
-              onChange={e => setToId(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && sendRequest()}
-              placeholder="e.g. 2"
+              type="text"
+              value={toName}
+              onChange={e => { setToName(e.target.value); if(!e.target.value) setToId('') }}
+              placeholder="Search by name..."
+              className="search-bar-input"
             />
-          </label>
-          <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading}
-            style={{ alignSelf: 'flex-start' }}>
+            {toResults.length > 0 && !toId && (
+              <div className="search-dropdown panel">
+                {toResults.map(m => (
+                  <div key={m.member_id} className="search-item" onClick={() => { 
+                    setToId(String(m.member_id)); 
+                    setToName(`${m.first_name} ${m.last_name}`);
+                    setToResults([]);
+                  }}>
+                    <div className="search-item-info">
+                      <div className="search-item-name">{m.first_name} {m.last_name}</div>
+                      <div className="search-item-headline">{m.headline}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading || !toId}
+            style={{ alignSelf: 'flex-start', marginTop: 12 }}>
             {reqLoading ? 'Sending…' : 'Send request'}
           </button>
+          
           {reqResult && (
-            <>
-              <ResultBanner success={reqResult.success} message={reqResult.message} />
-              {reqResult.success && reqResult.data && (
-                <div className="conn-detail">
-                  <span>Connection ID: <strong>#{reqResult.data.connection_id}</strong></span>
-                  <span className={`conn-status status-${reqResult.data.status}`}>{reqResult.data.status}</span>
-                  <p className="hint" style={{ marginTop: 4, fontSize: 11 }}>
-                    Copy this ID to accept or reject the request below.
-                  </p>
-                </div>
-              )}
-            </>
+            <ResultBanner success={reqResult.success} message={reqResult.message} />
           )}
         </div>
 
         {/* ── Accept / Reject ──────────────────────── */}
         <div className="chart-card">
-          <h3 className="chart-title">Respond to a request</h3>
-          <p className="hint" style={{ marginTop: 0 }}>
-            Paste a <code>connection_id</code> from a pending request to accept or reject it.
-          </p>
-          <label className="form-label">
-            Connection ID
-            <input
-              type="number"
-              value={connId}
-              min={1}
-              onChange={e => setConnId(e.target.value)}
-              placeholder="e.g. 42"
-            />
-          </label>
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button type="button" className="primary" onClick={acceptConn} disabled={arLoading}>
-              {arLoading ? '…' : 'Accept'}
-            </button>
-            <button type="button" className="danger-btn" onClick={rejectConn} disabled={arLoading}>
-              {arLoading ? '…' : 'Decline'}
+          <div className="chart-header">
+            <h3 className="chart-title">
+              Respond to a request {pendingTotal > 0 && <span style={{ opacity: 0.6 }}>({pendingTotal})</span>}
+            </h3>
+            <button type="button" className="ghost-btn" onClick={() => loadPending(myId!)} disabled={pendingLoading}>
+              {pendingLoading ? '…' : '↺ Refresh'}
             </button>
           </div>
+          {pendingErr && <p className="error">{pendingErr}</p>}
           {arResult && <ResultBanner success={arResult.success} message={arResult.message} />}
+          {pending.length === 0 && !pendingLoading && (
+            <p className="hint">No pending requests.</p>
+          )}
+          {pending.length > 0 && (
+            <ul className="conn-list">
+              {pending.map(c => {
+                const m = c.connected_member
+                return (
+                  <li key={c.connection_id} className="conn-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div 
+                        className="member-avatar" 
+                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer' }}
+                        onClick={() => onNavigateProfile?.(c.requester_id)}
+                      >
+                        {(m?.name ?? '?')[0].toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div 
+                          className="conn-item-name" 
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => onNavigateProfile?.(c.requester_id)}
+                        >
+                          {m ? m.name : `Member #${c.requester_id}`}
+                        </div>
+                        {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+                      <button type="button" className="ghost-btn" onClick={() => rejectConn(c.connection_id)} disabled={arLoading}>
+                        Decline
+                      </button>
+                      <button type="button" className="primary" onClick={() => acceptConn(c.connection_id)} disabled={arLoading}>
+                        Accept
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
 
         {/* ── My connections ───────────────────────── */}
@@ -266,27 +352,73 @@ export function ConnectionsPanel() {
               {connsLoading ? '…' : '↺ Refresh'}
             </button>
           </div>
+          
+          <input 
+            type="text" 
+            placeholder="Search connections..." 
+            value={connsFilter}
+            onChange={e => setConnsFilter(e.target.value)}
+            className="search-bar-input"
+            style={{ marginBottom: 12 }}
+          />
+
           {connsErr && <p className="error">{connsErr}</p>}
           {connections.length === 0 && !connsLoading && (
             <p className="hint">No accepted connections yet.</p>
           )}
-          {connections.length > 0 && (
+          {filteredConnections.length === 0 && connections.length > 0 && (
+            <p className="hint">No matches for "{connsFilter}".</p>
+          )}
+          {filteredConnections.length > 0 && (
             <ul className="conn-list">
-              {connections.map(c => {
+              {filteredConnections.map(c => {
                 const m = c.connected_member
                 return (
                   <li key={c.connection_id} className="conn-item">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div className="member-avatar" style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0 }}>
+                      <div 
+                        className="member-avatar" 
+                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer' }}
+                        onClick={() => {
+                          const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
+                          onNavigateProfile?.(otherId)
+                        }}
+                      >
                         {(m?.name ?? '?')[0].toUpperCase()}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="conn-item-name">
+                        <div 
+                          className="conn-item-name" 
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
+                            onNavigateProfile?.(otherId)
+                          }}
+                        >
                           {m ? m.name : `Member #${c.requester_id === myId ? c.receiver_id : c.requester_id}`}
                         </div>
                         {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
                       </div>
-                      <span className={`conn-status status-${c.status}`}>{c.status}</span>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span className="conn-badge">Accepted</span>
+                        <button 
+                          className="ghost-btn" 
+                          style={{ color: '#d11124', fontSize: 12, padding: '2px 8px' }}
+                          onClick={async () => {
+                            if (!window.confirm('Are you sure you want to remove this connection?')) return
+                            const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
+                            try {
+                              const res = await apiPost<any>('/connections/remove', { user_id: myId, other_id: otherId })
+                              if (res.success) loadConnections(myId!)
+                              else alert(res.message)
+                            } catch (e) {
+                              alert('Failed to remove connection')
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   </li>
                 )
@@ -299,29 +431,52 @@ export function ConnectionsPanel() {
         <div className="chart-card">
           <h3 className="chart-title">Mutual connections</h3>
           <p className="hint" style={{ marginTop: 0 }}>
-            Find connections you share with another member.
+            Search by name to find mutual connections with another member.
           </p>
-          <label className="form-label">
-            Other member ID
+          
+          <div className="search-input-wrap">
             <input
-              type="number"
-              value={otherId}
-              min={1}
-              onChange={e => setOtherId(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && loadMutual()}
-              placeholder="e.g. 5"
+              type="text"
+              value={otherName}
+              onChange={e => { setOtherName(e.target.value); if(!e.target.value) setOtherId('') }}
+              placeholder="Search by name..."
+              className="search-bar-input"
             />
-          </label>
-          <button type="button" className="primary" onClick={loadMutual} disabled={mutualLoading}
-            style={{ alignSelf: 'flex-start' }}>
+            {otherResults.length > 0 && !otherId && (
+              <div className="search-dropdown panel">
+                {otherResults.map(m => (
+                  <div key={m.member_id} className="search-item" onClick={() => { 
+                    setOtherId(String(m.member_id)); 
+                    setOtherName(`${m.first_name} ${m.last_name}`);
+                    setOtherResults([]);
+                  }}>
+                    <div className="search-item-info">
+                      <div className="search-item-name">{m.first_name} {m.last_name}</div>
+                      <div className="search-item-headline">{m.headline}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button type="button" className="primary" onClick={loadMutual} disabled={mutualLoading || !otherId}
+            style={{ alignSelf: 'flex-start', marginTop: 12 }}>
             {mutualLoading ? 'Finding…' : 'Find mutual'}
           </button>
+          
           {mutualResult && <p className="meta" style={{ marginTop: 4 }}>{mutualResult}</p>}
           {mutual.length > 0 && (
             <ul className="conn-list" style={{ marginTop: 8 }}>
               {mutual.map(m => (
                 <li key={m.member_id} className="conn-item">
-                  <div className="conn-item-name">{m.name}</div>
+                  <div 
+                    className="conn-item-name" 
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => onNavigateProfile?.(m.member_id)}
+                  >
+                    {m.name}
+                  </div>
                   {m.headline && <div className="conn-item-headline muted">{m.headline}</div>}
                 </li>
               ))}
