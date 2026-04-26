@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Dict, Any
 from config import settings
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ COMMON_SKILLS = [
 
 
 async def parse_resume_with_llm(resume_text: str) -> Dict[str, Any]:
-    """Use Groq LLM to extract structured data from resume text."""
+    """Use OpenAI LLM to extract structured data from resume text."""
     prompt = f"""Extract the following information from this resume text and respond ONLY with valid JSON (no markdown, no explanation):
 
 {{
@@ -45,9 +45,9 @@ Resume text:
 {resume_text[:3000]}"""
 
     try:
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         completion = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
+            model=settings.OPENAI_MODEL,
             messages=[
               {
                 "role": "user",
@@ -55,7 +55,7 @@ Resume text:
               }
             ],
             temperature=0.1,
-            max_completion_tokens=1024,
+            max_tokens=1024,
             top_p=1,
             stream=False,
             stop=None
@@ -68,12 +68,12 @@ Resume text:
             json_match = re.search(r'\{[\s\S]*\}', text)
             if json_match:
                 parsed = json.loads(json_match.group())
-                return {"success": True, "method": "groq", "data": parsed}
+                return {"success": True, "method": "openai", "data": parsed}
         except json.JSONDecodeError:
-            logger.warning("Groq returned non-JSON response, falling back to regex")
+            logger.warning("OpenAI returned non-JSON response, falling back to regex")
 
     except Exception as e:
-        logger.warning(f"Groq API error ({e}), using regex fallback")
+        logger.warning(f"OpenAI API error ({e}), using regex fallback")
 
     return await parse_resume_with_regex(resume_text)
 

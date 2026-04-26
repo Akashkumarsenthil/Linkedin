@@ -8,7 +8,7 @@ import re
 import json
 from typing import Dict, Any
 from config import settings
-from groq import AsyncGroq
+from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ async def generate_outreach_with_llm(
     candidate_data: Dict[str, Any],
     match_result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Generate a personalized outreach draft using Groq LLM."""
+    """Generate a personalized outreach draft using OpenAI LLM."""
     candidate_name = f"{candidate_data.get('first_name', '')} {candidate_data.get('last_name', '')}".strip()
     job_title = job_data.get("title", "this position")
     company = job_data.get("company_name", "our company")
@@ -46,9 +46,9 @@ Write a concise, personalized outreach message (150-250 words) that:
 Respond with ONLY the message text, no subject line or extra formatting."""
 
     try:
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         completion = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
+            model=settings.OPENAI_MODEL,
             messages=[
               {
                 "role": "user",
@@ -56,7 +56,7 @@ Respond with ONLY the message text, no subject line or extra formatting."""
               }
             ],
             temperature=0.7,
-            max_completion_tokens=1024,
+            max_tokens=1024,
             top_p=1,
             stream=False,
             stop=None
@@ -67,13 +67,13 @@ Respond with ONLY the message text, no subject line or extra formatting."""
         if message and len(message) > 50:
             return {
                 "success": True,
-                "method": "groq",
+                "method": "openai",
                 "subject": f"Exciting {job_title} opportunity at {company}",
                 "body": message,
                 "candidate_name": candidate_name,
             }
     except Exception as e:
-        logger.warning(f"Groq API not available for outreach generation: {e}")
+        logger.warning(f"OpenAI API not available for outreach generation: {e}")
 
     return generate_outreach_template(job_data, candidate_data, match_result)
 
