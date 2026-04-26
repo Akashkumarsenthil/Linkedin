@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { apiPost } from '../api'
+import { apiPost, parseStoredUser } from '../api'
 import { Icon } from './Icon'
 
 interface SearchPageProps {
   query: string
+  onNavigateProfile?: (id: number) => void
 }
 
 type SearchFilter = 'all' | 'people' | 'posts' | 'companies' | 'jobs' | 'groups' | 'events' | 'services' | 'courses' | 'products'
@@ -28,13 +29,31 @@ interface AdData {
   cta: string
 }
 
-export function SearchPage({ query }: SearchPageProps) {
+export function SearchPage({ query, onNavigateProfile }: SearchPageProps) {
   const [results, setResults] = useState<SearchResults>({
     members: [], jobs: [], posts: [], companies: [], groups: [],
     events: [], services: [], courses: [], products: []
   })
   const [ad, setAd] = useState<AdData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [connections, setConnections] = useState<number[]>([])
+  const [pendingConnections, setPendingConnections] = useState<number[]>([])
+
+  useEffect(() => {
+    const user = parseStoredUser()
+    if (user) {
+      apiPost<any>('/connections/list', { user_id: user.user_id, page: 1, page_size: 100 })
+        .then(res => {
+          if (res.success && res.data) {
+            const connIds = res.data.map((c: any) => 
+              c.requester_id === user.user_id ? c.receiver_id : c.requester_id
+            )
+            setConnections(connIds)
+          }
+        })
+        .catch(() => {})
+    }
+  }, [])
   const [activeFilter, setActiveFilter] = useState<SearchFilter>('all')
 
   useEffect(() => {
@@ -59,22 +78,25 @@ export function SearchPage({ query }: SearchPageProps) {
     const fetchResults = async () => {
       setLoading(true)
       try {
-        const [mRes, jRes] = await Promise.all([
+        const [mRes, jRes, rRes] = await Promise.all([
           apiPost<{ data: any[] }>('/members/search', { keyword: query, page_size: 10 }),
-          apiPost<{ data: any[] }>('/jobs/search', { keyword: query, page_size: 10 })
+          apiPost<{ data: any[] }>('/jobs/search', { keyword: query, page_size: 10 }),
+          apiPost<{ data: any[] }>('/recruiters/search', { keyword: query, page_size: 10 }).catch(() => ({ data: [] }))
         ])
 
+        const memberResults = (mRes.data || []).map((m: any) => ({ ...m, _type: 'member' }))
+        const recruiterResults = (rRes.data || []).map((r: any) => ({
+          ...r,
+          member_id: r.recruiter_id,
+          _type: 'recruiter',
+          headline: r.company_name || r.role || 'Recruiter',
+          location_city: '',
+          location_state: '',
+        }))
+        const allPeople = [...memberResults, ...recruiterResults]
+
         setResults({
-          members: (mRes.data && mRes.data.length > 0) ? mRes.data : (
-             query.includes(' ') ? [{
-               member_id: 'mock-1',
-               first_name: query.split(' ')[0],
-               last_name: query.split(' ').slice(1).join(' '),
-               headline: 'Professional on LinkedIn',
-               location_city: 'San Francisco',
-               location_state: 'CA'
-             }] : []
-          ),
+          members: allPeople,
           jobs: jRes.data || [],
           posts: generateMock('posts', query),
           companies: generateMock('companies', query),
@@ -172,13 +194,45 @@ export function SearchPage({ query }: SearchPageProps) {
                       <ul className="search-list">
                         {results.members.map(m => (
                           <li key={m.member_id} className="search-card-item">
-                            <div className="search-card-avatar">{(m.first_name?.[0] || '') + (m.last_name?.[0] || '')}</div>
+                            <div className="search-card-avatar" onClick={() => onNavigateProfile && onNavigateProfile(m.member_id)} style={{ cursor: 'pointer' }}>{(m.first_name?.[0] || '') + (m.last_name?.[0] || '')}</div>
                             <div className="search-card-body">
-                              <div className="card-name">{m.first_name} {m.last_name}</div>
+                              <div className="card-name" onClick={() => onNavigateProfile && onNavigateProfile(m.member_id)} style={{ cursor: 'pointer' }}>
+                                {m.first_name} {m.last_name}
+                                {m._type === 'recruiter' && <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 12, marginLeft: 8, fontWeight: 600 }}>Recruiter</span>}
+                              </div>
                               <div className="card-headline">{m.headline}</div>
-                              <div className="card-subtext">{m.location_city}, {m.location_state}</div>
+                              {m.location_city && <div className="card-subtext">{m.location_city}{m.location_state ? `, ${m.location_state}` : ''}</div>}
                             </div>
-                            <button className="card-action-btn-outline">Message</button>
+                            {connections.includes(m.member_id) ? (
+                              <button type="button" className="btn-message">
+                                Message
+                              </button>
+                            ) : pendingConnections.includes(m.member_id) ? (
+                              <button type="button" className="btn-pending" style={{ cursor: 'default' }}>
+                                Pending
+                              </button>
+                            ) : (
+                              <button 
+                                type="button"
+                                className="btn-connect"
+                                onClick={() => {
+                                  const user = parseStoredUser()
+                                  if (!user) return
+                                  apiPost<any>('/connections/request', { 
+                                    requester_id: user.user_id, 
+                                    receiver_id: m.member_id 
+                                  }).then(res => {
+                                    if (res.success || res.message.includes('pending')) {
+                                      setPendingConnections(prev => [...prev, m.member_id])
+                                    } else {
+                                      alert(res.message)
+                                    }
+                                  })
+                                }}
+                              >
+                                Connect
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
