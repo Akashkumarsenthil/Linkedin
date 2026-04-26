@@ -39,6 +39,7 @@ faker==30.3.0
 tqdm==4.66.5
 numpy==1.26.4
 pandas==2.2.3
+PyPDF2==3.0.1
 
 # ─── API Documentation ─────────────────────────
 pyyaml==6.0.2
