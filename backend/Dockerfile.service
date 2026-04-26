@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies for MySQL and health checks
+RUN apt-get update && apt-get install -y \
+    default-libmysqlclient-dev \
+    build-essential \
+    pkg-config \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# ENTRY_POINT build arg allows us to use one Dockerfile for all 7 services.
+# Example: --build-arg ENTRY_POINT=main_profile.py
+ARG ENTRY_POINT=main.py
+ENV ENTRY_POINT=${ENTRY_POINT}
+
+EXPOSE 8000
+
+CMD uvicorn ${ENTRY_POINT%.py}:app --host 0.0.0.0 --port 8000
