@@ -7,9 +7,18 @@ x-backend-common: &backend-common
   restart: unless-stopped
   env_file: .env
   environment:
-    # Use Docker service names for discovery
-    MYSQL_HOST: mysql
-    MONGO_HOST: mongodb
+    # Remote AWS databases
+    MYSQL_HOST: 3.80.47.57
+    MYSQL_PORT: 3306
+    MYSQL_USER: teamuser
+    MYSQL_PASSWORD: ChangeThisMySQLPass123!
+    MYSQL_DATABASE: team_mysql_db
+    MONGO_HOST: 3.80.47.57
+    MONGO_PORT: 27017
+    MONGO_USER: teammongo
+    MONGO_PASSWORD: ChangeThisMongoUserPass123!
+    MONGO_DATABASE: team_mongo_db
+    MONGO_AUTH_SOURCE: team_mongo_db
     REDIS_HOST: redis
     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
   depends_on:
