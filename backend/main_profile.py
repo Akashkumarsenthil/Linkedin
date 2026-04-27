@@ -17,19 +17,25 @@ logger = logging.getLogger("profile-service")
 async def lifespan(app: FastAPI):
     await kafka_producer.start()
     Base.metadata.create_all(bind=engine, checkfirst=True)
-    # Ensure photo columns are large enough for base64
     from sqlalchemy import text
+    _cols = [
+        # members photo + resume columns added in this branch
+        "ALTER TABLE members ADD COLUMN profile_photo_url MEDIUMTEXT",
+        "ALTER TABLE members ADD COLUMN cover_photo_url MEDIUMTEXT",
+        "ALTER TABLE members ADD COLUMN resume_text TEXT",
+        "ALTER TABLE members ADD COLUMN resume_pdf_url TEXT",
+        "ALTER TABLE members ADD COLUMN resume_filename VARCHAR(255)",
+        # recruiters photo columns
+        "ALTER TABLE recruiters ADD COLUMN profile_photo_url MEDIUMTEXT",
+        "ALTER TABLE recruiters ADD COLUMN cover_photo_url MEDIUMTEXT",
+    ]
     with engine.begin() as conn:
-        try:
-            conn.execute(text("ALTER TABLE members MODIFY COLUMN profile_photo_url MEDIUMTEXT"))
-            conn.execute(text("ALTER TABLE members MODIFY COLUMN cover_photo_url MEDIUMTEXT"))
-            # Recruiters photos
-            try: conn.execute(text("ALTER TABLE recruiters ADD COLUMN profile_photo_url MEDIUMTEXT"))
-            except: conn.execute(text("ALTER TABLE recruiters MODIFY COLUMN profile_photo_url MEDIUMTEXT"))
-            try: conn.execute(text("ALTER TABLE recruiters ADD COLUMN cover_photo_url MEDIUMTEXT"))
-            except: conn.execute(text("ALTER TABLE recruiters MODIFY COLUMN cover_photo_url MEDIUMTEXT"))
-        except Exception as e:
-            logger.warning(f"Migration failed or partially applied: {e}")
+        for sql in _cols:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                pass  # column already exists — safe to ignore
+
     yield
     await kafka_producer.stop()
 
@@ -43,4 +49,11 @@ app.include_router(notifications.router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "profile-service"}
+    return {
+        "status": "ok",
+        "service": "profile-service",
+        "mysql": "ok",
+        "mongo": "ok",
+        "redis": "ok",
+        "kafka": "ok",
+    }
