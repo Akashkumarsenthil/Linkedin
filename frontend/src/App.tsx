@@ -17,6 +17,7 @@ import { TopMonthlyChart, LeastAppliedChart, ClicksPerJobChart } from './compone
 import { GeoMonthlyChart } from './components/GeoMonthlyChart'
 import { SavesTrendChart } from './components/SavesTrendChart'
 import { AiDashboard } from './components/AiDashboard'
+import { CareerCoach } from './components/CareerCoach'
 import { CountUp } from './components/CountUp'
 import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
@@ -36,6 +37,7 @@ type Tab =
   | 'search'
   | 'perf'
   | 'settings'
+  | 'career'
 
 type AuthUser = {
   user_id: number
@@ -48,6 +50,7 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   jobs:          ['guest', 'member', 'recruiter', 'admin'],
   members:       ['guest', 'member', 'admin'],
   analytics:     ['recruiter', 'admin'],
+  career:        ['member', 'recruiter', 'admin'],
   messages:      ['member', 'recruiter', 'admin'],
   connections:   ['member', 'recruiter', 'admin'],
   notifications: ['member', 'recruiter', 'admin'],
@@ -62,6 +65,7 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
 const ALL_NAV: [Tab, string, string][] = [
   ['overview',      'Home',         'home'],
   ['jobs',          'Jobs',         'jobs'],
+  ['career',        'Career Coach', 'ai'],
   ['members',       'Network',      'network'],
   ['analytics',     'Analytics',    'analytics'],
   ['messages',      'Messaging',    'messaging'],
@@ -422,6 +426,7 @@ function App() {
             />
           )}
           {tab === 'ai'          && <AiDashboard />}
+          {tab === 'career'      && <CareerCoach />}
           {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'perf'        && <PerformanceDashboard />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}

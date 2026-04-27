@@ -54,11 +54,8 @@ Resume text:
                 "content": prompt
               }
             ],
-            temperature=0.1,
-            max_tokens=1024,
-            top_p=1,
+            max_completion_tokens=1024,
             stream=False,
-            stop=None
         )
 
         text = completion.choices[0].message.content or ""

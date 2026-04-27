@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { apiPost } from '../api'
+import { apiPost, apiGet } from '../api'
 import { useAiTaskWs } from '../hooks/useAiTaskWs'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -205,7 +205,19 @@ export function AiDashboard() {
 
   // ── selected task ────────────────────────────────────────────────
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const { taskState, wsStatus } = useAiTaskWs(selectedTaskId)
+  const { taskState: wsTaskState, wsStatus } = useAiTaskWs(selectedTaskId)
+  const [restTaskState, setRestTaskState] = useState<Record<string, unknown> | null>(null)
+
+  // Merge: WS data takes priority over REST snapshot
+  const taskState = wsTaskState ?? (restTaskState as unknown as import('../hooks/useAiTaskWs').WsTaskState | null)
+
+  // Fetch task via REST immediately when selected (covers already-completed tasks)
+  useEffect(() => {
+    if (!selectedTaskId) { setRestTaskState(null); return }
+    apiGet<{ success: boolean; data: Record<string, unknown> }>(`/ai/task-status/${selectedTaskId}`)
+      .then((r) => { if (r.success && r.data) setRestTaskState(r.data) })
+      .catch(() => {})
+  }, [selectedTaskId])
 
   // ── approval ─────────────────────────────────────────────────────
   const [feedback, setFeedback] = useState('')
@@ -213,9 +225,7 @@ export function AiDashboard() {
   const [approvalMsg, setApprovalMsg] = useState<string | null>(null)
 
   // ── resume / match tools ─────────────────────────────────────────
-  const [resumeText, setResumeText] = useState(
-    'Jane Smith | ML Engineer | jane@example.com\n\n5 years building recommendation systems with Python, PyTorch, and Spark. MS Statistics. Skills: Python, Kafka, AWS.',
-  )
+  const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [resumeResult, setResumeResult] = useState<Record<string, unknown> | null>(null)
   const [resumeLoading, setResumeLoading] = useState(false)
   const [resumeErr, setResumeErr] = useState<string | null>(null)
@@ -305,13 +315,17 @@ export function AiDashboard() {
 
   // ── resume parsing ────────────────────────────────────────────────
   const handleParseResume = async () => {
+    if (!resumeFile) { setResumeErr('Please select a PDF file first.'); return }
     setResumeLoading(true)
     setResumeErr(null)
+    setResumeResult(null)
     try {
-      const r = await apiPost<{ success: boolean; data: Record<string, unknown> }>('/ai/parse-resume', {
-        resume_text: resumeText,
-      })
-      setResumeResult(r.data ?? r)
+      const fd = new FormData()
+      fd.append('file', resumeFile)
+      const res = await fetch('/api/ai/parse-resume-pdf', { method: 'POST', body: fd })
+      const r = await res.json()
+      if (r.success) setResumeResult(r.data ?? r)
+      else setResumeErr(r.message ?? 'Parsing failed')
     } catch (e) {
       setResumeErr(e instanceof Error ? e.message : 'Request failed')
     } finally {
@@ -352,16 +366,24 @@ export function AiDashboard() {
       {activeTool === 'resume' && (
         <div className="ai-tool-section">
           <p className="hint">
-            Standalone resume parsing — uses Ollama when available, falls back to heuristic parsing.
+            Standalone resume parsing — upload a PDF and extract structured candidate data using OpenAI (falls back to heuristic parsing).
           </p>
-          <textarea
-            className="resume-input"
-            value={resumeText}
-            onChange={(e) => setResumeText(e.target.value)}
-            rows={8}
-            spellCheck={false}
-          />
-          <button type="button" className="primary" onClick={handleParseResume} disabled={resumeLoading}>
+          <label className="ai-field" style={{ marginBottom: '0.75rem' }}>
+            Resume PDF <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(PDF only, max 5 MB)</span>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={(e) => {
+                setResumeFile(e.target.files?.[0] ?? null)
+                setResumeResult(null)
+                setResumeErr(null)
+              }}
+            />
+          </label>
+          {resumeFile && (
+            <p className="hint" style={{ marginBottom: '0.5rem' }}>Selected: {resumeFile.name}</p>
+          )}
+          <button type="button" className="primary" onClick={handleParseResume} disabled={resumeLoading || !resumeFile}>
             {resumeLoading ? 'Parsing…' : 'Parse resume'}
           </button>
           {resumeErr && <p className="error mt-sm">{resumeErr}</p>}
