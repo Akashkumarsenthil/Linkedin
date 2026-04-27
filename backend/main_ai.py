@@ -14,9 +14,44 @@ from database import create_mongo_indexes
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
 logger = logging.getLogger("ai-service")
 
+AI_KAFKA_TOPICS = [
+    {"name": "ai.requests", "partitions": 1, "replication": 1},
+    {"name": "ai.results",  "partitions": 1, "replication": 1},
+]
+
+async def ensure_kafka_topics() -> None:
+    """
+    Explicitly create ai.requests and ai.results Kafka topics on startup.
+
+    Uses KafkaAdminClient so topics exist with the correct partition/replication
+    settings regardless of whether the broker has auto-create enabled. Already-
+    existing topics are silently skipped (TopicAlreadyExistsError). Failures are
+    logged as warnings — the service starts anyway and relies on broker auto-create
+    as a last resort.
+    """
+    try:
+        from aiokafka.admin import AIOKafkaAdminClient, NewTopic
+        admin = AIOKafkaAdminClient(bootstrap_servers=settings.KAFKA_BOOTSTRAP_SERVERS)
+        await admin.start()
+        try:
+            new_topics = [
+                NewTopic(name=t["name"], num_partitions=t["partitions"], replication_factor=t["replication"])
+                for t in AI_KAFKA_TOPICS
+            ]
+            await admin.create_topics(new_topics)
+            logger.info(f"Kafka topics ensured: {[t['name'] for t in AI_KAFKA_TOPICS]}")
+        except Exception as e:
+            # TopicAlreadyExistsError is expected on restarts — not a real error
+            logger.info(f"Kafka topic check: {e}")
+        finally:
+            await admin.close()
+    except Exception as e:
+        logger.warning(f"Could not ensure Kafka topics (broker may not be ready): {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await kafka_producer.start()
+    await ensure_kafka_topics()
     await create_mongo_indexes()
     await rehydrate_tasks()
 
