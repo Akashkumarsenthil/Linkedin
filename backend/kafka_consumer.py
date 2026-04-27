@@ -344,6 +344,42 @@ async def handle_generic_event(event: dict):
     await mongo_db.event_logs.insert_one(event)
 
 
+async def handle_ai_requested(event: dict):
+    """
+    Triggered when a recruiter starts a new hiring workflow.
+
+    Receives the ai.requested event from the ai.requests topic and enqueues
+    the task into the hiring assistant's local dispatcher queue. This makes
+    Kafka the orchestration trigger for the multi-step workflow rather than
+    the HTTP request itself.
+
+    Event payload: { job_id: int, top_n: int }
+    Entity id:     task_id (UUID)
+    """
+    from agents.hiring_assistant import enqueue_task
+
+    task_id = event["entity"]["entity_id"]
+    payload = event.get("payload", {})
+    job_id = int(payload.get("job_id", 0))
+    top_n = int(payload.get("top_n", 5))
+
+    if not job_id:
+        logger.error(f"[ai.requested] missing job_id in payload for task {task_id}")
+        return
+
+    # Guard: if the local dispatcher already picked this up (start_task always
+    # enqueues locally), the task will be running or beyond "queued".
+    # Only enqueue via Kafka path if the task is still waiting.
+    from agents.hiring_assistant import active_tasks
+    task = active_tasks.get(task_id, {})
+    if task.get("status") not in ("queued", None):
+        logger.info(f"[ai.requested] task {task_id[:8]}… already started locally — Kafka signal acknowledged, skipping re-enqueue")
+        return
+
+    logger.info(f"[ai.requested] Kafka-triggering workflow task {task_id[:8]}… (job_id={job_id}, top_n={top_n})")
+    await enqueue_task(task_id, job_id, top_n)
+
+
 # Singleton consumer
 kafka_consumer = KafkaEventConsumer()
 
@@ -355,3 +391,4 @@ kafka_consumer.register_handler("message.sent", handle_generic_event)
 kafka_consumer.register_handler("connection.requested", handle_generic_event)
 kafka_consumer.register_handler("connection.accepted", handle_generic_event)
 kafka_consumer.register_handler("profile.viewed", handle_profile_viewed)
+kafka_consumer.register_handler("ai.requested", handle_ai_requested)
