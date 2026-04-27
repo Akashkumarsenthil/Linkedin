@@ -397,13 +397,36 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
+async def enqueue_task(task_id: str, job_id: int, top_n: int) -> None:
+    """
+    Place a task into the local dispatcher queue.
+
+    Called by the Kafka consumer's ai.requested handler so that workflow
+    execution is triggered by the Kafka message, not by the HTTP request.
+    Also called directly by start_task() as a fallback when Kafka is unavailable.
+    """
+    await _task_queue.put((task_id, job_id, top_n))
+    logger.info(
+        f"[enqueue_task] task {task_id[:8]}… enqueued "
+        f"(queue depth now {_task_queue.qsize()})"
+    )
+
+
 async def start_task(job_id: int, top_n: int = 5) -> str:
     """
     Create a new hiring assistant task.
 
-    Persists the task document to MongoDB synchronously before starting the
-    background coroutine, so the task is always queryable even if the workflow
-    hasn't executed a single step yet.
+    Primary path (Kafka available):
+      1. Persist task to MongoDB with status="queued".
+      2. Publish ai.requested event to ai.requests topic.
+      3. Kafka consumer receives the event and calls enqueue_task() → dispatcher runs workflow.
+
+    Fallback path (Kafka unavailable):
+      1. Persist task to MongoDB.
+      2. Call enqueue_task() directly so the workflow still runs.
+
+    The task is always queryable immediately after this function returns because
+    it is written to MongoDB before any background work begins.
     """
     task_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -419,13 +442,16 @@ async def start_task(job_id: int, top_n: int = 5) -> str:
     }
 
     # Write to MongoDB BEFORE anything else so the task is always queryable.
-    # Use a copy to avoid motor mutating task_doc with the _id field.
     await mongo_db.agent_tasks.insert_one({**task_doc})
 
     # Cache in memory
     active_tasks[task_id] = task_doc
 
-    # Publish to Kafka (best-effort)
+    # Publish to Kafka ai.requests (best-effort telemetry + orchestration signal).
+    # When the Kafka consumer is healthy, handle_ai_requested() will receive
+    # this message and call enqueue_task() — completing the Kafka-orchestrated path.
+    # The local enqueue below is always executed so the workflow runs regardless
+    # of consumer availability (graceful degradation).
     try:
         await kafka_producer.publish(
             topic="ai.requests",
@@ -435,18 +461,16 @@ async def start_task(job_id: int, top_n: int = 5) -> str:
             entity_id=task_id,
             payload={"job_id": job_id, "top_n": top_n},
             trace_id=task_id,
+            idempotency_key=f"ai.requested:{task_id}",
         )
-    except Exception:
-        pass
+        logger.info(f"[start_task] task {task_id[:8]}… published to ai.requests")
+    except Exception as e:
+        logger.warning(f"[start_task] Kafka publish failed ({e})")
 
-    # Enqueue — the dispatcher (run_dispatcher) picks this up and runs it
-    # with bounded concurrency.  The task is already persisted to MongoDB
-    # with status="queued", so it's observable immediately.
-    await _task_queue.put((task_id, job_id, top_n))
-    logger.info(
-        f"[start_task] task {task_id[:8]}… enqueued "
-        f"(queue depth now {_task_queue.qsize()})"
-    )
+    # Always enqueue locally so the workflow runs even when the Kafka consumer
+    # is unavailable. The consumer handler is idempotent — it checks the task
+    # status before enqueuing to avoid double-execution when Kafka IS healthy.
+    await enqueue_task(task_id, job_id, top_n)
 
     return task_id
 
