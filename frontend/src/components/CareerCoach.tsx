@@ -1,12 +1,46 @@
 import { useState } from 'react'
 
+interface CoachResult {
+  overall_score: number
+  score_rationale?: string
+  headline_suggestion?: string
+  summary_suggestion?: string
+  skills_to_add?: string[]
+  skills_to_highlight?: string[]
+  experience_tips?: string[]
+  top_gaps?: string[]
+}
+
+function ScoreRing({ pct }: { pct: number }) {
+  const r = 44
+  const circ = 2 * Math.PI * r
+  const fill = circ * (1 - pct / 100)
+  const color = pct >= 70 ? '#057642' : pct >= 45 ? '#915907' : '#cc1016'
+  return (
+    <svg width={110} height={110} viewBox="0 0 110 110">
+      <circle cx={55} cy={55} r={r} fill="none" stroke="rgba(0,0,0,.08)" strokeWidth={10} />
+      <circle
+        cx={55} cy={55} r={r} fill="none"
+        stroke={color} strokeWidth={10}
+        strokeDasharray={circ}
+        strokeDashoffset={fill}
+        strokeLinecap="round"
+        transform="rotate(-90 55 55)"
+        style={{ transition: 'stroke-dashoffset .6s ease' }}
+      />
+      <text x={55} y={52} textAnchor="middle" dominantBaseline="middle" fontSize={22} fontWeight={700} fill={color}>{pct}%</text>
+      <text x={55} y={70} textAnchor="middle" fontSize={10} fill="rgba(0,0,0,.45)">match</text>
+    </svg>
+  )
+}
+
 export function CareerCoach() {
   const [coachFile, setCoachFile]         = useState<File | null>(null)
   const [coachHeadline, setCoachHeadline] = useState('')
   const [coachJobTitle, setCoachJobTitle] = useState('')
   const [coachSkills, setCoachSkills]     = useState('')
   const [coachJobId, setCoachJobId]       = useState('')
-  const [coachResult, setCoachResult]     = useState<Record<string, unknown> | null>(null)
+  const [coachResult, setCoachResult]     = useState<CoachResult | null>(null)
   const [coachLoading, setCoachLoading]   = useState(false)
   const [coachErr, setCoachErr]           = useState<string | null>(null)
 
@@ -33,110 +67,164 @@ export function CareerCoach() {
     }
   }
 
+  const pct = coachResult ? Math.round(coachResult.overall_score * 100) : 0
+
   return (
     <section className="panel">
       <h2 className="panel-heading">Career Coach</h2>
-      <div className="ai-tool-section">
-        <p className="hint">
+
+      <div className="cc-form-card">
+        <p className="cc-form-desc">
           Upload your resume and see how well you match a target role — with actionable suggestions to improve your profile.
         </p>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <div className="cc-form-grid">
           <label className="ai-field">
-            Job ID <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional — loads job details)</span>
+            Job ID <span className="ai-field-hint">(optional — loads job details)</span>
             <input type="number" value={coachJobId} onChange={(e) => setCoachJobId(e.target.value)} placeholder="e.g. 1" min={1} />
           </label>
           <label className="ai-field">
             Current headline
             <input type="text" value={coachHeadline} onChange={(e) => setCoachHeadline(e.target.value)} placeholder="e.g. Software Engineer at Acme" />
           </label>
+          <label className="ai-field">
+            Target job title
+            <input type="text" value={coachJobTitle} onChange={(e) => setCoachJobTitle(e.target.value)} placeholder="e.g. Senior Backend Engineer" />
+          </label>
+          <label className="ai-field">
+            Required skills <span className="ai-field-hint">(comma-separated)</span>
+            <input type="text" value={coachSkills} onChange={(e) => setCoachSkills(e.target.value)} placeholder="Python, Kafka, Kubernetes" />
+          </label>
         </div>
 
-        <label className="ai-field" style={{ marginBottom: '0.5rem' }}>
-          Resume PDF <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(PDF only, max 5 MB)</span>
-          <input
-            type="file"
-            accept=".pdf"
-            onChange={(e) => {
-              setCoachFile(e.target.files?.[0] ?? null)
-              setCoachResult(null)
-              setCoachErr(null)
-            }}
-          />
-        </label>
-        {coachFile && (
-          <p className="hint" style={{ marginBottom: '0.5rem' }}>Selected: {coachFile.name}</p>
-        )}
+        <div className="cc-upload-row">
+          <label className="cc-upload-area">
+            <input
+              type="file"
+              accept=".pdf"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                setCoachFile(e.target.files?.[0] ?? null)
+                setCoachResult(null)
+                setCoachErr(null)
+              }}
+            />
+            <span className="cc-upload-icon">📄</span>
+            <span className="cc-upload-label">
+              {coachFile ? coachFile.name : 'Click to upload resume PDF'}
+            </span>
+            <span className="cc-upload-hint">PDF only · max 5 MB</span>
+          </label>
+        </div>
 
-        <label className="ai-field" style={{ marginBottom: '0.5rem' }}>
-          Target job title
-          <input type="text" value={coachJobTitle} onChange={(e) => setCoachJobTitle(e.target.value)} placeholder="e.g. Senior Backend Engineer" />
-        </label>
-
-        <label className="ai-field" style={{ marginBottom: '0.75rem' }}>
-          Required skills <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(comma-separated)</span>
-          <input type="text" value={coachSkills} onChange={(e) => setCoachSkills(e.target.value)} placeholder="Python, Kafka, Kubernetes" />
-        </label>
-
-        <button type="button" className="primary" onClick={handleCareerCoach} disabled={coachLoading || !coachFile}>
-          {coachLoading ? 'Analyzing…' : 'Get coaching suggestions'}
+        <button type="button" className="cc-analyze-btn" onClick={handleCareerCoach} disabled={coachLoading || !coachFile}>
+          {coachLoading ? (
+            <><span className="cc-spinner" />Analyzing your resume…</>
+          ) : 'Analyze my profile'}
         </button>
 
-        {coachErr && <p className="error mt-sm">{coachErr}</p>}
+        {coachErr && <p className="cc-error">{coachErr}</p>}
+      </div>
 
-        {coachResult && (
-          <div className="coach-result">
-            <div className="coach-score-row">
-              <span className="coach-score-label">Profile match score</span>
-              <span className="coach-score-value" style={{ color: Number(coachResult.overall_score) >= 0.6 ? 'var(--success)' : Number(coachResult.overall_score) >= 0.4 ? '#f59e0b' : 'var(--error)' }}>
-                {Math.round(Number(coachResult.overall_score) * 100)}%
-              </span>
+      {coachResult && (
+        <div className="cc-results">
+          {/* Score hero */}
+          <div className="cc-score-hero">
+            <ScoreRing pct={pct} />
+            <div className="cc-score-text">
+              <h3 className="cc-score-title">Profile match score</h3>
+              {coachResult.score_rationale && (
+                <p className="cc-score-rationale">{coachResult.score_rationale}</p>
+              )}
             </div>
-            {coachResult.score_rationale != null && <p className="coach-rationale">{String(coachResult.score_rationale)}</p>}
+          </div>
 
-            <div className="coach-section">
-              <h4>Suggested Headline</h4>
-              <p className="coach-headline-suggestion">{String(coachResult.headline_suggestion ?? '')}</p>
+          {/* Suggested headline */}
+          {coachResult.headline_suggestion && (
+            <div className="cc-result-card">
+              <div className="cc-card-header">
+                <span className="cc-card-icon">✏️</span>
+                <h4 className="cc-card-title">Suggested Headline</h4>
+              </div>
+              <p className="cc-headline-preview">"{coachResult.headline_suggestion}"</p>
             </div>
+          )}
 
-            <div className="coach-section">
-              <h4>Suggested Summary</h4>
-              <p>{String(coachResult.summary_suggestion ?? '')}</p>
+          {/* Suggested summary */}
+          {coachResult.summary_suggestion && (
+            <div className="cc-result-card">
+              <div className="cc-card-header">
+                <span className="cc-card-icon">📝</span>
+                <h4 className="cc-card-title">Suggested Summary</h4>
+              </div>
+              <p className="cc-card-body">{coachResult.summary_suggestion}</p>
             </div>
+          )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <div className="coach-section">
-                <h4>Skills to Add</h4>
-                <div className="coach-tags coach-tags-add">
-                  {(coachResult.skills_to_add as string[] ?? []).map((s) => <span key={s} className="coach-tag">{s}</span>)}
+          {/* Skills grid */}
+          <div className="cc-skills-row">
+            {(coachResult.skills_to_add?.length ?? 0) > 0 && (
+              <div className="cc-result-card cc-result-card--half">
+                <div className="cc-card-header">
+                  <span className="cc-card-icon">➕</span>
+                  <h4 className="cc-card-title">Skills to Add</h4>
+                </div>
+                <div className="cc-tags">
+                  {coachResult.skills_to_add!.map((s) => (
+                    <span key={s} className="cc-tag cc-tag--add">{s}</span>
+                  ))}
                 </div>
               </div>
-              <div className="coach-section">
-                <h4>Skills to Highlight</h4>
-                <div className="coach-tags coach-tags-highlight">
-                  {(coachResult.skills_to_highlight as string[] ?? []).map((s) => <span key={s} className="coach-tag">{s}</span>)}
+            )}
+            {(coachResult.skills_to_highlight?.length ?? 0) > 0 && (
+              <div className="cc-result-card cc-result-card--half">
+                <div className="cc-card-header">
+                  <span className="cc-card-icon">⭐</span>
+                  <h4 className="cc-card-title">Skills to Highlight</h4>
                 </div>
-              </div>
-            </div>
-
-            <div className="coach-section">
-              <h4>Experience Tips</h4>
-              <ul className="coach-tips">
-                {(coachResult.experience_tips as string[] ?? []).map((t, i) => <li key={i}>{t}</li>)}
-              </ul>
-            </div>
-
-            {(coachResult.top_gaps as string[] ?? []).length > 0 && (
-              <div className="coach-section">
-                <h4>Top Gaps</h4>
-                <div className="coach-tags coach-tags-gap">
-                  {(coachResult.top_gaps as string[] ?? []).map((s) => <span key={s} className="coach-tag">{s}</span>)}
+                <div className="cc-tags">
+                  {coachResult.skills_to_highlight!.map((s) => (
+                    <span key={s} className="cc-tag cc-tag--highlight">{s}</span>
+                  ))}
                 </div>
               </div>
             )}
           </div>
-        )}
-      </div>
+
+          {/* Experience tips */}
+          {(coachResult.experience_tips?.length ?? 0) > 0 && (
+            <div className="cc-result-card">
+              <div className="cc-card-header">
+                <span className="cc-card-icon">💡</span>
+                <h4 className="cc-card-title">Experience Tips</h4>
+              </div>
+              <ul className="cc-tips-list">
+                {coachResult.experience_tips!.map((tip, i) => (
+                  <li key={i} className="cc-tips-item">
+                    <span className="cc-tip-dot" />
+                    {tip}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Top gaps */}
+          {(coachResult.top_gaps?.length ?? 0) > 0 && (
+            <div className="cc-result-card">
+              <div className="cc-card-header">
+                <span className="cc-card-icon">🎯</span>
+                <h4 className="cc-card-title">Top Gaps to Address</h4>
+              </div>
+              <div className="cc-tags">
+                {coachResult.top_gaps!.map((s) => (
+                  <span key={s} className="cc-tag cc-tag--gap">{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }
