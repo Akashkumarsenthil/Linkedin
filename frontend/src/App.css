@@ -4352,3 +4352,469 @@ button { cursor: pointer; outline-offset: 2px; }
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   Career Coach — LinkedIn redesign
+   ══════════════════════════════════════════════════════════════════ */
+
+.cc-form-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.cc-form-desc {
+  font-size: 13px;
+  color: var(--text-sec);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.cc-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ai-field-hint {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.cc-upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 2px dashed var(--border);
+  border-radius: var(--r);
+  padding: 20px 16px;
+  cursor: pointer;
+  background: var(--surface2);
+  transition: border-color .15s, background .15s;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.cc-upload-area:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+}
+.cc-upload-icon { font-size: 28px; }
+.cc-upload-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.cc-upload-hint  { font-size: 11px; color: var(--text-muted); }
+
+.cc-analyze-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-pill);
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.cc-analyze-btn:hover:not(:disabled) { background: var(--accent-dark); }
+.cc-analyze-btn:disabled { opacity: .55; cursor: default; }
+
+.cc-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.cc-error { font-size: 13px; color: var(--error); margin-top: 10px; }
+
+/* Results */
+.cc-results { display: flex; flex-direction: column; gap: 14px; }
+
+.cc-score-hero {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  padding: 20px 24px;
+}
+.cc-score-text { flex: 1; }
+.cc-score-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+.cc-score-rationale { font-size: 13px; color: var(--text-sec); line-height: 1.5; }
+
+.cc-result-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  padding: 16px 20px;
+}
+.cc-result-card--half { flex: 1; min-width: 0; }
+
+.cc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cc-card-icon { font-size: 16px; }
+.cc-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-sec);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin: 0;
+}
+
+.cc-headline-preview {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.cc-card-body { font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+
+.cc-skills-row { display: flex; gap: 14px; }
+
+.cc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.cc-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+}
+.cc-tag--add       { background: rgba(5,118,66,.08); color: var(--success); border: 1px solid rgba(5,118,66,.2); }
+.cc-tag--highlight { background: var(--accent-subtle); color: var(--accent); border: 1px solid rgba(10,102,194,.2); }
+.cc-tag--gap       { background: rgba(204,16,22,.06); color: var(--error); border: 1px solid rgba(204,16,22,.15); }
+
+.cc-tips-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cc-tips-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-sec);
+  line-height: 1.5;
+}
+.cc-tip-dot {
+  flex-shrink: 0;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Candidate Cards — LinkedIn profile preview style
+   ══════════════════════════════════════════════════════════════════ */
+
+.li-candidate-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow .15s;
+}
+.li-candidate-card:hover { box-shadow: var(--sh-drop); }
+
+.li-candidate-top { display: flex; align-items: center; gap: 12px; }
+
+.li-avatar {
+  flex-shrink: 0;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.li-candidate-meta { flex: 1; min-width: 0; }
+.li-candidate-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.li-rec-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.li-rec-strong { background: rgba(5,118,66,.1); color: var(--success); }
+.li-rec-good   { background: var(--accent-light); color: var(--accent); }
+.li-rec-weak   { background: rgba(0,0,0,.05); color: var(--text-sec); }
+
+.li-score-circle {
+  flex-shrink: 0;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.li-score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.li-score-bar-track {
+  flex: 1;
+  height: 5px;
+  background: rgba(0,0,0,.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.li-score-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+.li-score-pct { font-size: 12px; font-weight: 700; min-width: 32px; text-align: right; }
+
+.li-sub-scores { display: flex; flex-direction: column; gap: 5px; }
+.li-sub-score-item { display: flex; align-items: center; gap: 8px; }
+.li-sub-label  { font-size: 11px; color: var(--text-muted); width: 56px; flex-shrink: 0; }
+.li-sub-bar-track { flex: 1; height: 4px; background: rgba(0,0,0,.06); border-radius: 2px; overflow: hidden; }
+.li-sub-bar-fill  { height: 100%; background: var(--accent); border-radius: 2px; transition: width .5s ease; }
+.li-sub-pct { font-size: 11px; color: var(--text-sec); min-width: 32px; text-align: right; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Outreach — InMail style
+   ══════════════════════════════════════════════════════════════════ */
+
+.li-inmail-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  overflow: hidden;
+  transition: box-shadow .15s;
+}
+.li-inmail-card:hover { box-shadow: var(--sh-drop); }
+
+.li-inmail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.li-inmail-avatar {
+  flex-shrink: 0;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: #8faecf;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.li-inmail-info { flex: 1; min-width: 0; }
+.li-inmail-top-row { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.li-inmail-to { font-size: 14px; font-weight: 700; color: var(--text); }
+.li-inmail-match {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.li-inmail-subject { font-size: 13px; color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.li-inmail-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.li-copy-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  width: 28px; height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--text-sec);
+  transition: background .15s, color .15s;
+}
+.li-copy-btn:hover { background: var(--accent-light); color: var(--accent); }
+.li-inmail-chevron { font-size: 12px; color: var(--text-muted); }
+
+.li-inmail-divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+.li-inmail-body { padding: 14px 16px 16px; }
+.li-inmail-text {
+  font-size: 13px;
+  color: var(--text-sec);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  margin: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Step Timeline — vertical LinkedIn style
+   ══════════════════════════════════════════════════════════════════ */
+
+.li-timeline { display: flex; flex-direction: column; }
+.li-timeline-row { display: flex; gap: 0; min-height: 36px; }
+
+.li-timeline-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 28px;
+  flex-shrink: 0;
+}
+
+.li-timeline-node {
+  flex-shrink: 0;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  z-index: 1;
+}
+.li-timeline-node.done    { border-color: var(--success); color: var(--success); background: rgba(5,118,66,.08); }
+.li-timeline-node.running { border-color: var(--accent); background: var(--accent-light); color: var(--accent); }
+.li-timeline-node.error   { border-color: var(--error); color: var(--error); background: rgba(204,16,22,.06); }
+.li-timeline-node.pending { border-color: var(--border); color: var(--text-muted); }
+
+.li-node-pulse {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(.7); } }
+
+.li-timeline-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border);
+  min-height: 12px;
+}
+.li-timeline-line.done { background: var(--success); }
+
+.li-timeline-body {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0 14px 10px;
+  flex: 1;
+}
+.li-step-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.li-step-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Resume Parser — structured card
+   ══════════════════════════════════════════════════════════════════ */
+
+.rp-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-card);
+  margin-top: 14px;
+  overflow: hidden;
+}
+
+.rp-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.rp-avatar {
+  flex-shrink: 0;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rp-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.rp-contact-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.rp-contact-item { font-size: 12px; color: var(--text-sec); }
+
+.rp-section { padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.rp-section:last-child { border-bottom: none; }
+.rp-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.rp-section-text { font-size: 13px; color: var(--text-sec); line-height: 1.6; }
+
+.rp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.rp-tag {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: 1px solid rgba(10,102,194,.15);
+}
+
+.rp-timeline { display: flex; flex-direction: column; gap: 0; }
+.rp-timeline-item { display: flex; gap: 12px; padding-bottom: 12px; }
+.rp-timeline-item:last-child { padding-bottom: 0; }
+
+.rp-timeline-dot {
+  flex-shrink: 0;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 4px;
+}
+.rp-timeline-content { flex: 1; }
+.rp-job-title { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
+.rp-company   { display: block; font-size: 12px; color: var(--text-sec); }
+.rp-dates     { display: block; font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+.rp-desc      { font-size: 12px; color: var(--text-sec); margin-top: 4px; line-height: 1.5; }
