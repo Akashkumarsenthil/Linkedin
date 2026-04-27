@@ -55,11 +55,8 @@ Respond with ONLY the message text, no subject line or extra formatting."""
                 "content": prompt
               }
             ],
-            temperature=0.7,
-            max_tokens=1024,
-            top_p=1,
+            max_completion_tokens=1024,
             stream=False,
-            stop=None
         )
 
         message = completion.choices[0].message.content or ""
