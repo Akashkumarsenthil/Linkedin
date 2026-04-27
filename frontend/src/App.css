@@ -2270,6 +2270,69 @@ button { cursor: pointer; outline-offset: 2px; }
 .row { display: flex; gap: 8px; align-items: center; }
 .mt-sm { margin-top: 6px; }
 
+/* ── Career Coach Result ─────────────────────────────────────────── */
+
+.coach-result {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.coach-score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 16px;
+}
+.coach-score-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.coach-score-value { font-size: 24px; font-weight: 700; }
+.coach-rationale   { font-size: 13px; color: var(--text-sec); margin: -0.5rem 0 0; }
+
+.coach-section {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 14px 16px;
+}
+.coach-section h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-sec);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin: 0 0 10px;
+}
+.coach-headline-suggestion {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.coach-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.coach-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+}
+.coach-tags-add  .coach-tag { background: rgba(5,118,66,.08); color: var(--success); border: 1px solid rgba(5,118,66,.2); }
+.coach-tags-highlight .coach-tag { background: var(--accent-subtle); color: var(--accent); border: 1px solid transparent; }
+.coach-tags-gap  .coach-tag { background: rgba(204,16,22,.06); color: var(--error); border: 1px solid rgba(204,16,22,.15); }
+
+.coach-tips {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coach-tips li { font-size: 13px; color: var(--text-sec); line-height: 1.5; }
+
 /* ── 23. Responsive ─────────────────────────────────────────────── */
 
 @media (max-width: 960px) {

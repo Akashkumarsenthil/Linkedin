@@ -257,23 +257,31 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             progress=20,
         )
 
-        # ── Step 2: Parse resumes ────────────────────────────────────
+        # ── Step 2: Parse resumes (concurrent) ──────────────────────
         await update_task_status(task_id, "running", "parse_resumes", progress=30)
 
-        parsed_resumes = {}
-        for member in members:
+        async def _parse_one(member):
             resume_text = member.resume_text or member.about or ""
-            if resume_text:
-                parsed = await parse_resume_with_llm(resume_text)
-                parsed_resumes[member.member_id] = parsed
+            if not resume_text:
+                return member.member_id, None
+            parsed = await parse_resume_with_llm(resume_text)
+            return member.member_id, parsed
 
-            await mongo_db.agent_traces.insert_one({
-                "task_id": task_id,
-                "step": "resume_parser",
-                "member_id": member.member_id,
-                "result": parsed_resumes.get(member.member_id, {}),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+        results = await asyncio.gather(*[_parse_one(m) for m in members])
+        parsed_resumes = {mid: p for mid, p in results if p is not None}
+
+        # Persist traces
+        if parsed_resumes:
+            await mongo_db.agent_traces.insert_many([
+                {
+                    "task_id": task_id,
+                    "step": "resume_parser",
+                    "member_id": mid,
+                    "result": parsed,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                for mid, parsed in parsed_resumes.items()
+            ])
 
         await update_task_status(
             task_id, "running", "parse_resumes",
