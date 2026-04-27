@@ -17,13 +17,26 @@ logger = logging.getLogger("analytics-service")
 async def lifespan(app: FastAPI):
     await kafka_producer.start()
     topics = ["job.viewed", "job.saved", "job.created", "job.closed", "application.submitted", "application.statusChanged", "message.sent", "connection.requested", "connection.accepted", "profile.viewed"]
-    await kafka_consumer.start(topics)
-    consumer_task = asyncio.create_task(kafka_consumer.consume())
+    async def _start_kafka():
+        for attempt in range(20):
+            try:
+                await kafka_consumer.start(topics)
+                logger.info("Kafka consumer connected successfully")
+                await kafka_consumer.consume()
+                break
+            except Exception as e:
+                logger.warning(f"Kafka not ready (attempt {attempt + 1}/20): {e}")
+                await asyncio.sleep(3)
+
+    consumer_task = asyncio.create_task(_start_kafka(), name="analytics-kafka-consumer")
     await create_mongo_indexes()
     yield
     await kafka_producer.stop()
-    await kafka_consumer.stop()
     consumer_task.cancel()
+    try:
+        await kafka_consumer.stop()
+    except Exception:
+        pass
 
 app = FastAPI(title="Analytics Service", version=settings.APP_VERSION, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
