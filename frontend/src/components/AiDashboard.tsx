@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { apiPost, apiGet } from '../api'
 import { useAiTaskWs } from '../hooks/useAiTaskWs'
 
@@ -137,10 +138,10 @@ function StepTimeline({ steps }: { steps: { step: string; status: string; timest
 }
 
 
-function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
+function ShortlistCard({ entry, candidateNames }: { entry: ShortlistEntry; candidateNames: Record<number, string> }) {
   const pct = Math.round(entry.overall_score * 100)
-  const initials = (entry.candidate_name ?? `#${entry.candidate_id}`)
-    .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
+  const name = candidateNames[entry.candidate_id] || entry.candidate_name || `Candidate #${entry.candidate_id}`
+  const initials = name.split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
   const isStrong = entry.recommendation?.toLowerCase().includes('strong')
   const isGood   = entry.recommendation?.toLowerCase().includes('good')
   const recClass = isStrong ? 'li-rec-strong' : isGood ? 'li-rec-good' : 'li-rec-weak'
@@ -151,7 +152,7 @@ function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
       <div className="li-candidate-top">
         <div className="li-avatar">{initials}</div>
         <div className="li-candidate-meta">
-          <span className="li-candidate-name">{entry.candidate_name ?? `Candidate #${entry.candidate_id}`}</span>
+          <Link to={`/members/${entry.candidate_id}`} className="li-candidate-name">{name}</Link>
           <span className={`li-rec-badge ${recClass}`}>{entry.recommendation}</span>
         </div>
         <div className="li-score-circle" style={{ color: scoreColor, borderColor: scoreColor }}>
@@ -381,6 +382,9 @@ export function AiDashboard() {
 
   const [activeTool, setActiveTool] = useState<'dashboard' | 'resume'>('dashboard')
 
+  // ── candidate names ──────────────────────────────────────────────
+  const [candidateNames, setCandidateNames] = useState<Record<number, string>>({})
+
   // ── load task list ───────────────────────────────────────────────
   const loadTasks = useCallback(async () => {
     setTasksLoading(true)
@@ -393,6 +397,27 @@ export function AiDashboard() {
       setTasksLoading(false)
     }
   }, [])
+
+  // ── fetch candidate names ─────────────────────────────────────────
+  useEffect(() => {
+    const result = taskState?.result as TaskResult | undefined
+    if (!result?.shortlist) return
+    const idsToFetch = result.shortlist
+      .map((entry) => entry.candidate_id)
+      .filter((id) => !candidateNames[id])
+    if (idsToFetch.length === 0) return
+    idsToFetch.forEach(async (id) => {
+      try {
+        const r = await apiPost<{ success: boolean; data: { first_name: string; last_name: string } }>('/members/get', { member_id: id })
+        if (r.success && r.data) {
+          const name = `${r.data.first_name} ${r.data.last_name}`
+          setCandidateNames((prev) => ({ ...prev, [id]: name }))
+        }
+      } catch {
+        // best-effort
+      }
+    })
+  }, [taskState?.result, candidateNames])
 
   useEffect(() => {
     loadTasks()
@@ -677,7 +702,7 @@ export function AiDashboard() {
                     </p>
                     <div className="candidate-grid">
                       {result.shortlist.map((entry, i) => (
-                        <ShortlistCard key={i} entry={entry} />
+                        <ShortlistCard key={i} entry={entry} candidateNames={candidateNames} />
                       ))}
                     </div>
                   </div>
