@@ -94,7 +94,14 @@ async def _load_task_from_mongo(task_id: str) -> Optional[Dict[str, Any]]:
 async def update_task_status(
     task_id: str, status: str, step: str, data: Any = None, progress: int = 0
 ):
-    """Update task status in MongoDB (source of truth), memory cache, WebSocket clients, and Kafka."""
+    """
+    Persist a status transition for a task across all layers.
+
+    Write order: MongoDB first (durable), then memory cache, then WebSocket
+    broadcast, then Kafka publish. If MongoDB fails the exception propagates
+    and the caller marks the task failed. WebSocket and Kafka failures are
+    swallowed so a lost connection or broker outage never kills the workflow.
+    """
     now = datetime.now(timezone.utc).isoformat()
     step_entry = {"step": step, "status": status, "timestamp": now}
 
@@ -217,13 +224,27 @@ def get_queue_stats() -> Dict[str, Any]:
 
 async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
     """
-    Main hiring assistant workflow:
-    1. Fetch job posting and candidates
-    2. Parse resumes
-    3. Match candidates to job
-    4. Rank and shortlist top N
-    5. Generate outreach drafts
-    6. Wait for recruiter approval
+    Multi-step hiring assistant workflow orchestrated via Kafka.
+
+    Triggered by the ai.requested Kafka consumer handler (primary path) or
+    directly by the local dispatcher when the Kafka consumer is unavailable
+    (fallback path). Publishes an ai.step_completed event to ai.results after
+    every step so downstream consumers and the UI have real-time visibility.
+
+    Steps
+    -----
+    1. fetch_data       — Load job posting and candidate pool from MySQL.
+    2. parse_resumes    — Concurrent LLM resume parsing; regex fallback per candidate.
+    3. match_candidates — Score each candidate; rules-based with skills/location/seniority weights.
+    4. generate_outreach — Draft personalised recruiter messages for the shortlist.
+    5. await_approval   — Persist result to MongoDB and gate on recruiter approval.
+
+    Failure handling
+    ----------------
+    Any unhandled exception marks the task "failed" in MongoDB so it never
+    gets stuck in "running". The DB session is always closed in the finally
+    block. Individual resume-parse failures are skipped (the candidate is
+    excluded from matching) rather than aborting the whole workflow.
     """
     db = SessionLocal()
 
