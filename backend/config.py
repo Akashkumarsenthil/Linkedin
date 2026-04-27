@@ -43,8 +43,6 @@ class Settings(BaseSettings):
 
     @property
     def MONGO_URL(self) -> str:
-        if not self.MONGO_USER:
-            return f"mongodb://{self.MONGO_HOST}:{self.MONGO_PORT}"
         user = quote_plus(self.MONGO_USER)
         password = quote_plus(self.MONGO_PASSWORD)
         return (
@@ -65,9 +63,13 @@ class Settings(BaseSettings):
     # ─── Kafka ──────────────────────────────────────
     KAFKA_BOOTSTRAP_SERVERS: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9094")
 
-    # ─── OpenAI ─────────────────────────────────────
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    # ─── Ollama (Local LLM) ─────────────────────────
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+
+    # ─── Groq ───────────────────────────────────────
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
     # ─── Auth / JWT ─────────────────────────────────────────────────
     # Accepts JWT_SECRET_KEY (preferred) or legacy JWT_SECRET env var.

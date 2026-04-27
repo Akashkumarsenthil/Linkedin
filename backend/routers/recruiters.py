@@ -5,19 +5,15 @@ Recruiter Service — Recruiter CRUD APIs
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from database import get_db
 from models.recruiter import Recruiter
-from models.user_credentials import UserCredentials
 from auth import require_recruiter, TokenPayload
 from schemas.recruiter import (
     RecruiterGet, RecruiterUpdate, RecruiterDelete,
     RecruiterResponse, RecruiterListResponse,
 )
 from cache import cache
-
-from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/recruiters", tags=["Recruiter Service"])
@@ -83,62 +79,12 @@ async def delete_recruiter(
     if req.recruiter_id != current_user.user_id:
         return RecruiterResponse(success=False, message="Cannot delete another recruiter's profile")
 
-    # 1. Delete connections (polymorphic, no FK)
-    db.execute(text("DELETE FROM connections WHERE requester_id = :id OR receiver_id = :id"), {"id": req.recruiter_id})
-
-    # 2. Delete thread participants and messages (polymorphic, no FK)
-    db.execute(text("DELETE FROM thread_participants WHERE user_id = :id AND user_type = 'recruiter'"), {"id": req.recruiter_id})
-    db.execute(text("DELETE FROM messages WHERE sender_id = :id AND sender_type = 'recruiter'"), {"id": req.recruiter_id})
-
-    # 3. Delete authentication credentials (MANDATORY)
-    db.query(UserCredentials).filter(
-        UserCredentials.user_id == req.recruiter_id,
-        UserCredentials.user_type == "recruiter"
-    ).delete()
-
-    # 4. Delete the recruiter profile if it exists
     recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == req.recruiter_id).first()
-    if recruiter:
-        db.delete(recruiter)
-    
+    if not recruiter:
+        return RecruiterResponse(success=False, message=f"Recruiter {req.recruiter_id} not found")
+
+    db.delete(recruiter)
     db.commit()
 
     cache.delete(f"recruiters:get:{req.recruiter_id}")
     return RecruiterResponse(success=True, message="Recruiter deleted successfully")
-
-from pydantic import BaseModel
-from typing import Optional
-
-
-class RecruiterSearch(BaseModel):
-    keyword: Optional[str] = None
-    page: int = 1
-    page_size: int = 10
-
-
-@router.post("/search", response_model=RecruiterListResponse, summary="Search recruiters")
-async def search_recruiters(req: RecruiterSearch, db: Session = Depends(get_db)):
-    """Search recruiters by keyword matching first_name, last_name, company_name, role, or industry."""
-    query = db.query(Recruiter)
-
-    if req.keyword:
-        kw = f"%{req.keyword.strip()}%"
-        query = query.filter(
-            or_(
-                Recruiter.first_name.like(kw),
-                Recruiter.last_name.like(kw),
-                Recruiter.company_name.like(kw),
-                Recruiter.role.like(kw),
-                Recruiter.company_industry.like(kw),
-            )
-        )
-
-    total = query.count()
-    offset = (req.page - 1) * req.page_size
-    recruiters = query.offset(offset).limit(req.page_size).all()
-
-    return RecruiterListResponse(
-        success=True,
-        message=f"Found {total} recruiters",
-        data=[r.to_dict() for r in recruiters],
-    )

@@ -21,10 +21,7 @@ class MemberCreate(BaseModel):
     education: Optional[List[Dict[str, Any]]] = Field(None, description="Education list")
     skills: Optional[List[str]] = Field(None, description="List of skills")
     profile_photo_url: Optional[str] = Field(None, description="Profile photo URL")
-    cover_photo_url: Optional[str] = Field(None, description="Cover photo URL")
     resume_text: Optional[str] = Field(None, description="Resume text content")
-    resume_pdf_url: Optional[str] = Field(None, description="Resume PDF data URL or storage URL")
-    resume_filename: Optional[str] = Field(None, description="Original filename of the resume PDF")
 
     model_config = {
         "json_schema_extra": {
@@ -73,10 +70,7 @@ class MemberUpdate(BaseModel):
     education: Optional[List[Dict[str, Any]]] = None
     skills: Optional[List[str]] = None
     profile_photo_url: Optional[str] = None
-    cover_photo_url: Optional[str] = None
     resume_text: Optional[str] = None
-    resume_pdf_url: Optional[str] = None
-    resume_filename: Optional[str] = None
 
 
 class MemberDelete(BaseModel):

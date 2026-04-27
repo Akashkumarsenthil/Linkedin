@@ -21,8 +21,6 @@ class Recruiter(Base):
     company_size = Column(String(50))
     role = Column(String(100), default="recruiter")
     access_level = Column(String(50), default="standard")
-    profile_photo_url = Column(String(16000000))  # Use String/Text with size for base64 if needed, though usually Text is better
-    cover_photo_url = Column(String(16000000))
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
@@ -39,8 +37,6 @@ class Recruiter(Base):
             "company_size": self.company_size,
             "role": self.role,
             "access_level": self.access_level,
-            "profile_photo_url": getattr(self, "profile_photo_url", ""),
-            "cover_photo_url": getattr(self, "cover_photo_url", ""),
             "created_at": str(self.created_at) if self.created_at else None,
             "updated_at": str(self.updated_at) if self.updated_at else None,
         }

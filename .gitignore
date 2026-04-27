@@ -50,5 +50,3 @@ htmlcov/
 
 # Pytest
 .pytest_cache/
-
-mongodb_data/

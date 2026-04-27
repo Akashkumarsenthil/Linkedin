@@ -23,11 +23,8 @@ class Member(Base):
     experience = Column(JSON)
     education = Column(JSON)
     skills = Column(JSON)
-    profile_photo_url = Column(Text(16000000))
-    cover_photo_url = Column(Text(16000000))
+    profile_photo_url = Column(Text)
     resume_text = Column(Text)
-    resume_pdf_url = Column(Text(16000000))
-    resume_filename = Column(String(255))
     connections_count = Column(Integer, default=0)
     profile_views = Column(Integer, default=0)
     created_at = Column(TIMESTAMP, server_default=func.now())
@@ -49,10 +46,7 @@ class Member(Base):
             "education": self.education,
             "skills": self.skills,
             "profile_photo_url": self.profile_photo_url,
-            "cover_photo_url": self.cover_photo_url,
             "resume_text": self.resume_text,
-            "resume_pdf_url": self.resume_pdf_url,
-            "resume_filename": self.resume_filename,
             "connections_count": self.connections_count,
             "profile_views": self.profile_views,
             "created_at": str(self.created_at) if self.created_at else None,

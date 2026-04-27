@@ -287,7 +287,7 @@ def test_message_send_success_and_db_state(client: TestClient):
         r_thread = client.post("/threads/open", json={
             "subject": "Reliability test thread",
             "participant_ids": [{"user_id": member_id, "user_type": "member"}],
-        })
+        }, headers=_auth_headers(member["access_token"]))
         assert r_thread.status_code == 200
         thread_id = r_thread.json()["data"]["thread_id"]
 
@@ -296,7 +296,7 @@ def test_message_send_success_and_db_state(client: TestClient):
             "sender_id": member_id,
             "sender_type": "member",
             "message_text": "Hello, reliability test!",
-        })
+        }, headers=_auth_headers(member["access_token"]))
         assert r_send.status_code == 200
         body = r_send.json()
         assert body["success"] is True, f"Message send failed: {body}"
@@ -378,7 +378,7 @@ def test_message_send_retry_exhausted(client: TestClient):
             "sender_id": member_id,
             "sender_type": "member",
             "message_text": "This should never be stored.",
-        })
+            }, headers=_auth_headers(member["access_token"]))
         assert r.status_code == 200
         body = r.json()
         assert body["success"] is False, f"Expected success:False after retry exhaustion, got: {body}"
@@ -401,6 +401,44 @@ def test_message_send_retry_exhausted(client: TestClient):
             verify_db.close()
     finally:
         app.dependency_overrides.pop(get_db, None)
+        _delete_member(client, member_id, member["access_token"])
+
+
+@pytest.mark.integration
+def test_message_send_idempotent_client_message_id(client: TestClient):
+    """Duplicate send with same client_message_id should not create extra rows."""
+    member = _create_member(client)
+    member_id = member["member_id"]
+
+    try:
+        r_thread = client.post("/threads/open", json={
+            "subject": "Idempotent send test",
+            "participant_ids": [{"user_id": member_id, "user_type": "member"}],
+        }, headers=_auth_headers(member["access_token"]))
+        assert r_thread.status_code == 200
+        thread_id = r_thread.json()["data"]["thread_id"]
+
+        payload = {
+            "thread_id": thread_id,
+            "sender_id": member_id,
+            "sender_type": "member",
+            "message_text": "Idempotent hello",
+            "client_message_id": f"cid-{uuid.uuid4().hex}",
+        }
+        r1 = client.post("/messages/send", json=payload, headers=_auth_headers(member["access_token"]))
+        r2 = client.post("/messages/send", json=payload, headers=_auth_headers(member["access_token"]))
+        assert r1.status_code == 200 and r1.json()["success"] is True
+        assert r2.status_code == 200 and r2.json()["success"] is True
+
+        from database import SessionLocal
+        from models.message import Message
+        db = SessionLocal()
+        try:
+            rows = db.query(Message).filter(Message.thread_id == thread_id).all()
+            assert len(rows) == 1, f"Expected 1 idempotent message row, found {len(rows)}"
+        finally:
+            db.close()
+    finally:
         _delete_member(client, member_id, member["access_token"])
 
 

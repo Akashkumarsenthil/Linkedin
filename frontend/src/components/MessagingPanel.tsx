@@ -3,7 +3,7 @@
  * Uses the stored JWT token for sender identity.
  */
 import { useState, useRef, useEffect } from 'react'
-import { apiPost, parseStoredUser } from '../api'
+import { apiPost, getStoredToken, parseStoredUser } from '../api'
 
 interface MsgData {
   message_id: number
@@ -17,6 +17,11 @@ interface ThreadData {
   thread_id: number
   subject: string | null
   created_at: string
+  unread_count?: number
+  recipient?: { user_id: number; user_type: UserType; name: string }
+  is_group?: boolean
+  participant_count?: number
+  conversation_name?: string
   last_message?: MsgData
 }
 
@@ -51,11 +56,14 @@ export function MessagingPanel() {
   const [msgText, setMsgText]         = useState('')
   const [sendLoading, setSendL]       = useState(false)
   const [sendErr, setSendErr]         = useState<string | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
 
   const [showNew, setShowNew]         = useState(false)
   const [newSubject, setNewSubject]   = useState('')
   const [newParticipant, setNewPart]  = useState('')
+  const [newParticipants, setNewParticipants] = useState<Array<{ user_id: number; user_type: UserType; name?: string }>>([])
   const [newParticType, setNewPType]  = useState<UserType>('member')
+  const [recipientPreview, setRecipientPreview] = useState<string | null>(null)
   const [newLoading, setNewL]         = useState(false)
   const [newErr, setNewErr]           = useState<string | null>(null)
 
@@ -70,6 +78,15 @@ export function MessagingPanel() {
     if (identity) loadThreads(identity.user_id, identity.user_type)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!showNew) return
+    const timer = setTimeout(() => {
+      void previewRecipient()
+    }, 250)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newParticipant, newParticType, showNew])
 
   async function loadThreads(id: number, type: UserType) {
     setThreadsL(true)
@@ -93,10 +110,19 @@ export function MessagingPanel() {
     setMsgsL(true)
     try {
       const r = await apiPost<{ success: boolean; message: string; data: MsgData[] }>(
-        '/messages/list', { thread_id: threadId, page: 1, page_size: 50 },
+        '/messages/list',
+        {
+          thread_id: threadId,
+          viewer_id: identity?.user_id,
+          viewer_type: identity?.user_type,
+          mark_as_read: true,
+          page: 1,
+          page_size: 50,
+        },
       )
       if (!r.success) throw new Error(r.message)
       setMessages((r.data ?? []).slice().reverse())
+      setThreads(prev => prev.map(t => t.thread_id === threadId ? { ...t, unread_count: 0 } : t))
     } catch (e) {
       setMsgsErr(e instanceof Error ? e.message : 'Failed to load messages')
     } finally {
@@ -111,10 +137,15 @@ export function MessagingPanel() {
     try {
       const r = await apiPost<{ success: boolean; message: string; data: MsgData }>(
         '/messages/send',
-        { thread_id: selectedId, sender_id: identity.user_id, sender_type: identity.user_type, message_text: msgText.trim() },
+        {
+          thread_id: selectedId,
+          sender_id: identity.user_id,
+          sender_type: identity.user_type,
+          message_text: msgText.trim(),
+          client_message_id: crypto.randomUUID(),
+        },
       )
       if (!r.success) throw new Error(r.message)
-      setMessages(prev => [...prev, r.data])
       setMsgText('')
     } catch (e) {
       setSendErr(e instanceof Error ? e.message : 'Failed to send message')
@@ -125,8 +156,7 @@ export function MessagingPanel() {
 
   async function openThread() {
     if (!identity) return
-    const otherId = parseInt(newParticipant, 10)
-    if (!otherId || otherId < 1) { setNewErr('Enter a valid participant ID'); return }
+    if (newParticipants.length === 0) { setNewErr('Add at least one participant'); return }
     setNewL(true)
     setNewErr(null)
     try {
@@ -134,13 +164,15 @@ export function MessagingPanel() {
         '/threads/open',
         { participant_ids: [
             { user_id: identity.user_id, user_type: identity.user_type },
-            { user_id: otherId, user_type: newParticType },
+            ...newParticipants.map(p => ({ user_id: p.user_id, user_type: p.user_type })),
           ], subject: newSubject || undefined },
       )
       if (!r.success) throw new Error(r.message)
       setShowNew(false)
       setNewSubject('')
       setNewPart('')
+      setNewParticipants([])
+      setRecipientPreview(null)
       await loadThreads(identity.user_id, identity.user_type)
       setSelectedId(r.data.thread_id)
       setMessages([])
@@ -151,7 +183,98 @@ export function MessagingPanel() {
     }
   }
 
+  async function previewRecipient() {
+    const otherId = parseInt(newParticipant, 10)
+    if (!otherId || otherId < 1) {
+      setRecipientPreview(null)
+      return
+    }
+    try {
+      if (newParticType === 'member') {
+        const r = await apiPost<{ success: boolean; data?: { first_name: string; last_name: string } }>(
+          '/members/get',
+          { member_id: otherId },
+        )
+        if (r.success && r.data) {
+          setRecipientPreview(`${r.data.first_name} ${r.data.last_name}`)
+          return
+        }
+      } else {
+        const r = await apiPost<{ success: boolean; data?: { first_name: string; last_name: string } }>(
+          '/recruiters/get',
+          { recruiter_id: otherId },
+        )
+        if (r.success && r.data) {
+          setRecipientPreview(`${r.data.first_name} ${r.data.last_name}`)
+          return
+        }
+      }
+      setRecipientPreview(null)
+    } catch {
+      setRecipientPreview(null)
+    }
+  }
+
+  function addParticipantFromInput() {
+    const otherId = parseInt(newParticipant, 10)
+    if (!otherId || otherId < 1) {
+      setNewErr('Enter a valid participant ID')
+      return
+    }
+    setNewErr(null)
+    setNewParticipants(prev => {
+      if (prev.some(p => p.user_id === otherId && p.user_type === newParticType)) return prev
+      return [...prev, { user_id: otherId, user_type: newParticType, name: recipientPreview || undefined }]
+    })
+    setNewPart('')
+    setRecipientPreview(null)
+  }
+
+  function removeParticipant(idx: number) {
+    setNewParticipants(prev => prev.filter((_, i) => i !== idx))
+  }
+
   const selectedThread = threads.find(t => t.thread_id === selectedId)
+
+  useEffect(() => {
+    if (!identity || !selectedId) return
+    const token = getStoredToken()
+    if (!token) return
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${window.location.host}/api/messages/ws/${selectedId}?token=${encodeURIComponent(token)}`)
+    wsRef.current = ws
+
+    ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data)
+        if (data.event === 'message.created' && data.message) {
+          setMessages(prev => {
+            if (prev.some(m => m.message_id === data.message.message_id)) return prev
+            return [...prev, data.message]
+          })
+          setThreads(prev => prev.map(t => {
+            if (t.thread_id !== selectedId) return t
+            return {
+              ...t,
+              last_message: data.message,
+              unread_count:
+                data.message.sender_id === identity.user_id && data.message.sender_type === identity.user_type
+                  ? (t.unread_count ?? 0)
+                  : 0,
+            }
+          }))
+        }
+      } catch {
+        // ignore malformed ws payload
+      }
+    }
+
+    return () => {
+      ws.close()
+      wsRef.current = null
+    }
+  }, [identity, selectedId])
 
   // Not logged in
   if (!identity) {
@@ -213,7 +336,15 @@ export function MessagingPanel() {
                 tabIndex={0}
                 onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
               >
-                <span className="thread-subject">{t.subject || `Thread #${t.thread_id}`}</span>
+                <span className="thread-subject">{t.conversation_name || t.recipient?.name || t.subject || `Thread #${t.thread_id}`}</span>
+                <span className="thread-subject" style={{ fontSize: 12, color: '#666' }}>
+                  {t.is_group ? `Group · ${t.participant_count ?? 0} participants` : (t.subject || `Conversation #${t.thread_id}`)}
+                </span>
+                {(t.unread_count ?? 0) > 0 && (
+                  <span className="conn-status" style={{ background: '#0a66c2', color: '#fff' }}>
+                    {t.unread_count}
+                  </span>
+                )}
                 {t.last_message && (
                   <span className="thread-preview">
                     {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
@@ -246,6 +377,22 @@ export function MessagingPanel() {
                     <option value="recruiter">recruiter</option>
                   </select>
                 </label>
+                {recipientPreview && (
+                  <p className="meta">Recipient: <strong>{recipientPreview}</strong></p>
+                )}
+                <button type="button" className="ghost-btn" onClick={addParticipantFromInput}>
+                  + Add recipient
+                </button>
+                {newParticipants.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {newParticipants.map((p, idx) => (
+                      <span key={`${p.user_type}-${p.user_id}`} className="conn-status status-accepted" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        {p.name || `${p.user_type} #${p.user_id}`}
+                        <button type="button" className="icon-btn" onClick={() => removeParticipant(idx)} style={{ width: 18, height: 18 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {newErr && <p className="error">{newErr}</p>}
                 <button type="button" className="primary" onClick={openThread} disabled={newLoading}>
                   {newLoading ? 'Creating…' : 'Start conversation'}
@@ -266,7 +413,9 @@ export function MessagingPanel() {
           ) : (
             <>
               <div className="msg-thread-header">
-                <span className="thread-subject">{selectedThread?.subject || `Thread #${selectedId}`}</span>
+                <span className="thread-subject">
+                  {selectedThread?.conversation_name || selectedThread?.recipient?.name || selectedThread?.subject || `Thread #${selectedId}`}
+                </span>
                 <button
                   type="button"
                   className="icon-btn"

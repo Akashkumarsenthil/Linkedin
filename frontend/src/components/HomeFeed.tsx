@@ -12,7 +12,7 @@ interface HomeFeedProps {
     email: string
     profile: Record<string, unknown>
   } | null
-  onNavigateProfile: (id?: number) => void
+  onNavigateProfile: () => void
 }
 
 const NEWS_ITEMS = [
@@ -272,31 +272,29 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
       <aside className="feed-left-rail">
         <div className="feed-profile-card">
           <div className="feed-profile-cover ln-blue-sky-gradient" />
-          <button type="button" className="feed-profile-avatar-btn" onClick={() => onNavigateProfile(me.user_id)}>
+          <button type="button" className="feed-profile-avatar-btn" onClick={onNavigateProfile}>
             {photo ? <img src={photo} alt={name} className="feed-profile-avatar-img" /> : <div className="feed-profile-avatar-fallback">{initials}</div>}
           </button>
           <div className="feed-profile-info">
-            <button type="button" className="feed-profile-name-btn" onClick={() => onNavigateProfile(me.user_id)}>{name}</button>
+            <button type="button" className="feed-profile-name-btn" onClick={onNavigateProfile}>{name}</button>
             {headline.trim() && <p className="feed-profile-headline">{headline}</p>}
           </div>
-          {me.user_type === 'member' && (
-            <div className="feed-profile-stats">
-              <button type="button" className="feed-stat-row" onClick={() => onNavigateProfile(me.user_id)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name="eye" size={16} style={{ color: 'var(--text-muted)' }} />
-                  <span className="feed-stat-label">Profile viewers</span>
-                </div>
-                <span className="feed-stat-value">{Number(profile.profile_views || 0).toLocaleString()}</span>
-              </button>
-              <button type="button" className="feed-stat-row" onClick={() => onNavigateProfile(me.user_id)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name="connections" size={16} style={{ color: 'var(--text-muted)' }} />
-                  <span className="feed-stat-label">Connections</span>
-                </div>
-                <span className="feed-stat-value">{Number(profile.connections_count || 0).toLocaleString()}</span>
-              </button>
-            </div>
-          )}
+          <div className="feed-profile-stats">
+            <button type="button" className="feed-stat-row" onClick={onNavigateProfile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="eye" size={16} style={{ color: 'var(--text-muted)' }} />
+                <span className="feed-stat-label">Profile viewers</span>
+              </div>
+              <span className="feed-stat-value">{Number(profile.profile_views || 0).toLocaleString()}</span>
+            </button>
+            <button type="button" className="feed-stat-row" onClick={onNavigateProfile}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Icon name="connections" size={16} style={{ color: 'var(--text-muted)' }} />
+                <span className="feed-stat-label">Connections</span>
+              </div>
+              <span className="feed-stat-value">{Number(profile.connections_count || 0).toLocaleString()}</span>
+            </button>
+          </div>
         </div>
 
         <nav className="feed-left-links">
@@ -333,7 +331,7 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         {loading && posts.length === 0 ? <div className="feed-empty">Loading posts…</div> : (
           <div className="feed-posts">
             {posts.map((p) => (
-              <PostCard key={p.post_id} post={p} currentUserId={me.user_id} currentUserType={me.user_type} currentUserPhoto={photo} currentUserName={name} onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} onNavigateProfile={onNavigateProfile} />
+              <PostCard key={p.post_id} post={p} currentUserId={me.user_id} currentUserType={me.user_type} onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} />
             ))}
           </div>
         )}

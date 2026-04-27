@@ -16,7 +16,7 @@ from models.member import Member, ProfileViewDaily
 from schemas.analytics import (
     EventIngest, TopJobsRequest, FunnelRequest, GeoRequest,
     MemberDashboardRequest, LeastAppliedRequest, SavesTrendRequest,
-    ClicksPerJobRequest, AnalyticsResponse,
+    ClicksPerJobRequest, NetworkGrowthRequest, AnalyticsResponse,
 )
 from kafka_producer import kafka_producer
 
@@ -585,3 +585,65 @@ async def saves_trend(req: SavesTrendRequest, current_user: TokenPayload = Depen
         )
     finally:
         db.close()
+
+
+@router.post(
+    "/analytics/network/growth",
+    response_model=AnalyticsResponse,
+    summary="Network growth and messaging activity",
+)
+async def network_growth(req: NetworkGrowthRequest, current_user: TokenPayload = Depends(require_recruiter)):
+    """
+    Admin/recruiter visibility endpoint.
+    Returns connection and messaging growth from Kafka-backed event logs.
+    """
+    try:
+        cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=req.window_days)).isoformat()
+        pipeline = [
+            {
+                "$match": {
+                    "event_type": {"$in": ["connection.requested", "connection.accepted", "message.sent"]},
+                    "timestamp": {"$gte": cutoff_iso},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$event_type",
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+        summary = await mongo_db.event_logs.aggregate(pipeline).to_list(length=20)
+        by_type = {row["_id"]: row["count"] for row in summary}
+
+        recent_edges = await mongo_db.event_logs.find(
+            {"event_type": "connection.accepted", "timestamp": {"$gte": cutoff_iso}},
+            projection={"_id": 0, "payload": 1, "timestamp": 1},
+            sort=[("timestamp", -1)],
+            limit=100,
+        ).to_list(length=100)
+
+        recent_messages = await mongo_db.event_logs.find(
+            {"event_type": "message.sent", "timestamp": {"$gte": cutoff_iso}},
+            projection={"_id": 0, "payload": 1, "actor_id": 1, "timestamp": 1},
+            sort=[("timestamp", -1)],
+            limit=100,
+        ).to_list(length=100)
+
+        return AnalyticsResponse(
+            success=True,
+            message="Network growth analytics loaded",
+            data={
+                "window_days": req.window_days,
+                "counts": {
+                    "connections_requested": by_type.get("connection.requested", 0),
+                    "connections_accepted": by_type.get("connection.accepted", 0),
+                    "messages_sent": by_type.get("message.sent", 0),
+                },
+                "recent_connection_events": recent_edges,
+                "recent_message_events": recent_messages,
+            },
+        )
+    except Exception as e:
+        logger.error(f"Network growth analytics failed: {e}")
+        return AnalyticsResponse(success=False, message=f"Network growth analytics failed: {str(e)}")

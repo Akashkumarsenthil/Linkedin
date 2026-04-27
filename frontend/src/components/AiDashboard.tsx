@@ -10,8 +10,8 @@
  *  - Standalone resume parsing and job matching tools
  */
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { apiPost, apiGet } from '../api'
+import { useState, useEffect, useCallback } from 'react'
+import { apiPost } from '../api'
 import { useAiTaskWs } from '../hooks/useAiTaskWs'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -111,89 +111,57 @@ function ProgressBar({ value }: { value: number }) {
 function StepTimeline({ steps }: { steps: { step: string; status: string; timestamp: string }[] }) {
   if (!steps.length) return null
   return (
-    <div className="li-timeline">
-      {steps.map((s, i) => {
-        const isDone    = s.status === 'completed' || s.status === 'done'
-        const isRunning = s.status === 'running'
-        const isError   = s.status === 'error' || s.status === 'failed'
-        const isLast    = i === steps.length - 1
-        return (
-          <div key={i} className="li-timeline-row">
-            <div className="li-timeline-spine">
-              <div className={`li-timeline-node ${isDone ? 'done' : isRunning ? 'running' : isError ? 'error' : 'pending'}`}>
-                {isDone ? '✓' : isError ? '✕' : isRunning ? <span className="li-node-pulse" /> : null}
-              </div>
-              {!isLast && <div className={`li-timeline-line ${isDone ? 'done' : ''}`} />}
-            </div>
-            <div className="li-timeline-body">
-              <span className="li-step-name">{STEP_LABELS[s.step] ?? s.step}</span>
-              <span className="li-step-time">{fmtTime(s.timestamp)}</span>
-            </div>
-          </div>
-        )
-      })}
+    <div className="ai-steps">
+      {steps.map((s, i) => (
+        <div key={i} className={`ai-step-row ${s.status}`}>
+          <span className="ai-step-dot" />
+          <span className="ai-step-name">{STEP_LABELS[s.step] ?? s.step}</span>
+          <span className="ai-step-time">{fmtTime(s.timestamp)}</span>
+        </div>
+      ))}
     </div>
   )
 }
 
+function ScoreBar({ value }: { value: number }) {
+  const pct = Math.round(value * 100)
+  const cls = pct >= 70 ? 'score-bar-fill high' : pct >= 45 ? 'score-bar-fill mid' : 'score-bar-fill low'
+  return (
+    <div className="score-bar-track">
+      <div className={cls} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
 
 function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
   const pct = Math.round(entry.overall_score * 100)
-  const initials = (entry.candidate_name ?? `#${entry.candidate_id}`)
-    .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-  const isStrong = entry.recommendation?.toLowerCase().includes('strong')
-  const isGood   = entry.recommendation?.toLowerCase().includes('good')
-  const recClass = isStrong ? 'li-rec-strong' : isGood ? 'li-rec-good' : 'li-rec-weak'
-  const scoreColor = pct >= 70 ? 'var(--success)' : pct >= 45 ? '#915907' : 'var(--error)'
+  const recClass = entry.recommendation?.toLowerCase().includes('strong')
+    ? 'rec-strong'
+    : entry.recommendation?.toLowerCase().includes('good')
+    ? 'rec-good'
+    : 'rec-weak'
 
   return (
-    <div className="li-candidate-card">
-      <div className="li-candidate-top">
-        <div className="li-avatar">{initials}</div>
-        <div className="li-candidate-meta">
-          <span className="li-candidate-name">{entry.candidate_name ?? `Candidate #${entry.candidate_id}`}</span>
-          <span className={`li-rec-badge ${recClass}`}>{entry.recommendation}</span>
+    <div className="candidate-card">
+      <div className="candidate-header">
+        <div className="candidate-avatar">{(entry.candidate_name ?? `#${entry.candidate_id}`)[0].toUpperCase()}</div>
+        <div className="candidate-info">
+          <span className="candidate-name">{entry.candidate_name ?? `Candidate #${entry.candidate_id}`}</span>
+          <span className={`rec-badge ${recClass}`}>{entry.recommendation}</span>
         </div>
-        <div className="li-score-circle" style={{ color: scoreColor, borderColor: scoreColor }}>
-          {pct}%
-        </div>
+        <div className="candidate-score">{pct}%</div>
       </div>
-
-      <div className="li-score-bar-wrap">
-        <div className="li-score-bar-track">
-          <div className="li-score-bar-fill" style={{ width: `${pct}%`, background: scoreColor }} />
-        </div>
-        <span className="li-score-pct" style={{ color: scoreColor }}>{pct}%</span>
-      </div>
-
+      <ScoreBar value={entry.overall_score} />
       {(entry.skills_score !== undefined || entry.location_score !== undefined) && (
-        <div className="li-sub-scores">
+        <div className="score-breakdown">
           {entry.skills_score !== undefined && (
-            <div className="li-sub-score-item">
-              <span className="li-sub-label">Skills</span>
-              <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.skills_score * 100)}%` }} />
-              </div>
-              <span className="li-sub-pct">{fmtScore(entry.skills_score)}</span>
-            </div>
+            <span className="score-dim">Skills {fmtScore(entry.skills_score)}</span>
           )}
           {entry.location_score !== undefined && (
-            <div className="li-sub-score-item">
-              <span className="li-sub-label">Location</span>
-              <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.location_score * 100)}%` }} />
-              </div>
-              <span className="li-sub-pct">{fmtScore(entry.location_score)}</span>
-            </div>
+            <span className="score-dim">Location {fmtScore(entry.location_score)}</span>
           )}
           {entry.seniority_score !== undefined && (
-            <div className="li-sub-score-item">
-              <span className="li-sub-label">Seniority</span>
-              <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.seniority_score * 100)}%` }} />
-              </div>
-              <span className="li-sub-pct">{fmtScore(entry.seniority_score)}</span>
-            </div>
+            <span className="score-dim">Seniority {fmtScore(entry.seniority_score)}</span>
           )}
         </div>
       )}
@@ -203,136 +171,19 @@ function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
 
 function OutreachCard({ draft, index }: { draft: OutreachDraft; index: number }) {
   const [expanded, setExpanded] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const initials = (draft.candidate_name ?? `C${index + 1}`)
-    .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-
-  const handleCopy = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    navigator.clipboard.writeText(draft.body).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
-
   return (
-    <div className="li-inmail-card">
-      <div className="li-inmail-header" onClick={() => setExpanded((v) => !v)}>
-        <div className="li-inmail-avatar">{initials}</div>
-        <div className="li-inmail-info">
-          <div className="li-inmail-top-row">
-            <span className="li-inmail-to">{draft.candidate_name ?? `Candidate ${index + 1}`}</span>
-            <span className="li-inmail-match">{fmtScore(draft.match_score)} match</span>
-          </div>
-          <div className="li-inmail-subject">{draft.subject}</div>
+    <div className="outreach-card">
+      <div className="outreach-header" onClick={() => setExpanded((v) => !v)}>
+        <div className="outreach-meta">
+          <span className="outreach-to">{draft.candidate_name ?? `Candidate ${index + 1}`}</span>
+          <span className="outreach-score">{fmtScore(draft.match_score)} match</span>
         </div>
-        <div className="li-inmail-actions">
-          {expanded && (
-            <button type="button" className="li-copy-btn" onClick={handleCopy} title="Copy message">
-              {copied ? '✓' : '⎘'}
-            </button>
-          )}
-          <span className="li-inmail-chevron">{expanded ? '▴' : '▾'}</span>
-        </div>
+        <div className="outreach-subject">{draft.subject}</div>
+        <span className="outreach-chevron">{expanded ? '▴' : '▾'}</span>
       </div>
       {expanded && (
-        <div className="li-inmail-body">
-          <div className="li-inmail-divider" />
-          <p className="li-inmail-text">{draft.body}</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ResumeView({ data }: { data: Record<string, unknown> }) {
-  // The router wraps parsed fields inside data.data — unwrap if present
-  const parsed = (data.data && typeof data.data === 'object' ? data.data : data) as Record<string, unknown>
-
-  const name    = String(parsed.name ?? parsed.full_name ?? '')
-  const email   = String(parsed.email ?? '')
-  const phone   = String(parsed.phone ?? '')
-  const summary = String(parsed.summary ?? parsed.objective ?? '')
-  const yearsExp = parsed.years_of_experience != null ? `${parsed.years_of_experience} yrs exp` : ''
-  const skills: string[]     = Array.isArray(parsed.skills) ? parsed.skills as string[] : []
-  const experience: unknown[] = Array.isArray(parsed.experience) ? parsed.experience : []
-  const education: unknown[]  = Array.isArray(parsed.education) ? parsed.education : []
-
-  return (
-    <div className="rp-card">
-      {/* Identity */}
-      <div className="rp-identity">
-        <div className="rp-avatar">{name ? name.split(' ').slice(0,2).map((w: string) => w[0]).join('').toUpperCase() : '?'}</div>
-        <div>
-          {name && <p className="rp-name">{name}</p>}
-          <div className="rp-contact-row">
-            {email && <span className="rp-contact-item">✉ {email}</span>}
-            {phone && <span className="rp-contact-item">📞 {phone}</span>}
-            {yearsExp && <span className="rp-contact-item">🕐 {yearsExp}</span>}
-          </div>
-        </div>
-      </div>
-
-      {summary && (
-        <div className="rp-section">
-          <h4 className="rp-section-title">Summary</h4>
-          <p className="rp-section-text">{summary}</p>
-        </div>
-      )}
-
-      {skills.length > 0 && (
-        <div className="rp-section">
-          <h4 className="rp-section-title">Skills</h4>
-          <div className="rp-tags">
-            {skills.map((s) => <span key={s} className="rp-tag">{s}</span>)}
-          </div>
-        </div>
-      )}
-
-      {experience.length > 0 && (
-        <div className="rp-section">
-          <h4 className="rp-section-title">Experience</h4>
-          <div className="rp-timeline">
-            {experience.map((exp, i) => {
-              const e = exp as Record<string, unknown>
-              return (
-                <div key={i} className="rp-timeline-item">
-                  <div className="rp-timeline-dot" />
-                  <div className="rp-timeline-content">
-                    <span className="rp-job-title">{String(e.title ?? e.position ?? e.role ?? '')}</span>
-                    {!!e.company && <span className="rp-company">{String(e.company)}</span>}
-                    {!!(e.start_date || e.duration || e.dates) && (
-                      <span className="rp-dates">{String(e.start_date ?? '')} {e.end_date ? `– ${String(e.end_date)}` : ''}{e.duration ? String(e.duration) : ''}{e.dates ? String(e.dates) : ''}</span>
-                    )}
-                    {!!e.description && <p className="rp-desc">{String(e.description)}</p>}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {education.length > 0 && (
-        <div className="rp-section">
-          <h4 className="rp-section-title">Education</h4>
-          <div className="rp-timeline">
-            {education.map((edu, i) => {
-              const e = edu as Record<string, unknown>
-              return (
-                <div key={i} className="rp-timeline-item">
-                  <div className="rp-timeline-dot" />
-                  <div className="rp-timeline-content">
-                    <span className="rp-job-title">{String(e.degree ?? e.qualification ?? '')}</span>
-                    {!!(e.school ?? e.institution ?? e.field) && <span className="rp-company">{String(e.school ?? e.institution ?? e.field ?? '')}</span>}
-                    {!!(e.year ?? e.graduation_year ?? e.dates) && (
-                      <span className="rp-dates">{String(e.year ?? e.graduation_year ?? e.dates ?? '')}</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+        <div className="outreach-body">
+          <pre className="outreach-text">{draft.body}</pre>
         </div>
       )}
     </div>
@@ -354,19 +205,7 @@ export function AiDashboard() {
 
   // ── selected task ────────────────────────────────────────────────
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
-  const { taskState: wsTaskState, wsStatus } = useAiTaskWs(selectedTaskId)
-  const [restTaskState, setRestTaskState] = useState<Record<string, unknown> | null>(null)
-
-  // Merge: WS data takes priority over REST snapshot
-  const taskState = wsTaskState ?? (restTaskState as unknown as import('../hooks/useAiTaskWs').WsTaskState | null)
-
-  // Fetch task via REST immediately when selected (covers already-completed tasks)
-  useEffect(() => {
-    if (!selectedTaskId) { setRestTaskState(null); return }
-    apiGet<{ success: boolean; data: Record<string, unknown> }>(`/ai/task-status/${selectedTaskId}`)
-      .then((r) => { if (r.success && r.data) setRestTaskState(r.data) })
-      .catch(() => {})
-  }, [selectedTaskId])
+  const { taskState, wsStatus } = useAiTaskWs(selectedTaskId)
 
   // ── approval ─────────────────────────────────────────────────────
   const [feedback, setFeedback] = useState('')
@@ -374,7 +213,9 @@ export function AiDashboard() {
   const [approvalMsg, setApprovalMsg] = useState<string | null>(null)
 
   // ── resume / match tools ─────────────────────────────────────────
-  const [resumeFile, setResumeFile] = useState<File | null>(null)
+  const [resumeText, setResumeText] = useState(
+    'Jane Smith | ML Engineer | jane@example.com\n\n5 years building recommendation systems with Python, PyTorch, and Spark. MS Statistics. Skills: Python, Kafka, AWS.',
+  )
   const [resumeResult, setResumeResult] = useState<Record<string, unknown> | null>(null)
   const [resumeLoading, setResumeLoading] = useState(false)
   const [resumeErr, setResumeErr] = useState<string | null>(null)
@@ -464,17 +305,13 @@ export function AiDashboard() {
 
   // ── resume parsing ────────────────────────────────────────────────
   const handleParseResume = async () => {
-    if (!resumeFile) { setResumeErr('Please select a PDF file first.'); return }
     setResumeLoading(true)
     setResumeErr(null)
-    setResumeResult(null)
     try {
-      const fd = new FormData()
-      fd.append('file', resumeFile)
-      const res = await fetch('/api/ai/parse-resume-pdf', { method: 'POST', body: fd })
-      const r = await res.json()
-      if (r.success) setResumeResult(r.data ?? r)
-      else setResumeErr(r.message ?? 'Parsing failed')
+      const r = await apiPost<{ success: boolean; data: Record<string, unknown> }>('/ai/parse-resume', {
+        resume_text: resumeText,
+      })
+      setResumeResult(r.data ?? r)
     } catch (e) {
       setResumeErr(e instanceof Error ? e.message : 'Request failed')
     } finally {
@@ -515,28 +352,20 @@ export function AiDashboard() {
       {activeTool === 'resume' && (
         <div className="ai-tool-section">
           <p className="hint">
-            Upload a candidate's PDF resume to extract structured data — name, skills, experience, and education — using OpenAI.
+            Standalone resume parsing — uses Ollama when available, falls back to heuristic parsing.
           </p>
-          <label className="cc-upload-area" style={{ marginBottom: '0.75rem' }}>
-            <input
-              type="file"
-              accept=".pdf"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                setResumeFile(e.target.files?.[0] ?? null)
-                setResumeResult(null)
-                setResumeErr(null)
-              }}
-            />
-            <span className="cc-upload-icon">📄</span>
-            <span className="cc-upload-label">{resumeFile ? resumeFile.name : 'Click to upload resume PDF'}</span>
-            <span className="cc-upload-hint">PDF only · max 5 MB</span>
-          </label>
-          <button type="button" className="primary" onClick={handleParseResume} disabled={resumeLoading || !resumeFile}>
+          <textarea
+            className="resume-input"
+            value={resumeText}
+            onChange={(e) => setResumeText(e.target.value)}
+            rows={8}
+            spellCheck={false}
+          />
+          <button type="button" className="primary" onClick={handleParseResume} disabled={resumeLoading}>
             {resumeLoading ? 'Parsing…' : 'Parse resume'}
           </button>
           {resumeErr && <p className="error mt-sm">{resumeErr}</p>}
-          {resumeResult && <ResumeView data={resumeResult} />}
+          {resumeResult && <pre className="json-out">{JSON.stringify(resumeResult, null, 2)}</pre>}
         </div>
       )}
 

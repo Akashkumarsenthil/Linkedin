@@ -139,6 +139,15 @@ async def create_mongo_indexes() -> None:
             "week", name="week_1"
         )
 
+        # message_send_dedup ───────────────────────────────────────
+        # Idempotency index for message send retries keyed by
+        # client_message_id + sender + thread.
+        await mongo_db.message_send_dedup.create_index(
+            [("client_message_id", ASCENDING), ("thread_id", ASCENDING), ("sender_id", ASCENDING), ("sender_type", ASCENDING)],
+            unique=True,
+            name="msg_send_dedup_unique",
+        )
+
         logger.info("✓ MongoDB indexes ensured")
     except Exception as e:
         # Non-fatal: indexes are a performance optimisation, not a correctness

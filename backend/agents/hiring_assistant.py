@@ -45,10 +45,10 @@ from kafka_producer import kafka_producer
 logger = logging.getLogger(__name__)
 
 # ── Concurrency controls ──────────────────────────────────────────────────────
-# Limit how many full hiring workflows run concurrently. Each workflow makes
-# multiple sequential HTTP calls to the OpenAI API, so limiting concurrency
-# helps prevent rate limits and reduces memory usage. Two concurrent workflows
-# is enough for a demo platform.
+# Limit how many full hiring workflows run concurrently.  Each workflow makes
+# multiple sequential HTTP calls to Ollama (a single-threaded LLM server), so
+# running many workflows simultaneously only queues work inside Ollama while
+# consuming memory here.  Two concurrent workflows is enough for a demo platform.
 MAX_CONCURRENT_WORKFLOWS = 2
 
 # Bounded queue: tasks wait here until a dispatcher coroutine picks them up.
@@ -94,14 +94,7 @@ async def _load_task_from_mongo(task_id: str) -> Optional[Dict[str, Any]]:
 async def update_task_status(
     task_id: str, status: str, step: str, data: Any = None, progress: int = 0
 ):
-    """
-    Persist a status transition for a task across all layers.
-
-    Write order: MongoDB first (durable), then memory cache, then WebSocket
-    broadcast, then Kafka publish. If MongoDB fails the exception propagates
-    and the caller marks the task failed. WebSocket and Kafka failures are
-    swallowed so a lost connection or broker outage never kills the workflow.
-    """
+    """Update task status in MongoDB (source of truth), memory cache, WebSocket clients, and Kafka."""
     now = datetime.now(timezone.utc).isoformat()
     step_entry = {"step": step, "status": status, "timestamp": now}
 
@@ -224,27 +217,13 @@ def get_queue_stats() -> Dict[str, Any]:
 
 async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
     """
-    Multi-step hiring assistant workflow orchestrated via Kafka.
-
-    Triggered by the ai.requested Kafka consumer handler (primary path) or
-    directly by the local dispatcher when the Kafka consumer is unavailable
-    (fallback path). Publishes an ai.step_completed event to ai.results after
-    every step so downstream consumers and the UI have real-time visibility.
-
-    Steps
-    -----
-    1. fetch_data       — Load job posting and candidate pool from MySQL.
-    2. parse_resumes    — Concurrent LLM resume parsing; regex fallback per candidate.
-    3. match_candidates — Score each candidate; rules-based with skills/location/seniority weights.
-    4. generate_outreach — Draft personalised recruiter messages for the shortlist.
-    5. await_approval   — Persist result to MongoDB and gate on recruiter approval.
-
-    Failure handling
-    ----------------
-    Any unhandled exception marks the task "failed" in MongoDB so it never
-    gets stuck in "running". The DB session is always closed in the finally
-    block. Individual resume-parse failures are skipped (the candidate is
-    excluded from matching) rather than aborting the whole workflow.
+    Main hiring assistant workflow:
+    1. Fetch job posting and candidates
+    2. Parse resumes
+    3. Match candidates to job
+    4. Rank and shortlist top N
+    5. Generate outreach drafts
+    6. Wait for recruiter approval
     """
     db = SessionLocal()
 
@@ -278,31 +257,23 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             progress=20,
         )
 
-        # ── Step 2: Parse resumes (concurrent) ──────────────────────
+        # ── Step 2: Parse resumes ────────────────────────────────────
         await update_task_status(task_id, "running", "parse_resumes", progress=30)
 
-        async def _parse_one(member):
+        parsed_resumes = {}
+        for member in members:
             resume_text = member.resume_text or member.about or ""
-            if not resume_text:
-                return member.member_id, None
-            parsed = await parse_resume_with_llm(resume_text)
-            return member.member_id, parsed
+            if resume_text:
+                parsed = await parse_resume_with_llm(resume_text)
+                parsed_resumes[member.member_id] = parsed
 
-        results = await asyncio.gather(*[_parse_one(m) for m in members])
-        parsed_resumes = {mid: p for mid, p in results if p is not None}
-
-        # Persist traces
-        if parsed_resumes:
-            await mongo_db.agent_traces.insert_many([
-                {
-                    "task_id": task_id,
-                    "step": "resume_parser",
-                    "member_id": mid,
-                    "result": parsed,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                for mid, parsed in parsed_resumes.items()
-            ])
+            await mongo_db.agent_traces.insert_one({
+                "task_id": task_id,
+                "step": "resume_parser",
+                "member_id": member.member_id,
+                "result": parsed_resumes.get(member.member_id, {}),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
 
         await update_task_status(
             task_id, "running", "parse_resumes",
@@ -418,36 +389,13 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-async def enqueue_task(task_id: str, job_id: int, top_n: int) -> None:
-    """
-    Place a task into the local dispatcher queue.
-
-    Called by the Kafka consumer's ai.requested handler so that workflow
-    execution is triggered by the Kafka message, not by the HTTP request.
-    Also called directly by start_task() as a fallback when Kafka is unavailable.
-    """
-    await _task_queue.put((task_id, job_id, top_n))
-    logger.info(
-        f"[enqueue_task] task {task_id[:8]}… enqueued "
-        f"(queue depth now {_task_queue.qsize()})"
-    )
-
-
 async def start_task(job_id: int, top_n: int = 5) -> str:
     """
     Create a new hiring assistant task.
 
-    Primary path (Kafka available):
-      1. Persist task to MongoDB with status="queued".
-      2. Publish ai.requested event to ai.requests topic.
-      3. Kafka consumer receives the event and calls enqueue_task() → dispatcher runs workflow.
-
-    Fallback path (Kafka unavailable):
-      1. Persist task to MongoDB.
-      2. Call enqueue_task() directly so the workflow still runs.
-
-    The task is always queryable immediately after this function returns because
-    it is written to MongoDB before any background work begins.
+    Persists the task document to MongoDB synchronously before starting the
+    background coroutine, so the task is always queryable even if the workflow
+    hasn't executed a single step yet.
     """
     task_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
@@ -463,16 +411,13 @@ async def start_task(job_id: int, top_n: int = 5) -> str:
     }
 
     # Write to MongoDB BEFORE anything else so the task is always queryable.
+    # Use a copy to avoid motor mutating task_doc with the _id field.
     await mongo_db.agent_tasks.insert_one({**task_doc})
 
     # Cache in memory
     active_tasks[task_id] = task_doc
 
-    # Publish to Kafka ai.requests (best-effort telemetry + orchestration signal).
-    # When the Kafka consumer is healthy, handle_ai_requested() will receive
-    # this message and call enqueue_task() — completing the Kafka-orchestrated path.
-    # The local enqueue below is always executed so the workflow runs regardless
-    # of consumer availability (graceful degradation).
+    # Publish to Kafka (best-effort)
     try:
         await kafka_producer.publish(
             topic="ai.requests",
@@ -482,16 +427,18 @@ async def start_task(job_id: int, top_n: int = 5) -> str:
             entity_id=task_id,
             payload={"job_id": job_id, "top_n": top_n},
             trace_id=task_id,
-            idempotency_key=f"ai.requested:{task_id}",
         )
-        logger.info(f"[start_task] task {task_id[:8]}… published to ai.requests")
-    except Exception as e:
-        logger.warning(f"[start_task] Kafka publish failed ({e})")
+    except Exception:
+        pass
 
-    # Always enqueue locally so the workflow runs even when the Kafka consumer
-    # is unavailable. The consumer handler is idempotent — it checks the task
-    # status before enqueuing to avoid double-execution when Kafka IS healthy.
-    await enqueue_task(task_id, job_id, top_n)
+    # Enqueue — the dispatcher (run_dispatcher) picks this up and runs it
+    # with bounded concurrency.  The task is already persisted to MongoDB
+    # with status="queued", so it's observable immediately.
+    await _task_queue.put((task_id, job_id, top_n))
+    logger.info(
+        f"[start_task] task {task_id[:8]}… enqueued "
+        f"(queue depth now {_task_queue.qsize()})"
+    )
 
     return task_id
 

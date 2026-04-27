@@ -63,6 +63,10 @@ class ClicksPerJobRequest(BaseModel):
     window_days: int = Field(30, ge=1, le=365)
 
 
+class NetworkGrowthRequest(BaseModel):
+    window_days: int = Field(30, ge=1, le=365)
+
+
 class AnalyticsResponse(BaseModel):
     success: bool
     message: str

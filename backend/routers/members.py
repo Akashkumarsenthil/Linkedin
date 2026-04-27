@@ -6,15 +6,12 @@ Handles member profile management with Redis caching and Kafka events.
 import base64
 import json
 import logging
-import io
-import PyPDF2
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, text
 
 from database import get_db
 from models.member import Member
-from models.user_credentials import UserCredentials
 from auth import require_member, TokenPayload
 from schemas.member import (
     MemberGet, MemberUpdate, MemberDelete, MemberSearch,
@@ -55,19 +52,14 @@ async def get_member(req: MemberGet, db: Session = Depends(get_db)):
     """
     cache_key = f"members:get:{req.member_id}"
 
-    # (Cache bypass enabled for real-time view counting)
-    # cached = cache.get(cache_key)
-    # if cached:
-    #     return MemberResponse(success=True, message="Member retrieved (cached)", data=cached)
+    # Try cache first
+    cached = cache.get(cache_key)
+    if cached:
+        return MemberResponse(success=True, message="Member retrieved (cached)", data=cached)
 
     member = db.query(Member).filter(Member.member_id == req.member_id).first()
     if not member:
         return MemberResponse(success=False, message=f"Member {req.member_id} not found")
-
-    # Increment view count directly in DB for real-time updates
-    member.profile_views += 1
-    db.commit()
-    db.refresh(member)
 
     data = member.to_dict()
     cache.set(cache_key, data, ttl=300)
@@ -106,12 +98,8 @@ async def update_member(
         return MemberResponse(success=False, message=f"Member {req.member_id} not found")
 
     update_fields = req.model_dump(exclude_unset=True, exclude={"member_id"})
-    logger.info(f"Updating member {req.member_id} fields: {list(update_fields.keys())}")
     for field, value in update_fields.items():
         if value is not None:
-            # For photos, log the first few chars to verify base64 is coming through
-            if field in ["profile_photo_url", "cover_photo_url"] and value:
-                logger.info(f"Received {field} with length {len(value)} (starts with {value[:30]}...)")
             setattr(member, field, value)
 
     db.commit()
@@ -136,24 +124,11 @@ async def delete_member(
     if req.member_id != current_user.user_id:
         return MemberResponse(success=False, message="Cannot delete another member's profile")
 
-    # 1. Delete connections (polymorphic, no FK)
-    db.execute(text("DELETE FROM connections WHERE requester_id = :id OR receiver_id = :id"), {"id": req.member_id})
-    
-    # 2. Delete thread participants and messages (polymorphic, no FK)
-    db.execute(text("DELETE FROM thread_participants WHERE user_id = :id AND user_type = 'member'"), {"id": req.member_id})
-    db.execute(text("DELETE FROM messages WHERE sender_id = :id AND sender_type = 'member'"), {"id": req.member_id})
-
-    # 3. Delete authentication credentials (MANDATORY)
-    db.query(UserCredentials).filter(
-        UserCredentials.user_id == req.member_id,
-        UserCredentials.user_type == "member"
-    ).delete()
-
-    # 4. Delete the member profile if it exists
     member = db.query(Member).filter(Member.member_id == req.member_id).first()
-    if member:
-        db.delete(member)
-    
+    if not member:
+        return MemberResponse(success=False, message=f"Member {req.member_id} not found")
+
+    db.delete(member)
     db.commit()
 
     # Invalidate cache
@@ -307,56 +282,3 @@ async def search_members(req: MemberSearch, db: Session = Depends(get_db)):
     )
     cache.set(cache_key, result.model_dump(), ttl=60)
     return result
-
-
-@router.post("/resume/upload", summary="Upload and extract text from resume PDF")
-async def upload_resume(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
-):
-    """
-    Upload a resume PDF, extract its text content, and store it in the member profile.
-    Returns the extracted text and the filename.
-    """
-    if not file.filename.lower().endswith(".pdf"):
-        return {"success": False, "message": "Only PDF files are supported"}
-
-    try:
-        content = await file.read()
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-        
-        extracted_text = ""
-        for page in pdf_reader.pages:
-            extracted_text += page.extract_text() + "\n"
-
-        # Store in DB as a data URL for simplicity (simulating file storage)
-        # In a real app, this would go to S3/GCS.
-        pdf_data_url = f"data:application/pdf;base64,{base64.b64encode(content).decode()}"
-
-        member = db.query(Member).filter(Member.member_id == current_user.user_id).first()
-        if not member:
-            return {"success": False, "message": "Member not found"}
-
-        member.resume_text = extracted_text.strip()
-        member.resume_pdf_url = pdf_data_url
-        member.resume_filename = file.filename
-        
-        db.commit()
-        db.refresh(member)
-
-        # Invalidate cache
-        cache.delete(f"members:get:{current_user.user_id}")
-
-        return {
-            "success": True,
-            "message": "Resume uploaded and processed",
-            "data": {
-                "resume_text": member.resume_text,
-                "resume_filename": member.resume_filename,
-                "resume_pdf_url": member.resume_pdf_url
-            }
-        }
-    except Exception as e:
-        logger.error(f"Resume upload error: {e}")
-        return {"success": False, "message": f"Could not process resume: {str(e)}"}

@@ -1,43 +1,16 @@
-version: '3.8'
-
-x-backend-common: &backend-common
-  build:
-    context: ./backend
-    dockerfile: Dockerfile.service
-  restart: unless-stopped
-  env_file: .env
-  environment:
-    # Remote AWS databases
-    MYSQL_HOST: 3.80.47.57
-    MYSQL_PORT: 3306
-    MYSQL_USER: teamuser
-    MYSQL_PASSWORD: ChangeThisMySQLPass123!
-    MYSQL_DATABASE: team_mysql_db
-    MONGO_HOST: 3.80.47.57
-    MONGO_PORT: 27017
-    MONGO_USER: teammongo
-    MONGO_PASSWORD: ChangeThisMongoUserPass123!
-    MONGO_DATABASE: team_mongo_db
-    MONGO_AUTH_SOURCE: team_mongo_db
-    REDIS_HOST: redis
-    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-  depends_on:
-    mysql:
-      condition: service_healthy
-    mongodb:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    kafka:
-      condition: service_started
 
 services:
-  # ─── Data Layer ─────────────────────────────────────────────────────────────
+  # ─── MySQL 8.0 ───────────────────────────────────────────────
   mysql:
     image: mysql:8.0
     container_name: linkedin-mysql
     restart: unless-stopped
     env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin}
+      MYSQL_USER: ${MYSQL_USER:-linkedin_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-linkedin_pass}
     ports:
       - "3306:3306"
     volumes:
@@ -49,6 +22,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─── MongoDB 7 ───────────────────────────────────────────────
   mongodb:
     image: mongo:7
     container_name: linkedin-mongodb
@@ -58,6 +32,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-mongo_user}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mongo_pass}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-linkedin}
+    # Host 27018 avoids clashing with a local mongod on 27017 (common on dev laptops).
     ports:
       - "27018:27017"
     volumes:
@@ -67,7 +42,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
+  # ─── Redis 7 ─────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: linkedin-redis
@@ -76,12 +53,14 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ─── Kafka (KRaft mode — no Zookeeper) ──────────────────────
   kafka:
     image: apache/kafka:3.7.0
     container_name: linkedin-kafka
@@ -99,90 +78,68 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
     volumes:
       - kafka_data:/tmp/kraft-combined-logs
 
+  # ─── Ollama (Local LLM) ──────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: linkedin-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Model files are stored in the ollama_data volume — they persist across
+    # restarts.  Pull the model once after first `docker compose up`:
+    #   docker exec linkedin-ollama ollama pull llama3.2
 
-  # ─── Microservices ─────────────────────────────────────────────────────────
-  profile-service:
-    <<: *backend-common
-    container_name: linkedin-profile-service
+  # ─── FastAPI Backend ─────────────────────────────────────────
+  backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_profile.py
-
-  job-service:
-    <<: *backend-common
-    container_name: linkedin-job-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_job.py
-
-  application-service:
-    <<: *backend-common
-    container_name: linkedin-application-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_application.py
-
-  messaging-service:
-    <<: *backend-common
-    container_name: linkedin-messaging-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_messaging.py
-
-  connection-service:
-    <<: *backend-common
-    container_name: linkedin-connection-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_connection.py
-
-  analytics-service:
-    <<: *backend-common
-    container_name: linkedin-analytics-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_analytics.py
-
-  ai-service:
-    <<: *backend-common
-    container_name: linkedin-ai-service
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.service
-      args:
-        ENTRY_POINT: main_ai.py
-
-  # ─── API Gateway ───────────────────────────────────────────────────────────
-  gateway:
-    image: nginx:alpine
-    container_name: linkedin-gateway
+      dockerfile: Dockerfile
+    container_name: linkedin-backend
     restart: unless-stopped
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    env_file: .env
+    environment:
+      # ── MySQL (use Docker service name, internal port) ──
+      MYSQL_HOST: 3.80.47.57
+      MYSQL_PORT: 3306
+      MYSQL_USER: teamuser
+      MYSQL_PASSWORD: ChangeThisMySQLPass123!
+      MYSQL_DATABASE: team_mysql_db
+      # ── MongoDB (internal port 27017 — not the host-mapped 27018) ──
+      MONGO_HOST: 3.80.47.57
+      MONGO_PORT: 27017
+      MONGO_USER: teammongo
+      MONGO_PASSWORD: ChangeThisMongoUserPass123!
+      MONGO_DATABASE: team_mongo_db
+      MONGO_AUTH_SOURCE: team_mongo_db
+      # ── Redis ──
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
-      - profile-service
-      - job-service
-      - analytics-service
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      ollama:
+        condition: service_started
 
-  # ─── Frontend ──────────────────────────────────────────────────────────────
+  # ─── React Frontend ──────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -192,10 +149,11 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - gateway
+      - backend
 
 volumes:
   mysql_data:
   mongo_data:
   redis_data:
   kafka_data:
+  ollama_data:

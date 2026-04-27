@@ -3,7 +3,7 @@ AI Service Router — REST + WebSocket endpoints for Agentic AI workflows.
 """
 
 import logging
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, File, UploadFile, Form
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
@@ -115,20 +115,16 @@ async def analyze_candidates(
 
 
 @router.post("/task-status", response_model=AIResponse, summary="Get AI task status")
-async def task_status(req: TaskStatusRequest):
-    """Check the current status and progress of an AI task."""
+async def task_status(
+    req: TaskStatusRequest,
+    current_user: TokenPayload = Depends(require_recruiter),
+):
+    """Check the current status and progress of an AI task.
+    Falls back to MongoDB so tasks are queryable after a server restart."""
     status = await get_task_status(req.task_id)
     if not status:
         return AIResponse(success=False, message=f"Task {req.task_id} not found")
-    return AIResponse(success=True, message=f"Task status: {status['status']}", data=status)
 
-
-@router.get("/task-status/{task_id}", response_model=AIResponse, summary="Get AI task status (GET)")
-async def task_status_get(task_id: str):
-    """Get task status by task_id via GET. Easier to call from frontend."""
-    status = await get_task_status(task_id)
-    if not status:
-        return AIResponse(success=False, message=f"Task {task_id} not found")
     return AIResponse(success=True, message=f"Task status: {status['status']}", data=status)
 
 
@@ -173,151 +169,18 @@ async def match_candidate(req: MatchRequest):
     )
 
 
-# ─── PDF text extraction helper ───────────────────────────────────────────────
-
-def _extract_pdf_text(file_bytes: bytes) -> str:
-    """Extract plain text from a PDF using PyPDF2. Raises ValueError on failure."""
-    import io
-    try:
-        from PyPDF2 import PdfReader
-        reader = PdfReader(io.BytesIO(file_bytes))
-        pages = [page.extract_text() or "" for page in reader.pages]
-        text = "\n\n".join(p.strip() for p in pages if p.strip())
-        return text
-    except Exception as exc:
-        raise ValueError(f"Could not read PDF: {exc}") from exc
-
-
-# ─── PDF endpoints ────────────────────────────────────────────────────────────
-
-@router.post("/parse-resume-pdf", response_model=AIResponse, summary="Parse a resume from a PDF upload")
-async def parse_resume_pdf(
-    file: UploadFile = File(..., description="PDF resume — max 5 MB"),
-):
-    """
-    Upload a PDF resume and extract structured candidate data.
-    Accepts multipart/form-data with a single 'file' field (PDF only).
-    Returns the same structure as POST /ai/parse-resume.
-    """
-    if not (file.filename or "").lower().endswith(".pdf"):
-        return AIResponse(success=False, message="Only .pdf files are accepted.")
-
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        return AIResponse(success=False, message="File too large — 5 MB maximum.")
-
-    try:
-        resume_text = _extract_pdf_text(raw)
-    except ValueError as exc:
-        return AIResponse(success=False, message=str(exc))
-
-    if not resume_text.strip():
-        return AIResponse(
-            success=False,
-            message="No text could be extracted. The PDF may be image-based or password-protected.",
-        )
-
-    result = await parse_resume_with_llm(resume_text)
-    result["extracted_text_preview"] = resume_text[:600]
-    return AIResponse(
-        success=result["success"],
-        message=f"Resume parsed from PDF using {result['method']}",
-        data=result,
-    )
-
-
-@router.post("/career-coach-pdf", response_model=AIResponse, summary="Career Coach with PDF resume upload")
-async def career_coach_pdf(
-    file: UploadFile = File(..., description="PDF resume — max 5 MB"),
-    job_title: str = Form(""),
-    required_skills: str = Form("", description="Comma-separated skills"),
-    headline: str = Form("", description="Current LinkedIn headline"),
-    job_id: str = Form("", description="Job ID to auto-fill job details from DB"),
-):
-    """
-    Upload a PDF resume for Career Coach analysis.
-    Accepts multipart/form-data:
-      - file            PDF resume
-      - job_title       Target job title
-      - required_skills Comma-separated skills string
-      - headline        Member's current LinkedIn headline (optional)
-      - job_id          Fetches job details automatically from DB (optional)
-    """
-    from agents.career_coach import coach_resume_with_llm
-    from database import SessionLocal
-    from models.job import JobPosting
-
-    if not (file.filename or "").lower().endswith(".pdf"):
-        return AIResponse(success=False, message="Only .pdf files are accepted.")
-
-    raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        return AIResponse(success=False, message="File too large — 5 MB maximum.")
-
-    try:
-        resume_text = _extract_pdf_text(raw)
-    except ValueError as exc:
-        return AIResponse(success=False, message=str(exc))
-
-    if not resume_text.strip():
-        return AIResponse(success=False, message="No text could be extracted from the PDF.")
-
-    # Hydrate job details from DB when job_id is provided
-    jt = job_title.strip()
-    jd = ""
-    skills_list = [s.strip() for s in required_skills.split(",") if s.strip()]
-
-    if job_id.strip():
-        try:
-            db = SessionLocal()
-            job = db.query(JobPosting).filter(JobPosting.job_id == int(job_id)).first()
-            db.close()
-            if job:
-                jt = jt or (job.title or "")
-                jd = job.description or ""
-                if not skills_list and job.skills_required:
-                    raw_skills = job.skills_required
-                    skills_list = (
-                        [s.strip() for s in raw_skills.split(",") if s.strip()]
-                        if isinstance(raw_skills, str)
-                        else list(raw_skills or [])
-                    )
-        except Exception:
-            pass  # Proceed without DB data if lookup fails
-
-    if not jt:
-        return AIResponse(success=False, message="Provide a job_title or a valid job_id.")
-
-    result = await coach_resume_with_llm(
-        member_headline=headline.strip(),
-        resume_text=resume_text,
-        job_title=jt,
-        job_description=jd,
-        required_skills=skills_list,
-    )
-
-    data = result.get("data", {})
-    data["extracted_text_preview"] = resume_text[:300]
-    return AIResponse(
-        success=result["success"],
-        message=f"Career coaching complete from PDF (method: {result['method']})",
-        data=data,
-    )
-
-# ─── PDF Helpers ──────────────────────────────────────────────────────────────
 @router.post("/tasks/list", response_model=AIResponse, summary="List all AI tasks")
-async def list_tasks():
-    """List all active and recent AI tasks from MongoDB."""
-    from database import mongo_db
-    from datetime import datetime, timezone, timedelta
-    tasks = []
-    # Fetch last 50 tasks from MongoDB sorted by created_at
-    cursor = mongo_db.agent_tasks.find(
-        {},
-        {"task_id": 1, "job_id": 1, "status": 1, "created_at": 1, "_id": 0}
-    ).sort("created_at", -1).limit(50)
-    async for doc in cursor:
-        tasks.append(doc)
+async def list_tasks(current_user: TokenPayload = Depends(require_recruiter)):
+    """List all active and recent AI tasks."""
+    tasks = [
+        {
+            "task_id": t["task_id"],
+            "job_id": t.get("job_id"),
+            "status": t["status"],
+            "created_at": t.get("created_at"),
+        }
+        for t in active_tasks.values()
+    ]
     return AIResponse(success=True, message=f"Found {len(tasks)} tasks", data=tasks)
 
 
@@ -365,153 +228,3 @@ async def websocket_task_updates(websocket: WebSocket, task_id: str):
     except WebSocketDisconnect:
         if task_id in ws_connections and websocket in ws_connections[task_id]:
             ws_connections[task_id].remove(websocket)
-
-
-# ─── Career Coach Agent ─────────────────────────────────────────────────────
-
-class CareerCoachRequest(BaseModel):
-    member_id: Optional[int] = Field(None, description="Member ID to fetch profile from DB (optional)")
-    headline: str = Field("", description="Current LinkedIn headline")
-    resume_text: str = Field("", description="Current resume text")
-    job_id: Optional[int] = Field(None, description="Target job posting ID (optional)")
-    job_title: str = Field("", description="Target job title")
-    job_description: str = Field("", description="Target job description")
-    required_skills: list = Field(default_factory=list, description="Required skills for the target role")
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [{
-                "headline": "Software Engineer at Acme Corp",
-                "resume_text": "5 years Python, built REST APIs, led team of 4",
-                "job_title": "Senior Backend Engineer",
-                "required_skills": ["Python", "Kafka", "Kubernetes"]
-            }]
-        }
-    }
-
-
-@router.post("/career-coach", response_model=AIResponse, summary="Career Coach — resume & profile advisor")
-async def career_coach(req: CareerCoachRequest):
-    """
-    Career Coach Agent: analyzes a member's current profile against a target job
-    and returns specific, actionable improvement suggestions.
-
-    Can fetch member profile from DB if member_id is provided.
-    Can fetch job details from DB if job_id is provided.
-    All fields can also be passed directly in the request body.
-    """
-    from agents.career_coach import coach_resume_with_llm
-    from database import SessionLocal
-    from models.member import Member
-    from models.job import JobPosting
-
-    headline = req.headline
-    resume_text = req.resume_text
-    job_title = req.job_title
-    job_description = req.job_description
-    required_skills = req.required_skills
-
-    db = SessionLocal()
-    try:
-        # Optionally hydrate member from DB
-        if req.member_id:
-            member = db.query(Member).filter(Member.member_id == req.member_id).first()
-            if member:
-                headline = headline or member.headline or ""
-                resume_text = resume_text or member.resume_text or member.about or ""
-
-        # Optionally hydrate job from DB
-        if req.job_id:
-            job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
-            if job:
-                job_title = job_title or job.title or ""
-                job_description = job_description or job.description or ""
-                if not required_skills and job.skills_required:
-                    skills = job.skills_required
-                    if isinstance(skills, str):
-                        required_skills = [s.strip() for s in skills.split(",") if s.strip()]
-                    elif isinstance(skills, list):
-                        required_skills = skills
-    finally:
-        db.close()
-
-    if not resume_text and not headline:
-        return AIResponse(success=False, message="Provide resume_text/headline or a valid member_id")
-    if not job_title:
-        return AIResponse(success=False, message="Provide job_title or a valid job_id")
-
-    result = await coach_resume_with_llm(
-        member_headline=headline,
-        resume_text=resume_text,
-        job_title=job_title,
-        job_description=job_description,
-        required_skills=required_skills,
-    )
-
-    return AIResponse(
-        success=result["success"],
-        message=f"Career coaching complete (method: {result['method']})",
-        data=result.get("data", {}),
-    )
-
-
-# ─── Metrics Endpoint ────────────────────────────────────────────────────────
-
-@router.get("/metrics", response_model=AIResponse, summary="AI workflow evaluation metrics")
-async def get_metrics():
-    """
-    Evaluation metrics for the AI hiring workflow.
-    Reports:
-    - Total tasks run
-    - Human-in-the-loop approval rate
-    - Average shortlist match score
-    - Task status distribution
-    """
-    from database import mongo_db
-
-    total = await mongo_db.agent_tasks.count_documents({})
-    approved = await mongo_db.agent_tasks.count_documents({"status": "approved"})
-    rejected = await mongo_db.agent_tasks.count_documents({"status": "rejected"})
-    failed = await mongo_db.agent_tasks.count_documents({"status": "failed"})
-    awaiting = await mongo_db.agent_tasks.count_documents({"status": "awaiting_approval"})
-
-    reviewed = approved + rejected
-    approval_rate = round(approved / reviewed, 3) if reviewed > 0 else None
-
-    # Compute average shortlist match score across all completed tasks
-    scores = []
-    cursor = mongo_db.agent_tasks.find(
-        {"result.shortlist": {"$exists": True, "$ne": []}},
-        {"result.shortlist": 1, "_id": 0}
-    ).limit(100)
-    async for doc in cursor:
-        shortlist = doc.get("result", {}).get("shortlist", [])
-        for entry in shortlist:
-            s = entry.get("overall_score")
-            if s is not None:
-                scores.append(s)
-
-    avg_match_score = round(sum(scores) / len(scores), 3) if scores else None
-
-    metrics = {
-        "total_tasks": total,
-        "status_breakdown": {
-            "approved": approved,
-            "rejected": rejected,
-            "awaiting_approval": awaiting,
-            "failed": failed,
-        },
-        "human_in_the_loop": {
-            "total_reviewed": reviewed,
-            "approval_rate": approval_rate,
-            "approval_rate_pct": f"{approval_rate * 100:.1f}%" if approval_rate is not None else "N/A",
-        },
-        "match_quality": {
-            "candidates_scored": len(scores),
-            "avg_match_score": avg_match_score,
-            "avg_match_score_pct": f"{avg_match_score * 100:.1f}%" if avg_match_score is not None else "N/A",
-        },
-    }
-
-    return AIResponse(success=True, message="Metrics computed", data=metrics)
-

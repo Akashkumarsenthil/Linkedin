@@ -203,12 +203,7 @@ export function AuthPanel({ onAuthChange }: AuthPanelProps) {
               type="button"
               className="primary"
               style={{ alignSelf: 'stretch' }}
-              disabled={
-                loading || 
-                !email || 
-                !password || 
-                (mode !== 'login' && (!firstName || !lastName))
-              }
+              disabled={loading || !email || !password}
               onClick={
                 mode === 'login'
                   ? handleLogin
