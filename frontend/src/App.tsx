@@ -62,19 +62,18 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
 }
 
 const ALL_NAV: [Tab, string, string][] = [
-  ['overview',      'Home',         'home'],
-  ['jobs',          'Jobs',         'jobs'],
-  ['career',        'Career Coach', 'ai'],
-  ['members',       'Network',      'network'],
-  ['analytics',     'Analytics',    'analytics'],
-  ['messages',      'Messaging',    'messaging'],
-  ['connections',   'Connections',  'connections'],
-  ['notifications', 'Notifications','bell'],
-  ['ai',            'AI Recruiter', 'ai'],
-  ['perf',          'Performance',  'analytics'],
-  ['auth',          'Sign In',      'user'],
-  ['profile',       'Me',           'user'],
-  ['search',        'Search',       'search'],
+  ['overview',      'Home',          'home'],
+  ['members',       'My Network',    'network'],
+  ['jobs',          'Jobs',          'jobs'],
+  ['messages',      'Messaging',     'messaging'],
+  ['connections',   'Connections',   'connections'],
+  ['career',        'Career Coach',  'ai'],
+  ['analytics',     'Analytics',     'analytics'],
+  ['ai',            'AI Recruiter',  'ai'],
+  ['perf',          'Performance',   'analytics'],
+  ['auth',          'Sign In',       'user'],
+  ['profile',       'Me',            'user'],
+  ['search',        'Search',        'search'],
 ]
 
 interface MePayload {
@@ -307,7 +306,7 @@ function App() {
 
           <nav className="nav" aria-label="Primary">
             {visibleTabs
-              .filter(([id]) => id !== 'auth' && id !== 'profile' && id !== 'notifications')
+              .filter(([id]) => id !== 'auth' && id !== 'profile' && id !== 'notifications' && id !== 'search')
               .map(([id, label, icon]) => (
                 <button
                   key={id}
