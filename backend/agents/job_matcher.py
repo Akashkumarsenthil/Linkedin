@@ -96,6 +96,17 @@ def compute_seniority_match(job_seniority: str, candidate_years: int) -> Dict[st
         return {"score": 0.1, "reason": f"Significant seniority mismatch (gap: {diff})"}
 
 
+def _to_list(value) -> list:
+    """Normalize skills to a list regardless of storage format (list, CSV string, or None)."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        return [s.strip() for s in value.split(",") if s.strip()]
+    return []
+
+
 async def match_candidate_to_job(
     job_data: Dict[str, Any],
     candidate_data: Dict[str, Any],
@@ -109,16 +120,16 @@ async def match_candidate_to_job(
     - Location match: 20%
     - Seniority match: 30%
     """
-    # Get candidate skills from profile or parsed resume
-    candidate_skills = candidate_data.get("skills", [])
+    # Get candidate skills from profile or parsed resume — normalize to list
+    candidate_skills = _to_list(candidate_data.get("skills", []))
     if parsed_resume and parsed_resume.get("data", {}).get("skills"):
         candidate_skills = list(
-            set(candidate_skills + parsed_resume["data"]["skills"])
+            set(candidate_skills + _to_list(parsed_resume["data"]["skills"]))
         )
 
     # Skills overlap
     skills_result = compute_skills_overlap(
-        job_data.get("skills_required", []),
+        _to_list(job_data.get("skills_required", [])),
         candidate_skills,
     )
 
