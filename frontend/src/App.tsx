@@ -7,8 +7,6 @@ import { GeoTable } from './components/GeoTable'
 import { MemberDashboard } from './components/MemberDashboard'
 import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
-import { JobApplyForm } from './components/JobApplyForm'
-import { JobDetailPanel } from './components/JobDetailPanel'
 import { AuthPanel } from './components/AuthPanel'
 import { ProfilePage } from './components/ProfilePage'
 import { HomeFeed } from './components/HomeFeed'
@@ -21,6 +19,7 @@ import { CountUp } from './components/CountUp'
 import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
 import { PerformanceDashboard } from './components/PerformanceDashboard'
+import { JobsPage } from './components/jobs/JobsPage'
 
 type Tab =
   | 'overview'
@@ -369,7 +368,7 @@ function App() {
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
-          {tab === 'jobs'          && <JobsPanel />}
+          {tab === 'jobs'          && <JobsPage />}
           {tab === 'members'       && <MembersPanel />}
           {tab === 'analytics'     && <AnalyticsPanel />}
           {tab === 'messages'      && <MessagingPanel />}
@@ -642,159 +641,7 @@ function OverviewPanel({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   )
 }
 
-function JobsPanel() {
-  const [keyword, setKeyword] = useState('engineer')
-  const [sortBy, setSortBy] = useState('date')
-  const [jobs, setJobs] = useState<Record<string, unknown>[]>([])
-  const [total, setTotal] = useState<number | null>(null)
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [hasMore, setHasMore] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
-  const [detailJobId, setDetailJobId] = useState<number | null>(null)
 
-  const doSearch = async (cursor: string | null) => {
-    setLoading(true)
-    setErr(null)
-    try {
-      const r = await apiPost<{
-        data: Record<string, unknown>[]
-        total: number | null
-        next_cursor: string | null
-        has_more: boolean
-        message: string
-      }>('/jobs/search', {
-        keyword: keyword || undefined,
-        sort_by: sortBy,
-        page_size: 15,
-        cursor: cursor ?? undefined,
-      })
-      if (cursor) {
-        setJobs((prev) => [...prev, ...(r.data ?? [])])
-      } else {
-        setJobs(r.data ?? [])
-        setTotal(r.total ?? null)
-      }
-      setNextCursor(r.next_cursor ?? null)
-      setHasMore(r.has_more ?? false)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Search failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const search = () => doSearch(null)
-  const loadMore = () => { if (nextCursor) doSearch(nextCursor) }
-
-  useEffect(() => { void doSearch(null) }, [])
-
-  return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">Jobs</h2>
-        <p className="panel-subtitle">Browse and apply to open positions across the network</p>
-      </div>
-
-      <div className="search-toolbar">
-        <div className="search-input-wrap">
-          <Icon name="search" size={16} className="search-icon-glyph" />
-          <input
-            className="search-input-field"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Search by title, keyword, or skill"
-            onKeyDown={(e) => e.key === 'Enter' && search()}
-          />
-        </div>
-        <select
-          className="toolbar-select"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-        >
-          <option value="date">Date posted</option>
-          <option value="applicants">Most applicants</option>
-          <option value="views">Most viewed</option>
-        </select>
-        <button type="button" className="primary" onClick={search} disabled={loading}>
-          {loading && !nextCursor ? 'Searching...' : 'Search'}
-        </button>
-      </div>
-
-      {err && <p className="error">{err}</p>}
-
-      {jobs.length > 0 && (
-        <p className="results-meta">
-          Showing <strong>{jobs.length}</strong>{total != null ? ` of ${total}` : ''} positions
-        </p>
-      )}
-
-      {loading && jobs.length === 0 ? (
-        <ul className="job-card-list">
-          {[0, 1, 2, 3].map((i) => <li key={i} className="job-card skeleton-card"><span /></li>)}
-        </ul>
-      ) : (
-        <ul className="job-card-list">
-          {jobs.map((j) => {
-            const jid = Number(j.job_id)
-            const isSelected = selectedJobId === jid
-            const isViewing = detailJobId === jid
-            const titleStr = String(j.title ?? '')
-            const initial = titleStr[0]?.toUpperCase() ?? '?'
-
-            return (
-              <li key={String(j.job_id)} className={`job-card${isSelected ? ' job-card-selected' : ''}`}>
-                <div className="job-card-logo">
-                  <span>{initial}</span>
-                </div>
-                <div className="job-card-body">
-                  <div className="job-card-top">
-                    <h3 className="job-card-title">{titleStr}</h3>
-                    <div className="job-card-actions">
-                      <button
-                        type="button"
-                        className={isViewing ? 'jc-btn jc-btn-active' : 'jc-btn'}
-                        onClick={() => setDetailJobId(isViewing ? null : jid)}
-                      >
-                        {isViewing ? 'Close' : 'Details'}
-                      </button>
-                      <button
-                        type="button"
-                        className={
-                          isSelected
-                            ? 'jc-btn jc-btn-apply jc-btn-selected'
-                            : 'jc-btn jc-btn-apply'
-                        }
-                        onClick={() => setSelectedJobId(isSelected ? null : jid)}
-                      >
-                        {isSelected ? 'Selected' : 'Apply'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="job-card-meta">
-                    {j.location ? <span className="jc-meta-item"><Icon name="location" size={12} className="meta-icon" /> {String(j.location)}</span> : null}
-                    {j.work_mode ? <span className="pill pill-accent">{String(j.work_mode)}</span> : null}
-                    <span className="pill">ID #{String(j.job_id)}</span>
-                  </div>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-
-      {hasMore && (
-        <button type="button" className="load-more-btn" onClick={loadMore} disabled={loading}>
-          {loading ? 'Loading...' : 'Show more results'}
-        </button>
-      )}
-
-      <JobDetailPanel jobId={detailJobId} onClose={() => setDetailJobId(null)} />
-      <JobApplyForm prefilledJobId={selectedJobId} onClear={() => setSelectedJobId(null)} />
-    </section>
-  )
-}
 
 const AVATAR_COLORS = [
   '#0a66c2', '#0d7764', '#b24020', '#9c45c2', '#b87a0a', '#1a7a34',
