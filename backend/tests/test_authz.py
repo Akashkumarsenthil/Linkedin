@@ -107,6 +107,7 @@ RECRUITER_ONLY_ENDPOINTS = [
 
 MEMBER_ONLY_ENDPOINTS = [
     ("POST", "/applications/submit",   {"job_id": 1, "member_id": 1}),
+    ("POST", "/applications/withdraw", {"application_id": 1}),
     ("POST", "/jobs/save",             {"job_id": 1, "member_id": 1}),
     ("POST", "/connections/request",   {"requester_id": 1, "receiver_id": 2}),
 ]

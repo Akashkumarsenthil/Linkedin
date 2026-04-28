@@ -21,10 +21,14 @@ import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
 import { PerformanceDashboard } from './components/PerformanceDashboard'
 import { JobsPage } from './components/jobs/JobsPage'
+import { SavedJobsPage } from './components/jobs/SavedJobsPage'
+import { MyJobsPage } from './components/jobs/MyJobsPage'
 
 type Tab =
   | 'overview'
   | 'jobs'
+  | 'saved-jobs'
+  | 'my-jobs'
   | 'members'
   | 'analytics'
   | 'ai'
@@ -47,6 +51,8 @@ type AuthUser = {
 const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admin'>> = {
   overview:      ['guest', 'member', 'recruiter', 'admin'],
   jobs:          ['guest', 'member', 'recruiter', 'admin'],
+  'saved-jobs':  ['member'],
+  'my-jobs':     ['member'],
   members:       ['guest', 'member', 'admin'],
   analytics:     ['recruiter', 'admin'],
   career:        ['member', 'recruiter', 'admin'],
@@ -92,6 +98,8 @@ interface NotificationItem {
   actor_type?: string
   actor_photo_url?: string | null
   post_id?: number
+  job_id?: number
+  application_id?: number
   created_at?: string | null
   unread?: boolean
 }
@@ -406,11 +414,18 @@ function App() {
         <div className="page-fade">
           {tab === 'overview' &&
             (authUser && me ? (
-              <HomeFeed me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />
+              <HomeFeed
+                me={me}
+                onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
+                onOpenSavedJobs={() => setTab('saved-jobs')}
+                onOpenMyJobs={() => setTab('my-jobs')}
+              />
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
-          {tab === 'jobs' && <JobsPage />}
+          {tab === 'jobs' && <JobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'saved-jobs' && <SavedJobsPage />}
+          {tab === 'my-jobs' && <MyJobsPage />}
           {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'analytics' && <AnalyticsPanel />}
           {tab === 'messages' && <MessagingPanel />}
