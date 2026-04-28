@@ -274,9 +274,9 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
         </p>
       </div>
 
-      <div className="msg-layout">
+      <div className="msg-layout" style={{ borderTop: '4px solid var(--ln-blue, #0a66c2)', height: '650px' }}>
         {/* ── Thread list ──────────────────────────────── */}
-        <div className="msg-sidebar">
+        <div className="msg-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div className="msg-sidebar-header">
             <span className="sidebar-title">Conversations</span>
             <button
@@ -292,7 +292,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
 
           {threadsErr && <p className="error" style={{ padding: '8px 14px', fontSize: 12 }}>{threadsErr}</p>}
 
-          <ul className="thread-list">
+          <ul className="thread-list" style={{ flex: 1, overflowY: 'auto' }}>
             {threads.length === 0 && !threadsLoading && (
               <li style={{ padding: '16px 14px' }}>
                 <p className="hint">No conversations yet.</p>
@@ -363,7 +363,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
         </div>
 
         {/* ── Message area ─────────────────────────────── */}
-        <div className="msg-main">
+        <div className="msg-main" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
           {!selectedId ? (
             <div className="msg-empty">
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
@@ -403,7 +403,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
 
               {msgsErr && <p className="error" style={{ padding: '8px 16px' }}>{msgsErr}</p>}
 
-              <div className="msg-body">
+              <div className="msg-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
                 {messages.length === 0 && !msgsLoading && (
                   <p className="hint" style={{ textAlign: 'center', paddingTop: 24 }}>
                     No messages yet. Say hello!
