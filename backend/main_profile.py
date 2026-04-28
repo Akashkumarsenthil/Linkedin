@@ -23,8 +23,8 @@ async def lifespan(app: FastAPI):
         # members photo + resume columns added in this branch
         "ALTER TABLE members ADD COLUMN profile_photo_url MEDIUMTEXT",
         "ALTER TABLE members ADD COLUMN cover_photo_url MEDIUMTEXT",
-        "ALTER TABLE members ADD COLUMN resume_text TEXT",
-        "ALTER TABLE members ADD COLUMN resume_pdf_url TEXT",
+        "ALTER TABLE members ADD COLUMN resume_text MEDIUMTEXT",
+        "ALTER TABLE members ADD COLUMN resume_pdf_url MEDIUMTEXT",
         "ALTER TABLE members ADD COLUMN resume_filename VARCHAR(255)",
         # recruiters photo columns
         "ALTER TABLE recruiters ADD COLUMN profile_photo_url MEDIUMTEXT",
