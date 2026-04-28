@@ -9,8 +9,6 @@ interface NotificationItem {
   actor_type?: string
   actor_photo_url?: string | null
   post_id?: number
-  job_id?: number
-  application_id?: number
   created_at?: string | null
   unread?: boolean
 }
@@ -27,7 +25,6 @@ function iconForType(type: string): string {
     case 'connection_request': return 'connections'
     case 'post_like':           return 'thumb'
     case 'connection_post':     return 'article'
-    case 'application_status':  return 'jobs'
     default:                    return 'bell'
   }
 }
@@ -73,7 +70,7 @@ export function NotificationsPanel({
           <p><strong>No notifications yet.</strong></p>
           <p className="muted">
             When someone sends you a connection request, likes your post,
-            shares something new, or updates your job application, you’ll see it here.
+            or shares something new, you’ll see it here.
           </p>
         </div>
       ) : (
