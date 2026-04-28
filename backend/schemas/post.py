@@ -22,6 +22,7 @@ class PostDelete(BaseModel):
 
 class PostLikeRequest(BaseModel):
     post_id: int
+    reaction_type: Optional[str] = "like"
 
 
 class PostResponse(BaseModel):
@@ -46,6 +47,8 @@ class PostCommentCreate(BaseModel):
 
 class PostCommentListRequest(BaseModel):
     post_id: int
+    page: int = 1
+    page_size: int = 10
 
 
 class PostCommentResponse(BaseModel):

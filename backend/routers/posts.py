@@ -84,11 +84,20 @@ async def get_single_post(
 
     data = post.to_dict()
     data["author"] = _hydrate_author(db, post.author_id, post.author_type)
-    data["liked_by_me"] = db.query(PostLike).filter(
+    
+    # Check if liked by me and get active reaction
+    like = db.query(PostLike).filter(
         PostLike.post_id == post.post_id,
         PostLike.user_id == current_user.user_id,
         PostLike.user_type == current_user.user_type,
-    ).first() is not None
+    ).first()
+    data["liked_by_me"] = like is not None
+    data["active_reaction"] = like.reaction_type if like else None
+
+    # Get reaction summary
+    from sqlalchemy import func
+    counts = db.query(PostLike.reaction_type, func.count(PostLike.like_id)).filter(PostLike.post_id == post.post_id).group_by(PostLike.reaction_type).all()
+    data["reaction_counts"] = {r: c for r, c in counts}
 
     return PostResponse(success=True, message="Post found", data=data)
 
@@ -154,20 +163,35 @@ async def list_feed(
             by_recruiter[r.recruiter_id] = r
 
     # Check which posts are liked by the current user
-    liked_post_ids = set()
+    user_likes = {}
     if posts:
         post_ids = [p.post_id for p in posts]
-        likes = db.query(PostLike.post_id).filter(
+        likes = db.query(PostLike).filter(
             PostLike.post_id.in_(post_ids),
             PostLike.user_id == current_user.user_id,
             PostLike.user_type == current_user.user_type
         ).all()
-        liked_post_ids = {l.post_id for l in likes}
+        for l in likes:
+            user_likes[l.post_id] = l.reaction_type
+
+    # Get reaction counts for all posts
+    from sqlalchemy import func
+    counts_query = db.query(PostLike.post_id, PostLike.reaction_type, func.count(PostLike.like_id)).filter(
+        PostLike.post_id.in_(post_ids) if posts else True
+    ).group_by(PostLike.post_id, PostLike.reaction_type).all()
+    
+    post_reaction_stats = {}
+    for pid, rtype, count in counts_query:
+        if pid not in post_reaction_stats:
+            post_reaction_stats[pid] = {}
+        post_reaction_stats[pid][rtype] = count
 
     result = []
     for p in posts:
         item = p.to_dict()
-        item["liked_by_me"] = p.post_id in liked_post_ids
+        item["liked_by_me"] = p.post_id in user_likes
+        item["active_reaction"] = user_likes.get(p.post_id)
+        item["reaction_counts"] = post_reaction_stats.get(p.post_id, {})
         if p.author_type == "member":
             m = by_member.get(p.author_id)
             item["author"] = {
@@ -198,7 +222,7 @@ async def list_feed(
 
 # ── Like (toggle) ────────────────────────────────────────────────────────────
 
-@router.post("/like", response_model=PostResponse, summary="Toggle a like on a post")
+@router.post("/like", response_model=PostResponse, summary="Toggle a reaction on a post")
 async def toggle_like(
     req: PostLikeRequest,
     db: Session = Depends(get_db),
@@ -214,26 +238,70 @@ async def toggle_like(
         PostLike.user_type == current_user.user_type,
     ).first()
 
+    reaction_type = req.reaction_type or "like"
+
     if existing:
-        db.delete(existing)
-        post.likes_count = max(0, (post.likes_count or 0) - 1)
-        liked = False
+        if existing.reaction_type == reaction_type:
+            # Same type? Toggle off
+            db.delete(existing)
+            post.likes_count = max(0, (post.likes_count or 0) - 1)
+            liked = False
+            active_reaction = None
+        else:
+            # Different type? Switch it
+            existing.reaction_type = reaction_type
+            liked = True
+            active_reaction = reaction_type
     else:
         db.add(PostLike(
             post_id=req.post_id,
             user_id=current_user.user_id,
             user_type=current_user.user_type,
+            reaction_type=reaction_type
         ))
         post.likes_count = (post.likes_count or 0) + 1
         liked = True
+        active_reaction = reaction_type
+    
     db.commit()
     db.refresh(post)
 
+    # Get reaction summary
+    from sqlalchemy import func
+    counts = db.query(PostLike.reaction_type, func.count(PostLike.like_id)).filter(PostLike.post_id == post.post_id).group_by(PostLike.reaction_type).all()
+    reaction_counts = {r: c for r, c in counts}
+
     return PostResponse(
         success=True,
-        message="Liked" if liked else "Unliked",
-        data={**post.to_dict(), "liked_by_me": liked},
+        message="Reaction updated",
+        data={
+            **post.to_dict(), 
+            "liked_by_me": liked, 
+            "active_reaction": active_reaction,
+            "reaction_counts": reaction_counts
+        },
     )
+
+@router.get("/{post_id}/reactions", response_model=PostResponse, summary="List users who reacted to a post")
+async def list_reactions(
+    post_id: int,
+    type: str = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(PostLike).filter(PostLike.post_id == post_id)
+    if type and type != "all":
+        q = q.filter(PostLike.reaction_type == type)
+    
+    likes = q.order_by(desc(PostLike.created_at)).all()
+    
+    result = []
+    for l in likes:
+        author = _hydrate_author(db, l.user_id, l.user_type)
+        item = l.to_dict()
+        item["user"] = author
+        result.append(item)
+    
+    return PostResponse(success=True, message=f"Found {len(result)} reactions", data={"reactions": result})
 
 
 # ── Delete (own posts only) ──────────────────────────────────────────────────
@@ -294,7 +362,11 @@ async def list_comments(
     req: PostCommentListRequest,
     db: Session = Depends(get_db),
 ):
-    comments = db.query(PostComment).filter(PostComment.post_id == req.post_id).order_by(PostComment.created_at.asc()).all()
+    q = db.query(PostComment).filter(PostComment.post_id == req.post_id).order_by(PostComment.created_at.desc())
+    
+    total = q.count()
+    offset = (req.page - 1) * req.page_size
+    comments = q.offset(offset).limit(req.page_size).all()
     
     result = []
     for c in comments:
@@ -304,4 +376,9 @@ async def list_comments(
         item["author_photo_url"] = author["photo_url"]
         result.append(item)
 
-    return PostCommentResponse(success=True, message=f"Found {len(result)} comments", data=result)
+    return PostCommentResponse(success=True, message=f"Found {len(result)} comments", data={
+        "comments": result,
+        "total": total,
+        "page": req.page,
+        "has_more": total > (offset + len(result))
+    })
