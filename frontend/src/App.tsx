@@ -23,6 +23,9 @@ import { PerformanceDashboard } from './components/PerformanceDashboard'
 import { JobsPage } from './components/jobs/JobsPage'
 import { SavedJobsPage } from './components/jobs/SavedJobsPage'
 import { MyJobsPage } from './components/jobs/MyJobsPage'
+import { EventsPage } from './components/EventsPage'
+import { SavedItemsPage } from './components/SavedItemsPage'
+import { NewsPage } from './components/NewsPage'
 
 type Tab =
   | 'overview'
@@ -41,6 +44,10 @@ type Tab =
   | 'perf'
   | 'settings'
   | 'career'
+  | 'post'
+  | 'events'
+  | 'saved'
+  | 'news'
 
 type AuthUser = {
   user_id: number
@@ -61,10 +68,14 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   notifications: ['member', 'recruiter', 'admin'],
   ai:            ['recruiter', 'admin'],
   auth:          ['guest', 'member', 'recruiter', 'admin'],
+  post:          ['guest', 'member', 'recruiter', 'admin'],
   profile:       ['member', 'recruiter', 'admin'],
   search:        ['guest', 'member', 'recruiter', 'admin'],
   perf:          ['admin'],
   settings:      ['member', 'recruiter', 'admin'],
+  events:        ['member', 'recruiter', 'admin'],
+  saved:         ['member', 'recruiter', 'admin'],
+  news:          ['member', 'recruiter', 'admin'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -428,7 +439,7 @@ function App() {
           {tab === 'my-jobs' && <MyJobsPage />}
           {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'analytics' && <AnalyticsPanel />}
-          {tab === 'messages' && <MessagingPanel />}
+          {tab === 'messages' && <MessagingPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'notifications' && (
             <NotificationsPanel
@@ -445,6 +456,9 @@ function App() {
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
           {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
+          {tab === 'events'      && <EventsPage />}
+          {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
+          {tab === 'news'        && <NewsPage />}
         </div>
       </main>
 

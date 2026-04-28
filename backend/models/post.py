@@ -45,7 +45,9 @@ class Post(Base):
 
 
 class PostLike(Base):
-    """Tracks which user liked which post, so likes are idempotent per user."""
+    """Tracks which user liked which post, so likes are idempotent per user.
+    Now supports specific reaction types (like, celebrate, support, love, insightful, funny).
+    """
 
     __tablename__ = "post_likes"
 
@@ -53,8 +55,42 @@ class PostLike(Base):
     post_id = Column(Integer, nullable=False, index=True)
     user_id = Column(Integer, nullable=False)
     user_type = Column(String(20), nullable=False)
+    reaction_type = Column(String(20), server_default="like", nullable=False) # like, celebrate, support, love, insightful, funny
     created_at = Column(TIMESTAMP, server_default=func.now())
 
     __table_args__ = (
         Index("uq_post_like", "post_id", "user_type", "user_id", unique=True),
     )
+
+    def to_dict(self):
+        return {
+            "like_id": self.like_id,
+            "post_id": self.post_id,
+            "user_id": self.user_id,
+            "user_type": self.user_type,
+            "reaction_type": self.reaction_type,
+            "created_at": str(self.created_at) if self.created_at else None,
+        }
+
+
+class PostComment(Base):
+    """A comment on a post."""
+
+    __tablename__ = "post_comments"
+
+    comment_id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(Integer, nullable=False, index=True)
+    author_id = Column(Integer, nullable=False)
+    author_type = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    def to_dict(self):
+        return {
+            "comment_id": self.comment_id,
+            "post_id": self.post_id,
+            "author_id": self.author_id,
+            "author_type": self.author_type,
+            "content": self.content,
+            "created_at": str(self.created_at) if self.created_at else None,
+        }
