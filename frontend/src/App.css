@@ -5721,6 +5721,21 @@ button { cursor: pointer; outline-offset: 2px; }
   border-left: 4px solid var(--li-blue-primary);
   padding-left: 8px;
 }
+.thread-item.unread .thread-subject,
+.thread-item.unread .thread-preview {
+  font-weight: 700;
+  color: var(--li-text-primary);
+}
+.thread-item.unread .thread-top::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--li-blue-primary);
+  border-radius: 50%;
+  margin-left: 6px;
+  flex-shrink: 0;
+  align-self: center;
+}
 .thread-info {
   flex: 1;
   min-width: 0;
@@ -5858,4 +5873,84 @@ button { cursor: pointer; outline-offset: 2px; }
   font-size: 11px;
   color: var(--text-secondary);
   text-align: right;
+}
+
+/* Recipient Search Dropdown */
+.recipient-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  max-height: 250px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.recipient-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.recipient-item:last-child {
+  border-bottom: none;
+}
+
+.recipient-item:hover {
+  background: var(--surface2);
+}
+
+.recipient-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 13px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.recipient-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.recipient-info {
+  min-width: 0;
+}
+
+.recipient-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.recipient-sub {
+  font-size: 12px;
+  color: var(--text-sec);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recipient-loading {
+  position: absolute;
+  right: 12px;
+  top: 32px;
+  font-size: 12px;
+  color: var(--text-sec);
 }

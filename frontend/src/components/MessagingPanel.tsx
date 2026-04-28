@@ -130,7 +130,18 @@ function SharedPostLoader({
 }
 
 export function MessagingPanel({ 
-onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void }) {
+  onNavigateProfile, 
+  onNavigatePost, 
+  initialTargetId, 
+  initialTargetType, 
+  onTargetConsumed 
+}: { 
+  onNavigateProfile?: (id: number) => void, 
+  onNavigatePost?: (postId: number) => void,
+  initialTargetId?: number | null,
+  initialTargetType?: 'member' | 'recruiter',
+  onTargetConsumed?: () => void 
+} = {}) {
   const identity = parseStoredUser()
 
   const [threads, setThreads]         = useState<ThreadData[]>([])
@@ -153,6 +164,11 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
   const [newLoading, setNewL]         = useState(false)
   const [newErr, setNewErr]           = useState<string | null>(null)
 
+  const [recipientSearch, setRecipientSearch] = useState('')
+  const [recipientResults, setRecipientResults] = useState<any[]>([])
+  const [isSearchingRecipient, setIsSearchingRecipient] = useState(false)
+  const [showRecipientDropdown, setShowRecipientDropdown] = useState(false)
+
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -165,6 +181,57 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (!recipientSearch.trim() || recipientSearch.length < 2) {
+      setRecipientResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      setIsSearchingRecipient(true)
+      try {
+        const endpoint = newParticType === 'member' ? '/members/search' : '/recruiters/search'
+        const res = await apiPost<any>(endpoint, { keyword: recipientSearch, page_size: 5 })
+        const items = (res.data || []).map((item: any) => ({
+          id: item.member_id || item.recruiter_id,
+          name: `${item.first_name} ${item.last_name}`,
+          headline: item.headline || item.company_name,
+          photo_url: item.profile_photo_url
+        }))
+        setRecipientResults(items)
+        setShowRecipientDropdown(true)
+      } catch (err) {
+        console.error('Recipient search failed', err)
+      } finally {
+        setIsSearchingRecipient(false)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [recipientSearch, newParticType])
+
+  useEffect(() => {
+    if (identity && initialTargetId && initialTargetType) {
+      setNewL(true)
+      apiPost<{ success: boolean; message: string; data: ThreadData }>(
+        '/threads/open',
+        { participant_ids: [
+            { user_id: identity.user_id, user_type: identity.user_type },
+            { user_id: initialTargetId, user_type: initialTargetType },
+          ] },
+      ).then(r => {
+        if (r.success) {
+          loadThreads(identity.user_id, identity.user_type)
+          selectThread(r.data.thread_id)
+        }
+      }).catch(e => {
+        console.error('Failed to open initial thread', e)
+      }).finally(() => {
+        setNewL(false)
+        onTargetConsumed?.()
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTargetId, initialTargetType])
+
   async function loadThreads(id: number, type: UserType) {
     setThreadsL(true)
     setThreadsErr(null)
@@ -173,7 +240,12 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
         '/threads/byUser', { user_id: id, user_type: type, page: 1, page_size: 30 },
       )
       if (!r.success) throw new Error(r.message)
-      setThreads(r.data ?? [])
+      const sorted = (r.data ?? []).sort((a: any, b: any) => {
+        const tA = new Date(a.updated_at || a.created_at).getTime()
+        const tB = new Date(b.updated_at || b.created_at).getTime()
+        return tB - tA
+      })
+      setThreads(sorted)
     } catch (e) {
       setThreadsErr(e instanceof Error ? e.message : 'Failed to load threads')
     } finally {
@@ -190,7 +262,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
         '/messages/list', { thread_id: threadId, page: 1, page_size: 50 },
       )
       if (!r.success) throw new Error(r.message)
-      setMessages((r.data ?? []).slice().reverse())
+      setMessages(r.data ?? [])
     } catch (e) {
       setMsgsErr(e instanceof Error ? e.message : 'Failed to load messages')
     } finally {
@@ -301,7 +373,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
             {threads.map(t => (
               <li
                 key={t.thread_id}
-                className={`thread-item${selectedId === t.thread_id ? ' active' : ''}`}
+                className={`thread-item${selectedId === t.thread_id ? ' active' : ''}${t.unread_count > 0 ? ' unread' : ''}`}
                 onClick={() => selectThread(t.thread_id)}
                 role="button"
                 tabIndex={0}
@@ -342,13 +414,55 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                   Subject (optional)
                   <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="e.g. Job inquiry" />
                 </label>
-                <label className="form-label">
-                  Recipient ID
-                  <input type="number" value={newParticipant} min={1} onChange={e => setNewPart(e.target.value)} placeholder="e.g. 2" />
+                <label className="form-label" style={{ position: 'relative' }}>
+                  Recipient Name
+                  <input 
+                    value={recipientSearch} 
+                    onChange={e => {
+                      setRecipientSearch(e.target.value)
+                      if (!e.target.value) {
+                        setNewPart('')
+                        setShowRecipientDropdown(false)
+                      }
+                    }} 
+                    onFocus={() => recipientResults.length > 0 && setShowRecipientDropdown(true)}
+                    placeholder="Search by name..." 
+                  />
+                  {showRecipientDropdown && recipientResults.length > 0 && (
+                    <div className="recipient-dropdown">
+                      {recipientResults.map(r => (
+                        <div key={r.id} className="recipient-item" onClick={() => {
+                          setNewPart(String(r.id))
+                          setRecipientSearch(r.name)
+                          setShowRecipientDropdown(false)
+                        }}>
+                          <div className="recipient-avatar">
+                            {r.photo_url ? <img src={r.photo_url} alt="" /> : (r.name?.[0] || '?')}
+                          </div>
+                          <div className="recipient-info">
+                            <div className="recipient-name">{r.name}</div>
+                            <div className="recipient-sub">{r.headline}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isSearchingRecipient && <div className="recipient-loading">Searching...</div>}
                 </label>
+                <div style={{ display: 'none' }}>
+                  <input type="number" value={newParticipant} readOnly />
+                </div>
                 <label className="form-label">
                   Recipient type
-                  <select value={newParticType} onChange={e => setNewPType(e.target.value as UserType)} className="identity-select">
+                  <select 
+                    value={newParticType} 
+                    onChange={e => {
+                      setNewPType(e.target.value as UserType)
+                      setRecipientSearch('')
+                      setRecipientResults([])
+                    }} 
+                    className="identity-select"
+                  >
                     <option value="member">member</option>
                     <option value="recruiter">recruiter</option>
                   </select>
@@ -427,11 +541,13 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                   return (
                     <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
                       <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
-                        {!isMe && (
-                          <span className="msg-sender">{m.sender_type} #{m.sender_id}</span>
-                        )}
+                        <div className="msg-bubble-header">
+                          <span className="msg-sender">
+                            {isMe ? 'You' : (selectedThread?.other_participant?.name || `${m.sender_type} #${m.sender_id}`)}
+                          </span>
+                          <span className="msg-time">{fmtTime(m.timestamp)}</span>
+                        </div>
                         <span className="msg-text">{m.message_text}</span>
-                        <span className="msg-time">{fmtTime(m.timestamp)}</span>
                       </div>
                     </div>
                   )

@@ -28,6 +28,7 @@ interface ProfilePageProps {
   viewMemberId?: number | null
   onAuthChange?: () => void
   onNavigateProfile?: (id: number) => void
+  onMessageProfile?: (id: number, type: 'member' | 'recruiter') => void
 }
 
 // ── Client-side image resize → JPEG data URL ──────────────────────────────────
@@ -230,7 +231,7 @@ function recruiterFromProfile(p: Record<string, unknown>): RecruiterState {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile }: ProfilePageProps) {
+export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile, onMessageProfile }: ProfilePageProps) {
   const storedUser = parseStoredUser()
 
   const [loading, setLoading] = useState(true)
@@ -437,7 +438,7 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || userId == null) return
-    if (file.type !== 'application/pdf') {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
       setError('Please upload a PDF file')
       return
     }
@@ -448,22 +449,15 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
       const formData = new FormData()
       formData.append('file', file)
       
-      const res = await fetch('/api/members/resume/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('linkedin_auth_token')}`
-        },
-        body: formData
-      })
-      const result = await res.json()
+      const result = await apiPostMultipart<SaveResponse>('/members/resume/upload', formData)
       
       if (!result.success) throw new Error(result.message || 'Resume upload failed')
       
       setMember((m) => ({ 
         ...m, 
-        resume_text: result.data.resume_text,
-        resume_pdf_url: result.data.resume_pdf_url,
-        resume_filename: result.data.resume_filename
+        resume_text: String(result.data?.resume_text || ''),
+        resume_pdf_url: String(result.data?.resume_pdf_url || ''),
+        resume_filename: String(result.data?.resume_filename || '')
       }))
       setToast('Resume uploaded and text extracted')
     } catch (err) {
@@ -848,7 +842,11 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
               <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
                 {connections.includes(viewMemberId) ? (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="btn-message">
+                    <button 
+                      type="button" 
+                      className="btn-message"
+                      onClick={() => onMessageProfile?.(viewMemberId, userType as 'member' | 'recruiter')}
+                    >
                       Message
                     </button>
                     <button 
