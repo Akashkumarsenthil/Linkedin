@@ -187,9 +187,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=http://localhost:8000
-        - VITE_OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
+
     container_name: linkedin-frontend
     restart: unless-stopped
     ports:
