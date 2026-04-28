@@ -160,6 +160,7 @@ async def create_mongo_indexes() -> None:
             "week", name="week_1"
         )
 
+<<<<<<< Updated upstream
         # job_member_views ─────────────────────────────────────────
         # Tracks one logical job view per (job_id, member_id) pair
         # so repeated opens by the same member don't inflate views.
@@ -175,6 +176,8 @@ async def create_mongo_indexes() -> None:
             name="member_notifications_member_created",
         )
 
+=======
+>>>>>>> Stashed changes
         logger.info("✓ MongoDB indexes ensured")
     except Exception as e:
         # Non-fatal: indexes are a performance optimisation, not a correctness
