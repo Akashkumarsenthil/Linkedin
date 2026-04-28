@@ -13,6 +13,7 @@ interface HomeFeedProps {
     profile: Record<string, unknown>
   } | null
   onNavigateProfile: (id?: number) => void
+  onNavigateTab: (tab: any) => void
 }
 
 const NEWS_ITEMS = [
@@ -123,21 +124,23 @@ function SimsonAgent({ userName }: { userName: string }) {
   const runAiResponse = async (voiceCommand?: string, mode: 'briefing' | 'question' = 'question') => {
     if (status === 'thinking' || status === 'speaking') return
     setStatus('thinking')
-    const notes = localStorage.getItem('ln-notes') || 'No current reminders.'
-    const news  = NEWS_ITEMS.slice(0, 3).map(n => n.headline).join('. ')
-    const jobs  = JOBS_MATCH.map(j => `${j.title} at ${j.company}`).join(', ')
+    const notes  = localStorage.getItem('ln-notes') || 'No current reminders.'
+    const events = localStorage.getItem('ln-events') || 'No scheduled events.'
+    const news   = NEWS_ITEMS.slice(0, 3).map(n => n.headline).join('. ')
+    const jobs   = JOBS_MATCH.map(j => `${j.title} at ${j.company}`).join(', ')
     
     const context = `Context:
 Reminders/Notes: ${notes}
-News: ${news}
+Scheduled Events: ${events}
+Newsletters: ${news}
 New Job Openings: ${jobs}
 User Name: ${userName}`
 
     let prompt = ''
     if (mode === 'briefing') {
-      prompt = `Provide a full strategic briefing including news, reminders, and specifically mention any new job openings that might interest the user. ${context}`
+      prompt = `Provide a full strategic briefing including newsletters, scheduled events, reminders, and specifically mention any new job openings. ${context}`
     } else {
-      prompt = `Answer ONLY the following question based on the context. If the question is about reminders, only list the reminders. If the question is about jobs, list the available openings. User Question: "${voiceCommand}"\n${context}`
+      prompt = `Answer ONLY the following question based on the context. If the question is about reminders or events, list them clearly. If the question is about jobs, list the available openings. User Question: "${voiceCommand}"\n${context}`
     }
 
     const apiKey_OpenAI = import.meta.env.VITE_OPENAI_API_KEY
@@ -282,7 +285,7 @@ User Name: ${userName}`
   )
 }
 
-export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
+export function HomeFeed({ me, onNavigateProfile, onNavigateTab }: HomeFeedProps) {
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -295,6 +298,16 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
     }, 20000)
     return () => clearInterval(interval)
   }, [])
+
+  const [view, setView] = useState<'all' | 'saved'>('all')
+  const [savedPostIds, setSavedPostIds] = useState<number[]>(() => {
+    const saved = localStorage.getItem('ln-saved-posts')
+    return saved ? JSON.parse(saved) : []
+  })
+
+  useEffect(() => {
+    localStorage.setItem('ln-saved-posts', JSON.stringify(savedPostIds))
+  }, [savedPostIds])
 
   const loadFeed = useCallback(async () => {
     setLoading(true)
@@ -354,10 +367,30 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         </div>
 
         <nav className="feed-left-links">
-          <a className="feed-left-link" href="#saved"><Icon name="check" size={16} /> Saved items</a>
-          <a className="feed-left-link" href="#groups"><Icon name="connections" size={16} /> Groups</a>
-          <a className="feed-left-link" href="#newsletters"><Icon name="article" size={16} /> Newsletters</a>
-          <a className="feed-left-link" href="#events"><Icon name="analytics" size={16} /> Events</a>
+          <button 
+            className="feed-left-link-btn" 
+            onClick={() => onNavigateTab('saved')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-sec)' }}
+          >
+            <Icon name="bookmark" size={16} /> 
+            <span>Saved items {savedPostIds.length > 0 && `(${savedPostIds.length})`}</span>
+          </button>
+          <button 
+            className="feed-left-link-btn" 
+            onClick={() => onNavigateTab('news')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-sec)' }}
+          >
+            <Icon name="article" size={16} /> 
+            <span>Newsletters</span>
+          </button>
+          <button 
+            className="feed-left-link-btn" 
+            onClick={() => onNavigateTab('events')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', padding: '8px 16px', cursor: 'pointer', fontSize: '14px', color: 'var(--text-sec)' }}
+          >
+            <Icon name="analytics" size={16} /> 
+            <span>Events</span>
+          </button>
         </nav>
 
         <div className="feed-quote-card li-card" style={{ marginTop: 12, borderTop: '4px solid var(--ln-blue, #0a66c2)' }}>
@@ -368,15 +401,9 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         </div>
 
         <div className="feed-notes-card li-card" style={{ marginTop: 12 }}>
-          <div className="section-heading" style={{ padding: '12px 16px' }}>Reminders</div>
-          <div style={{ padding: '0 16px 16px' }}>
-            <textarea 
-              className="notes-area" 
-              placeholder="Enter your reminders" 
-              defaultValue={localStorage.getItem('ln-notes') || ''} 
-              onChange={e => localStorage.setItem('ln-notes', e.target.value)} 
-              rows={4} 
-            />
+          <div className="section-heading" style={{ padding: '12px 16px', borderBottom: '1px solid var(--li-border)' }}>My Activity</div>
+          <div style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-sec)' }}>
+            Track your professional schedule and saved insights across the platform.
           </div>
         </div>
       </aside>
@@ -386,9 +413,22 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         {error && <div className="feed-error-msg">{error}</div>}
         {loading && posts.length === 0 ? <div className="feed-empty">Loading posts…</div> : (
           <div className="feed-posts">
-            {posts.map((p) => (
-              <PostCard key={p.post_id} post={p} currentUserId={me.user_id} currentUserType={me.user_type} currentUserPhoto={photo} currentUserName={name} onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} onNavigateProfile={onNavigateProfile} />
-            ))}
+            {posts
+              .filter(p => view === 'all' || savedPostIds.includes(p.post_id))
+              .map((p) => (
+                <PostCard 
+                  key={p.post_id} 
+                  post={p} 
+                  currentUserId={me.user_id} 
+                  currentUserType={me.user_type} 
+                  currentUserPhoto={photo} 
+                  currentUserName={name} 
+                  isSaved={savedPostIds.includes(p.post_id)}
+                  onToggleSave={(id) => setSavedPostIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                  onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} 
+                  onNavigateProfile={onNavigateProfile} 
+                />
+              ))}
           </div>
         )}
       </section>
@@ -398,7 +438,7 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         
         <div className="feed-news-card li-card">
           <div className="feed-news-header">
-            <h3 className="feed-news-title">LinkedIn News</h3>
+            <h3 className="feed-news-title">Newsletters</h3>
           </div>
           <p className="feed-news-sub">Top stories</p>
           <ul className="feed-news-list">
