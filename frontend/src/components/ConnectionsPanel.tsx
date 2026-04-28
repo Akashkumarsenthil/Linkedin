@@ -375,10 +375,10 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                 const m = c.connected_member
                 return (
                   <li key={c.connection_id} className="conn-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                       <div 
                         className="member-avatar" 
-                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer' }}
+                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer', marginTop: 2 }}
                         onClick={() => {
                           const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
                           onNavigateProfile?.(otherId)
@@ -399,7 +399,7 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                         </div>
                         {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
                       </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', alignSelf: 'center' }}>
                         <span className="conn-badge">Accepted</span>
                         <button 
                           className="ghost-btn" 

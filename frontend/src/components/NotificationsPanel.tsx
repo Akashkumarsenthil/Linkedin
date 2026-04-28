@@ -7,6 +7,7 @@ interface NotificationItem {
   subtitle?: string | null
   actor_id?: number
   actor_type?: string
+  actor_name?: string
   actor_photo_url?: string | null
   post_id?: number
   created_at?: string | null
@@ -18,6 +19,8 @@ interface NotificationsPanelProps {
   unreadCount: number
   onRefresh: () => void
   onOpenConnections: () => void
+  onNavigateProfile: (id: number) => void
+  onNavigateAction: (item: NotificationItem) => void
 }
 
 function iconForType(type: string): string {
@@ -47,6 +50,8 @@ export function NotificationsPanel({
   unreadCount,
   onRefresh,
   onOpenConnections,
+  onNavigateProfile,
+  onNavigateAction,
 }: NotificationsPanelProps) {
   return (
     <section className="panel notif-panel">
@@ -88,8 +93,13 @@ export function NotificationsPanel({
               <li
                 key={n.id}
                 className={`notif-item${n.unread ? ' notif-item-unread' : ''}`}
+                onClick={() => onNavigateAction(n)}
+                style={{ cursor: 'pointer' }}
               >
-                <div className="notif-avatar">
+                <div 
+                  className="notif-avatar" 
+                  onClick={(e) => { e.stopPropagation(); n.actor_id && onNavigateProfile(n.actor_id); }}
+                >
                   {n.actor_photo_url ? (
                     <img src={n.actor_photo_url} alt="" />
                   ) : (
@@ -100,7 +110,21 @@ export function NotificationsPanel({
                   </span>
                 </div>
                 <div className="notif-body">
-                  <p className="notif-title">{n.title}</p>
+                  <p className="notif-title">
+                    {n.actor_name && n.title.startsWith(n.actor_name) ? (
+                      <>
+                        <span 
+                          className="notif-actor-link"
+                          onClick={(e) => { e.stopPropagation(); n.actor_id && onNavigateProfile(n.actor_id); }}
+                        >
+                          {n.actor_name}
+                        </span>
+                        {n.title.slice(n.actor_name.length)}
+                      </>
+                    ) : (
+                      n.title
+                    )}
+                  </p>
                   {n.subtitle && <p className="notif-subtitle">{n.subtitle}</p>}
                   <p className="notif-time">{formatRelative(n.created_at)}</p>
                 </div>
@@ -108,7 +132,7 @@ export function NotificationsPanel({
                   <button
                     type="button"
                     className="primary notif-action"
-                    onClick={onOpenConnections}
+                    onClick={(e) => { e.stopPropagation(); onOpenConnections(); }}
                   >
                     Review
                   </button>
