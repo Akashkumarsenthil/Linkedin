@@ -8,17 +8,16 @@ import json
 import logging
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, desc, text, update
+from sqlalchemy import or_, and_, desc, text
 
 from database import get_db, SessionLocal
-from database import mongo_db
 from models.job import JobPosting, SavedJob
 from models.recruiter import Recruiter
 from models.failed_kafka_event import FailedKafkaEvent
 from auth import require_recruiter, require_member, TokenPayload
 from schemas.job import (
     JobCreate, JobGet, JobUpdate, JobSearch, JobClose, JobByRecruiter,
-    SaveJobRequest, UnsaveJobRequest, SavedJobsByMemberRequest, JobResponse, JobListResponse,
+    SaveJobRequest, JobResponse, JobListResponse,
 )
 from cache import cache
 from kafka_producer import kafka_producer
@@ -62,44 +61,6 @@ def _decode_cursor(cursor: str) -> dict:
         return json.loads(base64.urlsafe_b64decode(cursor + "==").decode())
     except Exception:
         return {}
-
-
-def _attach_company_names(db: Session, jobs_data: list[dict]) -> list[dict]:
-    """Enrich job payloads with company_name derived from recruiter records."""
-    if not jobs_data:
-        return jobs_data
-    recruiter_ids = {j.get("recruiter_id") for j in jobs_data if j.get("recruiter_id") is not None}
-    if not recruiter_ids:
-        return jobs_data
-    recruiters = db.query(Recruiter).filter(Recruiter.recruiter_id.in_(recruiter_ids)).all()
-    recruiter_to_company = {r.recruiter_id: (r.company_name or f"Company #{r.company_id}") for r in recruiters}
-    for job in jobs_data:
-        rid = job.get("recruiter_id")
-        job["company_name"] = recruiter_to_company.get(rid, f"Company #{job.get('company_id') or 'Unknown'}")
-    return jobs_data
-
-
-async def _track_unique_member_view(db: Session, job_id: int, member_id: int) -> bool:
-    """
-    Register a logical view only once per (job_id, member_id).
-    Returns True when this call created a new unique view.
-    """
-    marker = await mongo_db.job_member_views.update_one(
-        {"job_id": job_id, "member_id": member_id},
-        {"$setOnInsert": {"job_id": job_id, "member_id": member_id}},
-        upsert=True,
-    )
-    if not marker.upserted_id:
-        return False
-
-    # Keep views_count immediately consistent for UI reads.
-    db.execute(
-        update(JobPosting)
-        .where(JobPosting.job_id == job_id)
-        .values(views_count=JobPosting.views_count + 1)
-    )
-    db.commit()
-    return True
 
 
 @router.post("/create", response_model=JobResponse, summary="Create a new job posting")
@@ -163,25 +124,6 @@ async def create_job(
 async def get_job(req: JobGet, db: Session = Depends(get_db)):
     """Retrieve a job posting's full details by job_id. Publishes a job.viewed event."""
     cache_key = f"jobs:get:{req.job_id}"
-
-    # Unique-by-member view tracking (one view per member/job).
-    try:
-        if req.member_id is not None:
-            is_new_unique_view = await _track_unique_member_view(db, req.job_id, req.member_id)
-            if is_new_unique_view:
-                cache.delete(cache_key)
-                await kafka_producer.publish(
-                    topic="job.viewed",
-                    event_type="job.viewed",
-                    actor_id=str(req.member_id),
-                    entity_type="job",
-                    entity_id=str(req.job_id),
-                    payload={"member_id": req.member_id, "already_incremented": True},
-                    idempotency_key=f"job_view:{req.job_id}:{req.member_id}",
-                )
-    except Exception:
-        pass
-
     cached = cache.get(cache_key)
     if cached:
         return JobResponse(success=True, message="Job retrieved (cached)", data=cached)
@@ -190,20 +132,19 @@ async def get_job(req: JobGet, db: Session = Depends(get_db)):
     if not job:
         return JobResponse(success=False, message=f"Job {req.job_id} not found")
 
-    data = _attach_company_names(db, [job.to_dict()])[0]
+    data = job.to_dict()
     cache.set(cache_key, data, ttl=300)
 
-    # Legacy/system views (when member context is absent).
+    # Publish view event
     try:
-        if req.member_id is None:
-            await kafka_producer.publish(
-                topic="job.viewed",
-                event_type="job.viewed",
-                actor_id="system",
-                entity_type="job",
-                entity_id=str(req.job_id),
-                payload={},
-            )
+        await kafka_producer.publish(
+            topic="job.viewed",
+            event_type="job.viewed",
+            actor_id="system",
+            entity_type="job",
+            entity_id=str(req.job_id),
+            payload={},
+        )
     except Exception:
         pass
 
@@ -420,11 +361,10 @@ async def search_jobs(req: JobSearch, db: Session = Depends(get_db)):
         except Exception:
             total = None
 
-    jobs_data = _attach_company_names(db, [j.to_dict() for j in jobs_page])
     result = JobListResponse(
         success=True,
         message=f"Found {len(jobs_page)} job postings" + (f" of {total}" if total is not None else ""),
-        data=jobs_data,
+        data=[j.to_dict() for j in jobs_page],
         total=total,
         page=req.page if not req.cursor else None,
         page_size=req.page_size,
@@ -487,11 +427,10 @@ async def jobs_by_recruiter(req: JobByRecruiter, db: Session = Depends(get_db)):
     offset = (req.page - 1) * req.page_size
     jobs = query.order_by(desc(JobPosting.posted_datetime)).offset(offset).limit(req.page_size).all()
 
-    jobs_data = _attach_company_names(db, [j.to_dict() for j in jobs])
     return JobListResponse(
         success=True,
         message=f"Found {total} jobs for recruiter {req.recruiter_id}",
-        data=jobs_data,
+        data=[j.to_dict() for j in jobs],
         total=total,
         page=req.page,
         page_size=req.page_size,
@@ -532,53 +471,3 @@ async def save_job(
         pass
 
     return JobResponse(success=True, message="Job saved successfully")
-
-
-@router.post("/unsave", response_model=JobResponse, summary="Remove a saved job")
-async def unsave_job(
-    req: UnsaveJobRequest,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
-):
-    """Remove a job from a member's saved list."""
-    if req.member_id != current_user.user_id:
-        return JobResponse(success=False, message="Cannot unsave job on behalf of another member")
-
-    saved = db.query(SavedJob).filter(
-        SavedJob.member_id == req.member_id, SavedJob.job_id == req.job_id
-    ).first()
-    if not saved:
-        return JobResponse(success=False, message="Job is not saved")
-
-    db.delete(saved)
-    db.commit()
-    return JobResponse(success=True, message="Job unsaved successfully")
-
-
-@router.post("/savedByMember", response_model=JobListResponse, summary="List saved jobs by member")
-async def saved_jobs_by_member(
-    req: SavedJobsByMemberRequest,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
-):
-    """List paginated saved jobs for a member."""
-    if req.member_id != current_user.user_id:
-        return JobListResponse(success=False, message="Cannot access saved jobs for another member", data=[])
-
-    query = db.query(JobPosting).join(SavedJob, SavedJob.job_id == JobPosting.job_id).filter(
-        SavedJob.member_id == req.member_id
-    )
-    total = query.count()
-    offset = (req.page - 1) * req.page_size
-    jobs = query.order_by(desc(SavedJob.saved_at)).offset(offset).limit(req.page_size).all()
-    jobs_data = _attach_company_names(db, [j.to_dict() for j in jobs])
-
-    return JobListResponse(
-        success=True,
-        message=f"Found {total} saved jobs",
-        data=jobs_data,
-        total=total,
-        page=req.page,
-        page_size=req.page_size,
-        has_more=(offset + len(jobs)) < total,
-    )

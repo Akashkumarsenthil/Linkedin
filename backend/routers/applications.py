@@ -5,22 +5,18 @@ Handles submit, status management, and recruiter notes with proper error handlin
 
 import json
 import logging
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, update, text
+from sqlalchemy import desc, update
 
 from database import get_db, SessionLocal
-from database import mongo_db
 from models.application import Application
 from models.job import JobPosting
 from models.member import Member
-from models.recruiter import Recruiter
 from models.failed_kafka_event import FailedKafkaEvent
 from auth import require_member, require_recruiter, TokenPayload
 from schemas.application import (
-    ApplicationSubmit, ApplicationGet, ApplicationWithdraw, ApplicationByJob, ApplicationByMember,
+    ApplicationSubmit, ApplicationGet, ApplicationByJob, ApplicationByMember,
     ApplicationUpdateStatus, ApplicationAddNote,
     ApplicationResponse, ApplicationListResponse,
 )
@@ -145,34 +141,6 @@ async def submit_application(
         "resume_ref": req.resume_url or "inline_text",
     }
 
-    # Applicant implies they have viewed the job at least once.
-    # Track a unique member/job view and publish job.viewed only on first sighting.
-    try:
-        marker = await mongo_db.job_member_views.update_one(
-            {"job_id": req.job_id, "member_id": req.member_id},
-            {"$setOnInsert": {"job_id": req.job_id, "member_id": req.member_id}},
-            upsert=True,
-        )
-        if marker.upserted_id:
-            # Keep views_count immediately consistent for recruiter/member UIs.
-            db.execute(
-                update(JobPosting)
-                .where(JobPosting.job_id == req.job_id)
-                .values(views_count=JobPosting.views_count + 1)
-            )
-            db.commit()
-            await kafka_producer.publish(
-                topic="job.viewed",
-                event_type="job.viewed",
-                actor_id=str(req.member_id),
-                entity_type="job",
-                entity_id=str(req.job_id),
-                payload={"member_id": req.member_id, "source": "application_submit", "already_incremented": True},
-                idempotency_key=f"job_view:{req.job_id}:{req.member_id}",
-            )
-    except Exception as e:
-        logger.warning(f"Failed to upsert unique view marker during application submit: {e}")
-
     try:
         trace_id = await kafka_producer.publish(
             topic="application.submitted",
@@ -195,62 +163,6 @@ async def submit_application(
 
     return ApplicationResponse(
         success=True, message="Application submitted successfully", data=application.to_dict()
-    )
-
-
-@router.post("/withdraw", response_model=ApplicationResponse, summary="Withdraw (delete) own application")
-async def withdraw_application(
-    req: ApplicationWithdraw,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
-):
-    """
-    Permanently remove the member's application so they may apply again later.
-    Decrements job_postings.applicants_count atomically (floored at 0).
-    """
-    app = db.query(Application).filter(Application.application_id == req.application_id).first()
-    if not app:
-        return ApplicationResponse(success=False, message="Application not found")
-
-    if app.member_id != current_user.user_id:
-        return ApplicationResponse(success=False, message="You can only withdraw your own applications")
-
-    job_id = app.job_id
-    app_id = app.application_id
-
-    db.delete(app)
-    db.execute(
-        text(
-            "UPDATE job_postings SET applicants_count = GREATEST(0, applicants_count - 1) "
-            "WHERE job_id = :job_id"
-        ),
-        {"job_id": job_id},
-    )
-    db.commit()
-
-    try:
-        cache.delete(f"jobs:get:{job_id}")
-        cache.delete_pattern("jobs:search:*")
-    except Exception as e:
-        logger.warning(f"Cache invalidation after withdraw failed: {e}")
-
-    try:
-        await kafka_producer.publish(
-            topic="application.withdrawn",
-            event_type="application.withdrawn",
-            actor_id=str(current_user.user_id),
-            entity_type="application",
-            entity_id=str(app_id),
-            payload={"job_id": job_id, "member_id": current_user.user_id},
-            idempotency_key=f"app_withdraw:{app_id}",
-        )
-    except Exception as e:
-        logger.warning(f"Kafka publish failed for application.withdrawn: {e}")
-
-    return ApplicationResponse(
-        success=True,
-        message="Application withdrawn",
-        data={"application_id": app_id, "job_id": job_id},
     )
 
 
@@ -293,22 +205,8 @@ async def applications_by_job(
 
 
 @router.post("/byMember", response_model=ApplicationListResponse, summary="List applications by member")
-async def applications_by_member(
-    req: ApplicationByMember,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_member),
-):
-    """List applications for the signed-in member only (cannot list another member's applications)."""
-    if req.member_id != current_user.user_id:
-        return ApplicationListResponse(
-            success=False,
-            message="You can only list your own applications",
-            data=[],
-            total=0,
-            page=req.page,
-            page_size=req.page_size,
-        )
-
+async def applications_by_member(req: ApplicationByMember, db: Session = Depends(get_db)):
+    """List all applications submitted by a specific member."""
     query = db.query(Application).filter(Application.member_id == req.member_id)
     total = query.count()
     offset = (req.page - 1) * req.page_size
@@ -353,32 +251,6 @@ async def update_application_status(
     db.commit()
     db.refresh(app)
 
-    # Member-facing notification (Mongo) when status actually changes
-    if old_status != req.status:
-        try:
-            rec = db.query(Recruiter).filter(Recruiter.recruiter_id == current_user.user_id).first()
-            recruiter_label = (
-                (rec.company_name or f"{rec.first_name} {rec.last_name}".strip()).strip()
-                if rec
-                else f"Recruiter #{current_user.user_id}"
-            )
-            now = datetime.now(timezone.utc)
-            doc = {
-                "member_id": app.member_id,
-                "type": "application_status",
-                "application_id": app.application_id,
-                "job_id": job.job_id,
-                "job_title": job.title or f"Job #{job.job_id}",
-                "old_status": old_status,
-                "new_status": req.status,
-                "recruiter_id": current_user.user_id,
-                "recruiter_label": recruiter_label,
-                "created_at": now,
-            }
-            await mongo_db.member_notifications.insert_one(doc)
-        except Exception as e:
-            logger.warning(f"member_notifications insert failed: {e}")
-
     # Kafka event
     try:
         await kafka_producer.publish(
@@ -387,12 +259,7 @@ async def update_application_status(
             actor_id=str(current_user.user_id),
             entity_type="application",
             entity_id=str(req.application_id),
-            payload={
-                "old_status": old_status,
-                "new_status": req.status,
-                "member_id": app.member_id,
-                "job_id": job.job_id,
-            },
+            payload={"old_status": old_status, "new_status": req.status},
             idempotency_key=f"app_status:{req.application_id}:{req.status}",
         )
     except Exception:
