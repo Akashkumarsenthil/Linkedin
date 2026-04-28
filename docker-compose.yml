@@ -187,7 +187,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-
+      args:
+        - VITE_OPENAI_API_KEY=${VITE_OPENAI_API_KEY}
     container_name: linkedin-frontend
     restart: unless-stopped
     ports:
