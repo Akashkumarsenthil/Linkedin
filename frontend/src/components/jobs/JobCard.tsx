@@ -4,13 +4,13 @@ interface JobCardProps {
   job: JobPosting
   isSelected: boolean
   isApplied: boolean
+  isSaved: boolean
   onClick: () => void
   onDismiss: () => void
 }
 
-export function JobCard({ job, isSelected, isApplied, onClick, onDismiss }: JobCardProps) {
-  // Mock company name/logo based on company_id
-  const companyName = `Company #${job.company_id || 'Unknown'}`
+export function JobCard({ job, isSelected, isApplied, isSaved, onClick, onDismiss }: JobCardProps) {
+  const companyName = job.company_name || `Company #${job.company_id || 'Unknown'}`
   const companyLogo = companyName.charAt(0)
   
   const dateStr = new Date(job.posted_datetime).toLocaleDateString()
@@ -37,6 +37,7 @@ export function JobCard({ job, isSelected, isApplied, onClick, onDismiss }: JobC
           {job.location} ({job.work_mode})
         </p>
         {isApplied && <p className="jobs-li-card__alumni" style={{ color: 'var(--success)', fontWeight: 600 }}>✓ Applied</p>}
+        {!isApplied && isSaved && <p className="jobs-li-card__alumni" style={{ color: 'var(--accent)', fontWeight: 600 }}>★ Saved</p>}
         {salaryStr && <p className="jobs-li-card__alumni">{salaryStr}</p>}
         <p className="jobs-li-card__posted">
           {dateStr}
