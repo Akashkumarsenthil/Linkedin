@@ -5,12 +5,11 @@ interface JobListProps {
   jobs: JobPosting[]
   selectedId: number | null
   appliedJobIds: Set<number>
-  savedJobIds: Set<number>
   onSelect: (id: number) => void
   onDismiss: (id: number) => void
 }
 
-export function JobList({ jobs, selectedId, appliedJobIds, savedJobIds, onSelect, onDismiss }: JobListProps) {
+export function JobList({ jobs, selectedId, appliedJobIds, onSelect, onDismiss }: JobListProps) {
   return (
     <div className="jobs-list-panel">
       <div className="jobs-list-panel__header">
@@ -28,7 +27,6 @@ export function JobList({ jobs, selectedId, appliedJobIds, savedJobIds, onSelect
             job={job}
             isSelected={selectedId === job.job_id}
             isApplied={appliedJobIds.has(job.job_id)}
-            isSaved={savedJobIds.has(job.job_id)}
             onClick={() => onSelect(job.job_id)}
             onDismiss={() => onDismiss(job.job_id)}
           />

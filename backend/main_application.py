@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from kafka_producer import kafka_producer
 from routers import applications
-from database import engine, Base, create_mongo_indexes
+from database import engine, Base
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
 logger = logging.getLogger("application-service")
@@ -15,7 +15,6 @@ logger = logging.getLogger("application-service")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await kafka_producer.start()
-    await create_mongo_indexes()
     Base.metadata.create_all(bind=engine, checkfirst=True)
     yield
     await kafka_producer.stop()

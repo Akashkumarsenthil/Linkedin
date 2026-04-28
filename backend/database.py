@@ -139,21 +139,6 @@ async def create_mongo_indexes() -> None:
             "week", name="week_1"
         )
 
-        # job_member_views ─────────────────────────────────────────
-        # Tracks one logical job view per (job_id, member_id) pair
-        # so repeated opens by the same member don't inflate views.
-        await mongo_db.job_member_views.create_index(
-            [("job_id", ASCENDING), ("member_id", ASCENDING)],
-            unique=True,
-            name="job_member_unique",
-        )
-
-        # member_notifications — recruiter-driven updates surfaced to members in /notifications/list
-        await mongo_db.member_notifications.create_index(
-            [("member_id", ASCENDING), ("created_at", ASCENDING)],
-            name="member_notifications_member_created",
-        )
-
         logger.info("✓ MongoDB indexes ensured")
     except Exception as e:
         # Non-fatal: indexes are a performance optimisation, not a correctness
