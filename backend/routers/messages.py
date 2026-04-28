@@ -169,9 +169,10 @@ async def send_message(
             entity_type="thread",
             entity_id=str(req.thread_id),
             payload={"message_id": message.message_id, "sender_type": req.sender_type},
+            idempotency_key=f"msg_sent:{message.message_id}",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Kafka publish failed for message.sent (message_id={message.message_id}): {e}")
 
     return MessageResponse(success=True, message="Message sent successfully", data=message.to_dict())
 

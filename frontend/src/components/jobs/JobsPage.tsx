@@ -29,6 +29,8 @@ export function JobsPage() {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
 
+  const readOnly = parseStoredUser()?.user_type === 'admin'
+
   const selectedJob = jobs.find((j) => j.job_id === selectedId) ?? null
 
   const fetchJobs = async (searchKw = '') => {
@@ -108,20 +110,22 @@ export function JobsPage() {
               appliedJobIds={appliedJobIds}
               onSelect={setSelectedId}
               onDismiss={handleDismiss}
+              readOnly={readOnly}
             />
           )}
         </div>
 
         {/* Right: selected job detail */}
         <div className="jobs-page__right">
-          <JobDetails 
-            job={selectedJob} 
+          <JobDetails
+            job={selectedJob}
             isApplied={selectedJob ? appliedJobIds.has(selectedJob.job_id) : false}
             onApplySuccess={() => {
               if (selectedJob) {
                 setAppliedJobIds(new Set(appliedJobIds).add(selectedJob.job_id))
               }
             }}
+            readOnly={readOnly}
           />
         </div>
       </div>

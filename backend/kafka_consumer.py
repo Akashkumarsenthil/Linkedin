@@ -4,11 +4,11 @@ Consumes domain events from Kafka topics with idempotent processing and manual o
 
 Delivery semantics (at-least-once)
 -----------------------------------
-enable_auto_commit is disabled.  Offsets are committed manually — only after a message
+enable_auto_commit is disabled. Offsets are committed manually — only after a message
 has been fully processed (handler executed + idempotency record written to MongoDB) or
 after it has been skipped via the idempotency check (already processed, safe to advance).
 
-If the handler raises an exception the offset is intentionally NOT committed.  On the
+If the handler raises an exception the offset is intentionally NOT committed. On the
 next consumer start the broker will redeliver the message from the last committed offset.
 The idempotency layer (in-memory set + MongoDB) ensures re-delivery does not cause
 duplicate side-effects if the message was partially processed before the crash.
@@ -19,10 +19,10 @@ recommitted on the next successful delivery, which is handled by idempotency.
 Poison pill protection
 ----------------------
 A message that permanently fails (bad data, downstream unavailable, schema error) would
-block the consumer forever if the offset is never committed.  To prevent this, delivery
+block the consumer forever if the offset is never committed. To prevent this, delivery
 attempts are tracked per idempotency_key in the MongoDB `processing_attempts` collection.
 After MAX_DELIVERY_ATTEMPTS failures the message is routed to `dead_letters` and the
-offset is committed, unblocking the partition.  The dead-letter document contains the
+offset is committed, unblocking the partition. The dead-letter document contains the
 full event for manual inspection and replay.
 """
 
@@ -31,13 +31,15 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Callable, Set
+
 from aiokafka import AIOKafkaConsumer
+
 from config import settings
 from database import mongo_db
 
 logger = logging.getLogger(__name__)
 
-MAX_DELIVERY_ATTEMPTS = 3   # poison pill threshold
+MAX_DELIVERY_ATTEMPTS = 3  # poison pill threshold
 
 
 class KafkaEventConsumer:
@@ -62,7 +64,7 @@ class KafkaEventConsumer:
             group_id=self.group_id,
             value_deserializer=lambda v: json.loads(v.decode("utf-8")),
             auto_offset_reset="earliest",
-            enable_auto_commit=False,          # offsets committed manually after processing
+            enable_auto_commit=False,  # offsets committed manually after processing
             session_timeout_ms=10000,
             heartbeat_interval_ms=3000,
             request_timeout_ms=15000,
@@ -82,7 +84,7 @@ class KafkaEventConsumer:
         Commit the offset for *message* (offset + 1, i.e. the next-to-fetch position).
 
         Calls consumer.commit() with no arguments, which commits the last polled offset
-        for every assigned partition.  Because we process messages sequentially in a
+        for every assigned partition. Because we process messages sequentially in a
         single async loop, this always corresponds to exactly the message we just handled.
 
         Commit failures are logged as warnings and do not re-raise — the worst outcome is
@@ -112,7 +114,7 @@ class KafkaEventConsumer:
                 },
             },
             upsert=True,
-            return_document=True,   # return the document AFTER the update
+            return_document=True,  # return the document AFTER the update
         )
         return doc.get("attempts", 1) if doc else 1
 
@@ -162,11 +164,13 @@ class KafkaEventConsumer:
                         f"Dead-lettering {event_type} ({idempotency_key}) after "
                         f"{prior_attempts} failed attempts — offset committed to unblock partition"
                     )
-                    await mongo_db.dead_letters.insert_one({
-                        **event,
-                        "dead_lettered_at": datetime.now(timezone.utc).isoformat(),
-                        "reason": f"exceeded {MAX_DELIVERY_ATTEMPTS} delivery attempts",
-                    })
+                    await mongo_db.dead_letters.insert_one(
+                        {
+                            **event,
+                            "dead_lettered_at": datetime.now(timezone.utc).isoformat(),
+                            "reason": f"exceeded {MAX_DELIVERY_ATTEMPTS} delivery attempts",
+                        }
+                    )
                     await self._commit(message)
                     continue
 
@@ -211,6 +215,7 @@ class KafkaEventConsumer:
 
 # ── Event handler functions ─────────────────────────────────────────────────
 
+
 async def handle_job_viewed(event: dict):
     """
     Update job view count when a job.viewed event is received.
@@ -218,10 +223,12 @@ async def handle_job_viewed(event: dict):
     Uses an atomic SQL UPDATE (SET views_count = views_count + 1) instead of
     a read-modify-write to prevent lost updates under concurrent load.
     """
+    from datetime import date
+
+    from sqlalchemy import update
+
     from database import SessionLocal
     from models.job import JobPosting
-    from sqlalchemy import update
-    from datetime import date
 
     job_id = int(event["entity"]["entity_id"])
 
@@ -255,14 +262,30 @@ async def handle_job_viewed(event: dict):
 
 async def handle_application_submitted(event: dict):
     """
-    Log application event to MongoDB.
+    Log application event to MongoDB and upsert into the pre-aggregated daily
+    application counter for analytics.
 
     NOTE: applicants_count is already atomically incremented in the HTTP handler
     (routers/applications.py) at the time the application is committed to MySQL.
     This consumer handler must NOT increment it again — doing so would double-count
     every application.
+
+    Analytics target: analytics_applications_daily
+      { date: "YYYY-MM-DD", week: "YYYY-WNN", count: <int> }
     """
+    from datetime import date
+
     await mongo_db.event_logs.insert_one(event)
+
+    today = date.today()
+    today_str = str(today)
+    week_str = today.strftime("%G-W%V")
+
+    await mongo_db.analytics_applications_daily.update_one(
+        {"date": today_str},
+        {"$inc": {"count": 1}, "$set": {"week": week_str}},
+        upsert=True,
+    )
 
 
 async def handle_application_withdrawn(event: dict):
@@ -275,6 +298,54 @@ async def handle_application_withdrawn(event: dict):
     await mongo_db.event_logs.insert_one(event)
 
 
+async def handle_connection_requested(event: dict):
+    """
+    Log connection.requested to event_logs and upsert into the pre-aggregated
+    daily connection counter for analytics.
+
+    Analytics target: analytics_connections_daily
+      { date: "YYYY-MM-DD", week: "YYYY-WNN", requested: <int>, accepted: <int> }
+    """
+    from datetime import date
+
+    await mongo_db.event_logs.insert_one(event)
+
+    today = date.today()
+    today_str = str(today)
+    week_str = today.strftime("%G-W%V")
+
+    await mongo_db.analytics_connections_daily.update_one(
+        {"date": today_str},
+        {"$inc": {"requested": 1}, "$set": {"week": week_str}},
+        upsert=True,
+    )
+
+
+async def handle_connection_accepted(event: dict):
+    """
+    Log connection.accepted to event_logs and upsert into the pre-aggregated
+    daily connection counter for analytics.
+    """
+    from datetime import date
+
+    await mongo_db.event_logs.insert_one(event)
+
+    today = date.today()
+    today_str = str(today)
+    week_str = today.strftime("%G-W%V")
+
+    await mongo_db.analytics_connections_daily.update_one(
+        {"date": today_str},
+        {"$inc": {"accepted": 1}, "$set": {"week": week_str}},
+        upsert=True,
+    )
+
+
+async def handle_message_sent(event: dict):
+    """Log message.sent to event_logs (thread participants are notified via polling)."""
+    await mongo_db.event_logs.insert_one(event)
+
+
 async def handle_profile_viewed(event: dict):
     """
     Track profile views for analytics.
@@ -282,10 +353,12 @@ async def handle_profile_viewed(event: dict):
     Uses an atomic upsert pattern for the daily view count to prevent
     read-modify-write races under concurrent load.
     """
+    from datetime import date
+
+    from sqlalchemy import update
+
     from database import SessionLocal
     from models.member import ProfileViewDaily
-    from sqlalchemy import update
-    from datetime import date
 
     member_id = int(event["entity"]["entity_id"])
     today = date.today()
@@ -385,12 +458,19 @@ async def handle_ai_requested(event: dict):
     # enqueues locally), the task will be running or beyond "queued".
     # Only enqueue via Kafka path if the task is still waiting.
     from agents.hiring_assistant import active_tasks
+
     task = active_tasks.get(task_id, {})
     if task.get("status") not in ("queued", None):
-        logger.info(f"[ai.requested] task {task_id[:8]}… already started locally — Kafka signal acknowledged, skipping re-enqueue")
+        logger.info(
+            f"[ai.requested] task {task_id[:8]}… already started locally — "
+            "Kafka signal acknowledged, skipping re-enqueue"
+        )
         return
 
-    logger.info(f"[ai.requested] Kafka-triggering workflow task {task_id[:8]}… (job_id={job_id}, top_n={top_n})")
+    logger.info(
+        f"[ai.requested] Kafka-triggering workflow task {task_id[:8]}… "
+        f"(job_id={job_id}, top_n={top_n})"
+    )
     await enqueue_task(task_id, job_id, top_n)
 
 
@@ -402,8 +482,8 @@ kafka_consumer.register_handler("job.viewed", handle_job_viewed)
 kafka_consumer.register_handler("job.saved", handle_job_saved)
 kafka_consumer.register_handler("application.submitted", handle_application_submitted)
 kafka_consumer.register_handler("application.withdrawn", handle_application_withdrawn)
-kafka_consumer.register_handler("message.sent", handle_generic_event)
-kafka_consumer.register_handler("connection.requested", handle_generic_event)
-kafka_consumer.register_handler("connection.accepted", handle_generic_event)
+kafka_consumer.register_handler("message.sent", handle_message_sent)
+kafka_consumer.register_handler("connection.requested", handle_connection_requested)
+kafka_consumer.register_handler("connection.accepted", handle_connection_accepted)
 kafka_consumer.register_handler("profile.viewed", handle_profile_viewed)
 kafka_consumer.register_handler("ai.requested", handle_ai_requested)

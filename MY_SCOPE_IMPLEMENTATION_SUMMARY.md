@@ -35,11 +35,13 @@ This module owns the following areas of the LinkedIn platform project:
 - **Added** optional `idempotency_key` parameter to `publish()` — caller supplies a business-derived key instead of always generating a random UUID
 - If not supplied, falls back to `uuid4()` (safe for analytics view events where dedup is not critical)
 
-#### `backend/kafka_consumer.py` (full rewrite)
+#### `backend/kafka_consumer.py` (full rewrite + analytics redirect)
 - **Poison pill fix** — tracks delivery attempts in `processing_attempts` MongoDB collection; after `MAX_DELIVERY_ATTEMPTS = 3` failures, routes message to `dead_letters` collection and commits offset (unblocks partition)
 - **Removed double-increment** — `handle_application_submitted` no longer touches `applicants_count`; the HTTP handler does it atomically
 - **Atomic SQL UPDATE** — `handle_job_viewed` uses `UPDATE job_postings SET views_count = views_count + 1` instead of read-modify-write
 - **Atomic SQL UPDATE** — `handle_profile_viewed` uses `UPDATE + upsert` pattern for daily view count
+- **Analytics pre-aggregation** — `handle_application_submitted` upserts `analytics_applications_daily` (one doc/day); `handle_connection_requested` and `handle_connection_accepted` upsert `analytics_connections_daily` (requested + accepted counts per day). These join the existing `analytics_job_clicks_daily` and `analytics_saves_daily` collections.
+- **No social notifications** — consumer handlers do not write to a `notifications` collection; Kafka output is analytics only.
 
 #### `backend/routers/applications.py` (full rewrite)
 - **Atomic counter** — replaced `job.applicants_count = (job.applicants_count or 0) + 1` with `db.execute(update(JobPosting).values(applicants_count=JobPosting.applicants_count + 1))`
@@ -77,11 +79,13 @@ This module owns the following areas of the LinkedIn platform project:
 
 ### Frontend Changes
 
-#### `frontend/src/components/PerformanceDashboard.tsx` (new file)
+#### `frontend/src/components/PerformanceDashboard.tsx` (new file + Kafka analytics additions)
 - **Live cache stats** — polls `/health` every 5 seconds, shows hits/misses/hit-rate KPIs
 - **Live cache probe** — "Run Probe" button issues two identical `/jobs/search` requests, measures cold vs warm latency, shows speedup ratio
 - **Benchmark bar charts** — displays B/B+S/B+S+K/B+S+K+O results for Scenario A (reads) and Scenario B (writes); togglable by metric (P95 / throughput)
 - **Results table** — full 8-row table with all modes, both scenarios, colour-coded by value
+- **Kafka pipeline KPIs** — 9 tiles showing events logged, unique processed, dead letters, 24h activity, job clicks, job saves, applications, connections requested/accepted (all from live MongoDB)
+- **Kafka Event Trend chart** — daily stacked-bar chart for the last 7 or 14 days from `/perf/event-trend`; shows job_clicks, job_saves, applications, conn_requested, conn_accepted per day
 - **Reproduce instructions** — embedded shell commands for re-running benchmarks
 
 #### `frontend/src/App.tsx` (targeted edits)
@@ -144,7 +148,7 @@ This module owns the following areas of the LinkedIn platform project:
 |---|---|---|
 | `backend/cache.py` | Modified | SCAN fix, hit/miss logging, stats() |
 | `backend/kafka_producer.py` | Modified | Optional business idempotency_key |
-| `backend/kafka_consumer.py` | Modified | Poison pill, double-increment fix, atomic SQL |
+| `backend/kafka_consumer.py` | Modified | Poison pill, double-increment fix, atomic SQL, analytics pre-aggregation (no notification writes) |
 | `backend/routers/applications.py` | Modified | Atomic counter, dual-write fallback, idempotency, auth check |
 | `backend/routers/connections.py` | Modified | Atomic connections_count |
 | `backend/routers/jobs.py` | Modified | Dual-write fallback, idempotency keys |
@@ -155,8 +159,15 @@ This module owns the following areas of the LinkedIn platform project:
 | `load_tests/locustfile.py` | Modified | Auth, correct ID ranges, read/write split |
 | `load_tests/perf_comparison.py` | Modified | Auth, correct ID ranges, _get_auth_token |
 | `load_tests/results.json` | Replaced | Clean 20-user results, 0% error rate |
-| `frontend/src/components/PerformanceDashboard.tsx` | **New** | Performance Dashboard UI |
+| `backend/database.py` | Modified | Added indexes for `analytics_applications_daily` and `analytics_connections_daily` |
+| `backend/routers/perf_router.py` | Modified | Added `/perf/kafka-stats` aggregated totals; new `/perf/event-trend` daily time-series; new `/perf/bench-results` serving results.json with analysis block |
+| `backend/routers/notifications.py` | Modified | Removed MongoDB notifications fetch; back to MySQL-only |
+| `backend/seed_data.py` | Modified (again) | Added `seed_mongo_analytics()` — populates all 4 analytics collections from SQL at seed time |
+| `backend/load_tests/results.json` | **New** (copy) | Copy of `load_tests/results.json` inside Docker build context so `/perf/bench-results` can serve it |
+| `frontend/src/components/PerformanceDashboard.tsx` | **New** + Modified | Performance Dashboard UI; 9 Kafka analytics KPI tiles; Kafka Event Trend daily bar chart (7d/14d toggle); live bench-results loading with analysis callouts; `n` column in Full Results table |
 | `frontend/src/App.tsx` | Modified | Wire Performance tab into nav |
+| `KAFKA_PERFORMANCE_ALIGNMENT.md` | **New** | Documents analytics-only Kafka direction, event→collection mapping, demo steps |
+| `FINAL_SCOPE_VALIDATION.md` | **New** | End-to-end validation — what was complete, what was fixed, tested endpoints, limitations |
 
 ---
 
