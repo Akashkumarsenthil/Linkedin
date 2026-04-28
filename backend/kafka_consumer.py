@@ -225,21 +225,17 @@ async def handle_job_viewed(event: dict):
 
     job_id = int(event["entity"]["entity_id"])
 
-    payload = event.get("payload") or {}
-    already_incremented = bool(payload.get("already_incremented"))
-
-    if not already_incremented:
-        db = SessionLocal()
-        try:
-            # Atomic increment — no read-modify-write race
-            db.execute(
-                update(JobPosting)
-                .where(JobPosting.job_id == job_id)
-                .values(views_count=JobPosting.views_count + 1)
-            )
-            db.commit()
-        finally:
-            db.close()
+    db = SessionLocal()
+    try:
+        # Atomic increment — no read-modify-write race
+        db.execute(
+            update(JobPosting)
+            .where(JobPosting.job_id == job_id)
+            .values(views_count=JobPosting.views_count + 1)
+        )
+        db.commit()
+    finally:
+        db.close()
 
     # Also log to MongoDB
     await mongo_db.event_logs.insert_one(event)
@@ -261,16 +257,6 @@ async def handle_application_submitted(event: dict):
     (routers/applications.py) at the time the application is committed to MySQL.
     This consumer handler must NOT increment it again — doing so would double-count
     every application.
-    """
-    await mongo_db.event_logs.insert_one(event)
-
-
-async def handle_application_withdrawn(event: dict):
-    """
-    Log withdraw to MongoDB only.
-
-    applicants_count is decremented in the HTTP handler when the row is deleted;
-    do not adjust SQL here.
     """
     await mongo_db.event_logs.insert_one(event)
 
@@ -401,7 +387,6 @@ kafka_consumer = KafkaEventConsumer()
 kafka_consumer.register_handler("job.viewed", handle_job_viewed)
 kafka_consumer.register_handler("job.saved", handle_job_saved)
 kafka_consumer.register_handler("application.submitted", handle_application_submitted)
-kafka_consumer.register_handler("application.withdrawn", handle_application_withdrawn)
 kafka_consumer.register_handler("message.sent", handle_generic_event)
 kafka_consumer.register_handler("connection.requested", handle_generic_event)
 kafka_consumer.register_handler("connection.accepted", handle_generic_event)

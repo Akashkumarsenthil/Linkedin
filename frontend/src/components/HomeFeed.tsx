@@ -13,8 +13,6 @@ interface HomeFeedProps {
     profile: Record<string, unknown>
   } | null
   onNavigateProfile: (id?: number) => void
-  onOpenSavedJobs: () => void
-  onOpenMyJobs: () => void
 }
 
 const NEWS_ITEMS = [
@@ -142,20 +140,74 @@ User Name: ${userName}`
       prompt = `Answer ONLY the following question based on the context. If the question is about reminders, only list the reminders. If the question is about jobs, list the available openings. User Question: "${voiceCommand}"\n${context}`
     }
 
+    const apiKey_OpenAI = import.meta.env.VITE_OPENAI_API_KEY
+
     try {
-      const res = await fetch('http://localhost:11434/api/generate', {
+      if (!apiKey_OpenAI) {
+        throw new Error('VITE_OPENAI_API_KEY is missing from .env')
+      }
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey_OpenAI}`
+        },
         body: JSON.stringify({ 
-          model: 'llama3.2', 
-          prompt: `${SIMSON_SYSTEM}\n\n${prompt}\nS.I.M.P.S.O.N.:`, 
-          stream: false,
-          options: { temperature: 0.2 } 
+          model: 'gpt-4o-mini', 
+          messages: [
+            { role: 'system', content: SIMSON_SYSTEM },
+            { role: 'user', content: prompt }
+          ],
+          stream: true,
+          temperature: 0.2
         }),
       })
-      const data = await res.json()
-      speak(data.response || "Systems operational.")
-    } catch { speak("Neural link interrupted.") }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error?.message || `OpenAI failure: ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('Neural stream corrupted')
+
+      let fullText = ''
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += new TextDecoder().decode(value)
+        
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep the last (potentially partial) line in buffer
+        
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed || trimmed === 'data: [DONE]') continue
+          
+          const message = trimmed.replace(/^data: /, '')
+          try {
+            const json = JSON.parse(message)
+            const token = json.choices[0]?.delta?.content
+            if (token) {
+              fullText += token
+              setTranscript(fullText)
+            }
+          } catch (e) {
+            // If it fails, maybe it's still partial despite line splitting? 
+            // In standard SSE, this shouldn't happen if we split by \n.
+          }
+        }
+      }
+      speak(fullText)
+    } catch (err: any) {
+      console.error(err)
+      setTranscript(`Neural link interrupted: ${err.message}`)
+      speak("Neural link interrupted. Please check your OpenAI configuration.")
+    } finally {
+      setStatus('idle')
+    }
   }
 
   const handleClick = () => {
@@ -230,7 +282,7 @@ User Name: ${userName}`
   )
 }
 
-export function HomeFeed({ me, onNavigateProfile, onOpenSavedJobs, onOpenMyJobs }: HomeFeedProps) {
+export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -302,12 +354,7 @@ export function HomeFeed({ me, onNavigateProfile, onOpenSavedJobs, onOpenMyJobs 
         </div>
 
         <nav className="feed-left-links">
-          {me.user_type === 'member' && (
-            <button type="button" className="feed-left-link" onClick={onOpenMyJobs}>
-              <Icon name="jobs" size={16} /> My jobs
-            </button>
-          )}
-          <button type="button" className="feed-left-link" onClick={onOpenSavedJobs}><Icon name="check" size={16} /> Saved items</button>
+          <a className="feed-left-link" href="#saved"><Icon name="check" size={16} /> Saved items</a>
           <a className="feed-left-link" href="#groups"><Icon name="connections" size={16} /> Groups</a>
           <a className="feed-left-link" href="#newsletters"><Icon name="article" size={16} /> Newsletters</a>
           <a className="feed-left-link" href="#events"><Icon name="analytics" size={16} /> Events</a>
