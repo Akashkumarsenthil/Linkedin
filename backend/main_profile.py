@@ -18,25 +18,6 @@ async def lifespan(app: FastAPI):
     await kafka_producer.start()
     await create_mongo_indexes()
     Base.metadata.create_all(bind=engine, checkfirst=True)
-    from sqlalchemy import text
-    _cols = [
-        # members photo + resume columns added in this branch
-        "ALTER TABLE members ADD COLUMN profile_photo_url MEDIUMTEXT",
-        "ALTER TABLE members ADD COLUMN cover_photo_url MEDIUMTEXT",
-        "ALTER TABLE members ADD COLUMN resume_text TEXT",
-        "ALTER TABLE members ADD COLUMN resume_pdf_url TEXT",
-        "ALTER TABLE members ADD COLUMN resume_filename VARCHAR(255)",
-        # recruiters photo columns
-        "ALTER TABLE recruiters ADD COLUMN profile_photo_url MEDIUMTEXT",
-        "ALTER TABLE recruiters ADD COLUMN cover_photo_url MEDIUMTEXT",
-    ]
-    with engine.begin() as conn:
-        for sql in _cols:
-            try:
-                conn.execute(text(sql))
-            except Exception:
-                pass  # column already exists — safe to ignore
-
     yield
     await kafka_producer.stop()
 
