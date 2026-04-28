@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc
 
-from database import get_db
+from database import get_db, mongo_db
 from models.connection import Connection
 from models.member import Member
 from models.post import Post, PostLike
@@ -54,6 +54,15 @@ async def list_notifications(
 
     user_id = current_user.user_id
     is_member = current_user.user_type == "member"
+
+    def _application_status_subtitle(new_status: str) -> str:
+        return {
+            "rejected": "Your application was not selected for this role.",
+            "offer": "You were shortlisted — the hiring team may follow up soon.",
+            "interview": "Your application moved to the interview stage.",
+            "reviewing": "Your application is being reviewed.",
+            "submitted": "Your application status was updated.",
+        }.get(new_status or "", "Your application status was updated.")
 
     # ── 1. Pending connection requests (members only) ───────────────────────
     pending_count = 0
@@ -197,6 +206,37 @@ async def list_notifications(
                     "created_at": _iso(p.created_at),
                     "unread": False,
                 })
+
+    # ── 4. Job application status updates (members only, from Mongo) ─────────
+    if is_member:
+        try:
+            app_docs = (
+                await mongo_db.member_notifications.find({"member_id": user_id})
+                .sort("created_at", -1)
+                .limit(20)
+                .to_list(length=20)
+            )
+            for doc in app_docs:
+                oid = doc.get("_id")
+                nid = f"app-status-{oid}" if oid is not None else f"app-status-{doc.get('application_id')}"
+                job_title = doc.get("job_title") or f"Job #{doc.get('job_id')}"
+                recruiter_label = doc.get("recruiter_label") or "A recruiter"
+                new_status = doc.get("new_status") or ""
+                notifications.append({
+                    "id": nid,
+                    "type": "application_status",
+                    "title": f"{recruiter_label} updated your application: {job_title}",
+                    "subtitle": _application_status_subtitle(new_status),
+                    "actor_id": doc.get("recruiter_id"),
+                    "actor_type": "recruiter",
+                    "actor_photo_url": None,
+                    "job_id": doc.get("job_id"),
+                    "application_id": doc.get("application_id"),
+                    "created_at": _iso(doc.get("created_at")),
+                    "unread": False,
+                })
+        except Exception as e:
+            logger.warning(f"member_notifications query failed: {e}")
 
     # Sort newest first, cap at 30 items
     notifications.sort(key=lambda n: (n.get("created_at") or ""), reverse=True)
