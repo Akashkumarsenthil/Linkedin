@@ -41,6 +41,7 @@ class JobCreate(BaseModel):
 
 class JobGet(BaseModel):
     job_id: int = Field(..., description="Job ID to retrieve")
+    member_id: Optional[int] = Field(None, description="Optional member ID for unique view tracking")
 
 
 class JobUpdate(BaseModel):
@@ -86,6 +87,17 @@ class JobByRecruiter(BaseModel):
 class SaveJobRequest(BaseModel):
     member_id: int
     job_id: int
+
+
+class UnsaveJobRequest(BaseModel):
+    member_id: int
+    job_id: int
+
+
+class SavedJobsByMemberRequest(BaseModel):
+    member_id: int
+    page: int = Field(1, ge=1)
+    page_size: int = Field(20, ge=1, le=100)
 
 
 class JobResponse(BaseModel):

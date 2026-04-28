@@ -1,25 +1,44 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { JobPosting } from './JobsPage'
 import { apiPost, parseStoredUser } from '../../api'
+
+export type ApplicationStatusSummary = {
+  statusLabel: string
+  appliedAtLabel: string
+  variant: 'good' | 'bad' | 'neutral'
+}
 
 interface JobDetailsProps {
   job: JobPosting | null
   isApplied: boolean
-  onApplySuccess: () => void
+  isSaved: boolean
+  /** Server application id — required to show Withdraw when applied. */
+  applicationId?: number | null
+  onApplySuccess?: (payload?: { jobId: number; applicationId: number }) => void
+  onSaveChange: (jobId: number, shouldSave: boolean) => void
+  /** When set (e.g. My Jobs), shows application status from the server above the job header. */
+  applicationSummary?: ApplicationStatusSummary | null
+  onWithdrawSuccess?: () => void
 }
 
-export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) {
+export function JobDetails({
+  job,
+  isApplied,
+  isSaved,
+  applicationId = null,
+  onApplySuccess,
+  onSaveChange,
+  applicationSummary,
+  onWithdrawSuccess,
+}: JobDetailsProps) {
   const [applying, setApplying] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [showToast, setShowToast] = useState(false)
 
-  // Reset state when job changes
-  const [prevJobId, setPrevJobId] = useState<number | null>(null)
-  if (job && job.job_id !== prevJobId) {
-    setPrevJobId(job.job_id)
-    setSaved(false)
+  useEffect(() => {
     setShowToast(false)
-  }
+  }, [job?.job_id])
 
   if (!job) {
     return (
@@ -44,7 +63,7 @@ export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) 
     
     setApplying(true)
     try {
-      await apiPost('/applications/submit', {
+      const res = await apiPost<{ success?: boolean; data?: { application_id?: number } }>('/applications/submit', {
         job_id: job.job_id,
         member_id: user.user_id,
         resume_url: 'https://example.com/resume.pdf',
@@ -52,7 +71,9 @@ export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) 
         answers: {}
       })
       setShowToast(true)
-      onApplySuccess()
+      const aid = res?.data?.application_id
+      if (typeof aid === 'number') onApplySuccess?.({ jobId: job.job_id, applicationId: aid })
+      else onApplySuccess?.()
       setTimeout(() => setShowToast(false), 3000)
     } catch (e: any) {
       alert(`Failed to apply: ${e.message}`)
@@ -61,26 +82,44 @@ export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) 
     }
   }
 
-  const handleSave = async () => {
-    if (saved) {
-       setSaved(false)
-       return
-    }
-    const user = parseStoredUser()
-    if (!user) return alert('Please log in to save jobs.')
+  const handleWithdraw = async () => {
+    if (!applicationId) return
+    if (!confirm('Withdraw your application for this job? You can apply again later.')) return
+    setWithdrawing(true)
     try {
-      await apiPost('/jobs/save', {
-        job_id: job.job_id,
-        member_id: user.user_id
+      const res = await apiPost<{ success?: boolean; message?: string }>('/applications/withdraw', {
+        application_id: applicationId,
       })
-      setSaved(true)
-    } catch (e: any) {
-      if (e.message.includes('already saved')) setSaved(true)
-      else alert(`Failed to save: ${e.message}`)
+      if (res.success === false) throw new Error(res.message || 'Withdraw failed')
+      onWithdrawSuccess?.()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Withdraw failed')
+    } finally {
+      setWithdrawing(false)
     }
   }
 
-  const companyName = `Company #${job.company_id || 'Unknown'}`
+  const handleSave = async () => {
+    const user = parseStoredUser()
+    if (!user) return alert('Please log in to save jobs.')
+    setSaving(true)
+    try {
+      if (isSaved) {
+        await apiPost('/jobs/unsave', { job_id: job.job_id, member_id: user.user_id })
+        onSaveChange(job.job_id, false)
+      } else {
+        await apiPost('/jobs/save', { job_id: job.job_id, member_id: user.user_id })
+        onSaveChange(job.job_id, true)
+      }
+    } catch (e: any) {
+      if (!isSaved && String(e.message || '').includes('already saved')) onSaveChange(job.job_id, true)
+      else alert(`Failed to ${isSaved ? 'unsave' : 'save'}: ${e.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const companyName = job.company_name || `Company #${job.company_id || 'Unknown'}`
   const companyLogo = companyName.charAt(0)
   const dateStr = new Date(job.posted_datetime).toLocaleDateString()
   
@@ -110,6 +149,18 @@ export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) 
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {applicationSummary && (
+        <div className={`jobs-detail-app-status jobs-detail-app-status--${applicationSummary.variant}`}>
+          <div className="jobs-detail-app-status__label">Your application</div>
+          <div className="jobs-detail-app-status__row">
+            <strong>{applicationSummary.statusLabel}</strong>
+            {applicationSummary.appliedAtLabel ? (
+              <span className="jobs-detail-app-status__sub">Submitted {applicationSummary.appliedAtLabel}</span>
+            ) : null}
+          </div>
         </div>
       )}
 
@@ -174,15 +225,26 @@ export function JobDetails({ job, isApplied, onApplySuccess }: JobDetailsProps) 
               </>
             )}
           </button>
+          {isApplied && applicationId != null && (
+            <button
+              type="button"
+              className="jobs-detail__withdraw-btn"
+              onClick={() => void handleWithdraw()}
+              disabled={withdrawing}
+            >
+              {withdrawing ? 'Withdrawing…' : 'Withdraw application'}
+            </button>
+          )}
           <button
             type="button"
-            className={`jobs-detail__save-btn${saved ? ' jobs-detail__save-btn--saved' : ''}`}
+            className={`jobs-detail__save-btn${isSaved ? ' jobs-detail__save-btn--saved' : ''}`}
             onClick={handleSave}
+            disabled={saving}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
-            {saved ? 'Saved' : 'Save'}
+            {saving ? 'Saving...' : isSaved ? 'Saved' : 'Save'}
           </button>
         </div>
       </div>
