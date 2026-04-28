@@ -22,6 +22,9 @@ import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
 import { PerformanceDashboard } from './components/PerformanceDashboard'
 import { JobsPage } from './components/jobs/JobsPage'
+import { EventsPage } from './components/EventsPage'
+import { SavedItemsPage } from './components/SavedItemsPage'
+import { NewsPage } from './components/NewsPage'
 
 type Tab =
   | 'overview'
@@ -39,6 +42,9 @@ type Tab =
   | 'settings'
   | 'career'
   | 'post'
+  | 'events'
+  | 'saved'
+  | 'news'
 
 type AuthUser = {
   user_id: number
@@ -62,6 +68,9 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   search:        ['guest', 'member', 'recruiter', 'admin'],
   perf:          ['admin'],
   settings:      ['member', 'recruiter', 'admin'],
+  events:        ['member', 'recruiter', 'admin'],
+  saved:         ['member', 'recruiter', 'admin'],
+  news:          ['member', 'recruiter', 'admin'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -410,7 +419,7 @@ function App() {
         <div className="page-fade">
           {tab === 'overview' &&
             (authUser && me ? (
-              <HomeFeed me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />
+              <HomeFeed me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} onNavigateTab={setTab} />
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
@@ -435,6 +444,9 @@ function App() {
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
           {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
+          {tab === 'events'      && <EventsPage />}
+          {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
+          {tab === 'news'        && <NewsPage />}
         </div>
       </main>
 
