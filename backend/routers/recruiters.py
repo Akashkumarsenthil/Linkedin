@@ -5,12 +5,13 @@ Recruiter Service — Recruiter CRUD APIs
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from database import get_db
 from models.recruiter import Recruiter
 from auth import require_recruiter, TokenPayload
 from schemas.recruiter import (
-    RecruiterGet, RecruiterUpdate, RecruiterDelete,
+    RecruiterGet, RecruiterUpdate, RecruiterDelete, RecruiterSearch,
     RecruiterResponse, RecruiterListResponse,
 )
 from cache import cache
@@ -41,6 +42,34 @@ async def get_recruiter(req: RecruiterGet, db: Session = Depends(get_db)):
     data = recruiter.to_dict()
     cache.set(cache_key, data, ttl=300)
     return RecruiterResponse(success=True, message="Recruiter retrieved successfully", data=data)
+
+
+@router.post("/search", response_model=RecruiterListResponse, summary="Search recruiters by name or company")
+async def search_recruiters(req: RecruiterSearch, db: Session = Depends(get_db)):
+    """Public search for messaging recipient picker (name → id)."""
+    kw = (req.keyword or "").strip()
+    if len(kw) < 2:
+        return RecruiterListResponse(success=True, message="Enter at least 2 characters", data=[])
+
+    like = f"%{kw}%"
+    rows = (
+        db.query(Recruiter)
+        .filter(
+            or_(
+                Recruiter.first_name.like(like),
+                Recruiter.last_name.like(like),
+                Recruiter.company_name.like(like),
+            )
+        )
+        .order_by(Recruiter.recruiter_id)
+        .limit(req.page_size)
+        .all()
+    )
+    return RecruiterListResponse(
+        success=True,
+        message=f"Found {len(rows)} recruiters",
+        data=[r.to_dict() for r in rows],
+    )
 
 
 @router.post("/update", response_model=RecruiterResponse, summary="Update recruiter fields")

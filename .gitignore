@@ -31,6 +31,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Keys (never commit)
+*.pem
+
 # Docker
 docker-compose.override.yml
 

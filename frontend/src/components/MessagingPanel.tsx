@@ -60,14 +60,23 @@ export function MessagingPanel() {
 
   const [showNew, setShowNew]         = useState(false)
   const [newSubject, setNewSubject]   = useState('')
-  const [newParticipant, setNewPart]  = useState('')
+  const [nameQuery, setNameQuery]     = useState('')
+  const [nameSearchLoading, setNameSearchL] = useState(false)
+  /** Last completed search keyword (trimmed); used so we show “No matches” only for current query. */
+  const [nameSearchSettledFor, setNameSearchSettledFor] = useState<string | null>(null)
+  const [nameSearchResults, setNameSearchResults] = useState<Array<{
+    user_id: number
+    user_type: UserType
+    display_name: string
+    subtitle?: string
+  }>>([])
   const [newParticipants, setNewParticipants] = useState<Array<{ user_id: number; user_type: UserType; name?: string }>>([])
   const [newParticType, setNewPType]  = useState<UserType>('member')
-  const [recipientPreview, setRecipientPreview] = useState<string | null>(null)
   const [newLoading, setNewL]         = useState(false)
   const [newErr, setNewErr]           = useState<string | null>(null)
 
   const bottomRef = useRef<HTMLDivElement>(null)
+  const nameSearchSeq = useRef(0)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -80,13 +89,111 @@ export function MessagingPanel() {
   }, [])
 
   useEffect(() => {
-    if (!showNew) return
+    const token = ++nameSearchSeq.current
+    if (!showNew) {
+      setNameSearchResults([])
+      setNameSearchL(false)
+      setNameSearchSettledFor(null)
+      return
+    }
+    const q = nameQuery.trim()
+    if (q.length < 2) {
+      setNameSearchResults([])
+      setNameSearchL(false)
+      setNameSearchSettledFor(null)
+      return
+    }
     const timer = setTimeout(() => {
-      void previewRecipient()
-    }, 250)
+      void runNameSearch(q, token)
+    }, 280)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newParticipant, newParticType, showNew])
+  }, [nameQuery, newParticType, showNew])
+
+  async function runNameSearch(keyword: string, seq: number) {
+    setNameSearchL(true)
+    setNameSearchSettledFor(null)
+    try {
+      if (newParticType === 'member') {
+        const r = await apiPost<{
+          success: boolean
+          message: string
+          data?: Array<{
+            member_id: number
+            first_name: string
+            last_name: string
+            headline?: string | null
+          }>
+        }>('/members/search', { keyword, page: 1, page_size: 12 })
+        if (!r.success) throw new Error(r.message)
+        const rows = (r.data ?? []).map(m => ({
+          user_id: m.member_id,
+          user_type: 'member' as const,
+          display_name: `${m.first_name} ${m.last_name}`.trim(),
+          subtitle: m.headline || undefined,
+        }))
+        if (nameSearchSeq.current !== seq) return
+        setNameSearchResults(
+          rows.filter(h => !(identity && h.user_type === 'member' && h.user_id === identity.user_id)),
+        )
+      } else {
+        const r = await apiPost<{
+          success: boolean
+          message: string
+          data?: Array<{
+            recruiter_id: number
+            first_name: string
+            last_name: string
+            company_name?: string | null
+          }>
+        }>('/recruiters/search', { keyword, page_size: 12 })
+        if (!r.success) throw new Error(r.message)
+        const rows = (r.data ?? []).map(rec => ({
+          user_id: rec.recruiter_id,
+          user_type: 'recruiter' as const,
+          display_name: `${rec.first_name} ${rec.last_name}`.trim(),
+          subtitle: rec.company_name || undefined,
+        }))
+        if (nameSearchSeq.current !== seq) return
+        setNameSearchResults(
+          rows.filter(h => !(identity && h.user_type === 'recruiter' && h.user_id === identity.user_id)),
+        )
+      }
+    } catch {
+      if (nameSearchSeq.current === seq) setNameSearchResults([])
+    } finally {
+      if (nameSearchSeq.current === seq) {
+        setNameSearchL(false)
+        setNameSearchSettledFor(keyword)
+      }
+    }
+  }
+
+  function toggleNewConversation() {
+    if (showNew) {
+      setNewSubject('')
+      setNameQuery('')
+      setNameSearchResults([])
+      setNameSearchSettledFor(null)
+      setNewParticipants([])
+      setNewErr(null)
+    }
+    setShowNew(v => !v)
+  }
+
+  function addParticipantFromSearch(hit: { user_id: number; user_type: UserType; display_name: string }) {
+    if (identity && hit.user_id === identity.user_id && hit.user_type === identity.user_type) {
+      setNewErr('You cannot add yourself')
+      return
+    }
+    setNewErr(null)
+    setNewParticipants(prev => {
+      if (prev.some(p => p.user_id === hit.user_id && p.user_type === hit.user_type)) return prev
+      return [...prev, { user_id: hit.user_id, user_type: hit.user_type, name: hit.display_name }]
+    })
+    setNameQuery('')
+    setNameSearchResults([])
+  }
 
   async function loadThreads(id: number, type: UserType) {
     setThreadsL(true)
@@ -170,9 +277,10 @@ export function MessagingPanel() {
       if (!r.success) throw new Error(r.message)
       setShowNew(false)
       setNewSubject('')
-      setNewPart('')
+      setNameQuery('')
+      setNameSearchResults([])
+      setNameSearchSettledFor(null)
       setNewParticipants([])
-      setRecipientPreview(null)
       await loadThreads(identity.user_id, identity.user_type)
       setSelectedId(r.data.thread_id)
       setMessages([])
@@ -181,53 +289,6 @@ export function MessagingPanel() {
     } finally {
       setNewL(false)
     }
-  }
-
-  async function previewRecipient() {
-    const otherId = parseInt(newParticipant, 10)
-    if (!otherId || otherId < 1) {
-      setRecipientPreview(null)
-      return
-    }
-    try {
-      if (newParticType === 'member') {
-        const r = await apiPost<{ success: boolean; data?: { first_name: string; last_name: string } }>(
-          '/members/get',
-          { member_id: otherId },
-        )
-        if (r.success && r.data) {
-          setRecipientPreview(`${r.data.first_name} ${r.data.last_name}`)
-          return
-        }
-      } else {
-        const r = await apiPost<{ success: boolean; data?: { first_name: string; last_name: string } }>(
-          '/recruiters/get',
-          { recruiter_id: otherId },
-        )
-        if (r.success && r.data) {
-          setRecipientPreview(`${r.data.first_name} ${r.data.last_name}`)
-          return
-        }
-      }
-      setRecipientPreview(null)
-    } catch {
-      setRecipientPreview(null)
-    }
-  }
-
-  function addParticipantFromInput() {
-    const otherId = parseInt(newParticipant, 10)
-    if (!otherId || otherId < 1) {
-      setNewErr('Enter a valid participant ID')
-      return
-    }
-    setNewErr(null)
-    setNewParticipants(prev => {
-      if (prev.some(p => p.user_id === otherId && p.user_type === newParticType)) return prev
-      return [...prev, { user_id: otherId, user_type: newParticType, name: recipientPreview || undefined }]
-    })
-    setNewPart('')
-    setRecipientPreview(null)
   }
 
   function removeParticipant(idx: number) {
@@ -357,7 +418,7 @@ export function MessagingPanel() {
 
           {/* New thread */}
           <div className="new-thread-section">
-            <button type="button" className="ghost-btn full-width" onClick={() => setShowNew(v => !v)}>
+            <button type="button" className="ghost-btn full-width" onClick={toggleNewConversation}>
               {showNew ? '✕ Cancel' : '+ New conversation'}
             </button>
             {showNew && (
@@ -367,27 +428,69 @@ export function MessagingPanel() {
                   <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="e.g. Job inquiry" />
                 </label>
                 <label className="form-label">
-                  Recipient ID
-                  <input type="number" value={newParticipant} min={1} onChange={e => setNewPart(e.target.value)} placeholder="e.g. 2" />
-                </label>
-                <label className="form-label">
                   Recipient type
-                  <select value={newParticType} onChange={e => setNewPType(e.target.value as UserType)} className="identity-select">
+                  <select
+                    value={newParticType}
+                    onChange={e => {
+                      setNewPType(e.target.value as UserType)
+                      setNameQuery('')
+                      setNameSearchResults([])
+                      setNameSearchSettledFor(null)
+                    }}
+                    className="identity-select"
+                  >
                     <option value="member">member</option>
                     <option value="recruiter">recruiter</option>
                   </select>
                 </label>
-                {recipientPreview && (
-                  <p className="meta">Recipient: <strong>{recipientPreview}</strong></p>
-                )}
-                <button type="button" className="ghost-btn" onClick={addParticipantFromInput}>
-                  + Add recipient
-                </button>
+                <div className="form-label" style={{ position: 'relative' }}>
+                  <span>Search by name</span>
+                  <input
+                    value={nameQuery}
+                    onChange={e => setNameQuery(e.target.value)}
+                    placeholder={newParticType === 'member' ? 'Type a member’s name…' : 'Name or company…'}
+                    autoComplete="off"
+                  />
+                  {nameQuery.trim().length >= 2
+                    && (nameSearchLoading || nameSearchSettledFor === nameQuery.trim()) && (
+                    <ul className="search-dropdown li-card" style={{ marginTop: 0 }}>
+                      {nameSearchLoading && (
+                        <li className="dropdown-loading" style={{ listStyle: 'none' }}>Searching…</li>
+                      )}
+                      {!nameSearchLoading && nameSearchResults.map(hit => (
+                        <li
+                          key={`${hit.user_type}-${hit.user_id}`}
+                          className="dropdown-item"
+                          style={{ listStyle: 'none' }}
+                          role="button"
+                          tabIndex={0}
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => addParticipantFromSearch(hit)}
+                          onKeyDown={e => e.key === 'Enter' && addParticipantFromSearch(hit)}
+                        >
+                          <div className="item-info">
+                            <div className="item-title">{hit.display_name}</div>
+                            <div className="item-subtitle" style={{ fontSize: 12, color: '#666' }}>
+                              {newParticType === 'member' ? 'Member' : 'Recruiter'} · #{hit.user_id}
+                              {hit.subtitle ? ` · ${hit.subtitle}` : ''}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                      {!nameSearchLoading && nameSearchResults.length === 0 && (
+                        <li className="hint" style={{ listStyle: 'none', padding: '10px 16px' }}>No matches</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+                <p className="hint" style={{ marginTop: 0, fontSize: 12 }}>
+                  Pick someone from the list — their ID is filled in automatically.
+                </p>
                 {newParticipants.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {newParticipants.map((p, idx) => (
                       <span key={`${p.user_type}-${p.user_id}`} className="conn-status status-accepted" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        {p.name || `${p.user_type} #${p.user_id}`}
+                        {p.name ? `${p.name} · #${p.user_id}` : `${p.user_type} #${p.user_id}`}
                         <button type="button" className="icon-btn" onClick={() => removeParticipant(idx)} style={{ width: 18, height: 18 }}>×</button>
                       </span>
                     ))}

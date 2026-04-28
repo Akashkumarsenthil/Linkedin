@@ -57,6 +57,12 @@ class RecruiterDelete(BaseModel):
     recruiter_id: int
 
 
+class RecruiterSearch(BaseModel):
+    """Lightweight name/company search for picking a recipient in messaging UI."""
+    keyword: str = Field("", description="Search by first name, last name, or company")
+    page_size: int = Field(10, ge=1, le=30)
+
+
 class RecruiterResponse(BaseModel):
     success: bool
     message: str
