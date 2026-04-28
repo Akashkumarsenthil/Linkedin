@@ -606,15 +606,15 @@ export function PerformanceDashboard() {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 16 }}>
               {([
-                { label: 'Events Logged',       value: kafkaStats.totals.events_logged,                    color: 'var(--accent)' },
-                { label: 'Unique Processed',    value: kafkaStats.totals.events_processed_unique,          color: 'var(--success)' },
-                { label: 'Dead Letters',        value: kafkaStats.totals.dead_letters,                     color: kafkaStats.totals.dead_letters > 0 ? 'var(--error)' : 'var(--text-muted)' },
-                { label: 'Last 24h',            value: kafkaStats.totals.events_last_24h,                  color: 'var(--warn)' },
-                { label: 'Job Clicks',          value: kafkaStats.totals.job_clicks_aggregated,            color: 'var(--accent)' },
-                { label: 'Job Saves',           value: kafkaStats.totals.job_saves_aggregated,             color: 'var(--accent)' },
-                { label: 'Applications',        value: kafkaStats.totals.applications_aggregated ?? 0,     color: 'var(--success)' },
-                { label: 'Conn. Requested',     value: kafkaStats.totals.connections_requested_aggregated ?? 0, color: 'var(--text-sec)' },
-                { label: 'Conn. Accepted',      value: kafkaStats.totals.connections_accepted_aggregated ?? 0,  color: 'var(--success)' },
+                { label: 'Total Events',          value: kafkaStats.totals.events_logged,                    color: 'var(--accent)' },
+                { label: 'Dedup Processed',       value: kafkaStats.totals.events_processed_unique,          color: 'var(--success)' },
+                { label: 'Dead Letters',          value: kafkaStats.totals.dead_letters,                     color: kafkaStats.totals.dead_letters > 0 ? 'var(--error)' : 'var(--text-muted)' },
+                { label: 'Events (24h)',          value: kafkaStats.totals.events_last_24h,                  color: 'var(--warn)' },
+                { label: 'Job Views',             value: kafkaStats.totals.job_clicks_aggregated,            color: 'var(--accent)' },
+                { label: 'Job Saves',             value: kafkaStats.totals.job_saves_aggregated,             color: 'var(--accent)' },
+                { label: 'Applications',          value: kafkaStats.totals.applications_aggregated ?? 0,     color: 'var(--success)' },
+                { label: 'Connections Sent',      value: kafkaStats.totals.connections_requested_aggregated ?? 0, color: 'var(--text-sec)' },
+                { label: 'Connections Accepted',  value: kafkaStats.totals.connections_accepted_aggregated ?? 0,  color: 'var(--success)' },
               ] as { label: string; value: number; color: string }[]).map(({ label, value, color }) => (
                 <div key={label} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{label}</div>
