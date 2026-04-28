@@ -52,6 +52,7 @@ async def health():
     return {
         "status": "ok",
         "service": "profile-service",
+        "api": "ok",
         "mysql": "ok",
         "mongo": "ok",
         "redis": "ok",
