@@ -13,6 +13,8 @@ interface HomeFeedProps {
     profile: Record<string, unknown>
   } | null
   onNavigateProfile: (id?: number) => void
+  onOpenSavedJobs: () => void
+  onOpenMyJobs: () => void
 }
 
 const NEWS_ITEMS = [
@@ -228,7 +230,7 @@ User Name: ${userName}`
   )
 }
 
-export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
+export function HomeFeed({ me, onNavigateProfile, onOpenSavedJobs, onOpenMyJobs }: HomeFeedProps) {
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -300,7 +302,12 @@ export function HomeFeed({ me, onNavigateProfile }: HomeFeedProps) {
         </div>
 
         <nav className="feed-left-links">
-          <a className="feed-left-link" href="#saved"><Icon name="check" size={16} /> Saved items</a>
+          {me.user_type === 'member' && (
+            <button type="button" className="feed-left-link" onClick={onOpenMyJobs}>
+              <Icon name="jobs" size={16} /> My jobs
+            </button>
+          )}
+          <button type="button" className="feed-left-link" onClick={onOpenSavedJobs}><Icon name="check" size={16} /> Saved items</button>
           <a className="feed-left-link" href="#groups"><Icon name="connections" size={16} /> Groups</a>
           <a className="feed-left-link" href="#newsletters"><Icon name="article" size={16} /> Newsletters</a>
           <a className="feed-left-link" href="#events"><Icon name="analytics" size={16} /> Events</a>
