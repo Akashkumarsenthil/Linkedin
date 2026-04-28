@@ -6,12 +6,10 @@ Handles message threads, sending messages with retry logic, and conversation his
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy import desc
 
 from database import get_db
 from models.message import Thread, ThreadParticipant, Message
-from models.member import Member
-from models.recruiter import Recruiter
 from auth import get_current_user, TokenPayload
 from schemas.message import (
     ThreadOpen, ThreadGet, ThreadsByUser, MessageSend, MessageList,
@@ -108,40 +106,6 @@ async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
         ).order_by(desc(Message.timestamp)).first()
         if last_msg:
             data["last_message"] = last_msg.to_dict()
-        
-        # Enrich with "other" participant info for 1:1 threads
-        other_p = db.query(ThreadParticipant).filter(
-            ThreadParticipant.thread_id == thread.thread_id,
-            or_(
-                ThreadParticipant.user_id != req.user_id,
-                ThreadParticipant.user_type != req.user_type
-            )
-        ).first()
-        
-        if other_p:
-            user_info = None
-            if other_p.user_type == "member":
-                m = db.query(Member).filter(Member.member_id == other_p.user_id).first()
-                if m:
-                    user_info = {
-                        "name": f"{m.first_name} {m.last_name}",
-                        "photo_url": m.profile_photo_url,
-                        "headline": m.headline,
-                        "user_id": m.member_id,
-                        "user_type": "member"
-                    }
-            elif other_p.user_type == "recruiter":
-                r = db.query(Recruiter).filter(Recruiter.recruiter_id == other_p.user_id).first()
-                if r:
-                    user_info = {
-                        "name": f"{r.first_name} {r.last_name}",
-                        "photo_url": r.profile_photo_url,
-                        "headline": r.company_name or "Recruiter",
-                        "user_id": r.recruiter_id,
-                        "user_type": "recruiter"
-                    }
-            data["other_participant"] = user_info
-        
         result.append(data)
 
     return MessageListResponse(success=True, message=f"Found {total} threads", data=result, total=total)
@@ -157,13 +121,16 @@ async def send_message(
     Send a message in a thread. Includes retry logic for failure handling.
     Publishes a message.sent event to Kafka.
     """
+    # Enforce caller can only send as themselves
     if req.sender_id != current_user.user_id:
         return MessageResponse(success=False, message="Cannot send message on behalf of another user")
 
+    # Verify thread exists
     thread = db.query(Thread).filter(Thread.thread_id == req.thread_id).first()
     if not thread:
         return MessageResponse(success=False, message=f"Thread {req.thread_id} not found")
 
+    # Verify sender is a participant
     participant = db.query(ThreadParticipant).filter(
         ThreadParticipant.thread_id == req.thread_id,
         ThreadParticipant.user_id == req.sender_id,
@@ -172,16 +139,28 @@ async def send_message(
     if not participant:
         return MessageResponse(success=False, message="Sender is not a participant in this thread")
 
-    message = Message(
-        thread_id=req.thread_id,
-        sender_id=req.sender_id,
-        sender_type=req.sender_type,
-        message_text=req.message_text,
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
+    # Send message with retry
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            message = Message(
+                thread_id=req.thread_id,
+                sender_id=req.sender_id,
+                sender_type=req.sender_type,
+                message_text=req.message_text,
+            )
+            db.add(message)
+            db.commit()
+            db.refresh(message)
+            break
+        except Exception as e:
+            db.rollback()
+            if attempt == max_retries - 1:
+                logger.error(f"Message send failed after {max_retries} retries: {e}")
+                return MessageResponse(success=False, message="Message send failed. Please retry.")
+            logger.warning(f"Message send attempt {attempt + 1} failed, retrying...")
 
+    # Kafka event
     try:
         await kafka_producer.publish(
             topic="message.sent",
@@ -195,59 +174,6 @@ async def send_message(
         pass
 
     return MessageResponse(success=True, message="Message sent successfully", data=message.to_dict())
-
-
-@router.post("/messages/direct", response_model=MessageResponse, summary="Send a direct message")
-async def send_direct_message(
-    req: dict,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(get_current_user),
-):
-    """Send a message to a specific user, creating a thread if needed."""
-    sender_id = req.get("sender_id")
-    recipient_id = req.get("recipient_id")
-    recipient_type = req.get("recipient_type", "member")
-    message_text = req.get("message_text")
-
-    if sender_id != current_user.user_id:
-        return MessageResponse(success=False, message="Unauthorized")
-
-    # Check for existing thread
-    sender_threads = db.query(ThreadParticipant.thread_id).filter(
-        ThreadParticipant.user_id == sender_id
-    ).all()
-    sender_thread_ids = [t[0] for t in sender_threads]
-    
-    thread_id = None
-    if sender_thread_ids:
-        match = db.query(ThreadParticipant.thread_id).filter(
-            ThreadParticipant.thread_id.in_(sender_thread_ids),
-            ThreadParticipant.user_id == recipient_id,
-            ThreadParticipant.user_type == recipient_type
-        ).first()
-        if match:
-            thread_id = match[0]
-
-    if not thread_id:
-        thread = Thread(subject=f"Chat between {sender_id} and {recipient_id}")
-        db.add(thread)
-        db.flush()
-        thread_id = thread.thread_id
-        db.add(ThreadParticipant(thread_id=thread_id, user_id=sender_id, user_type="member"))
-        db.add(ThreadParticipant(thread_id=thread_id, user_id=recipient_id, user_type=recipient_type))
-        db.commit()
-
-    message = Message(
-        thread_id=thread_id,
-        sender_id=sender_id,
-        sender_type="member",
-        message_text=message_text,
-    )
-    db.add(message)
-    db.commit()
-    db.refresh(message)
-
-    return MessageResponse(success=True, message="Direct message sent", data=message.to_dict())
 
 
 @router.post("/messages/list", response_model=MessageListResponse, summary="List messages in a thread")

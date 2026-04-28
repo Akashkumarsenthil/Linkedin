@@ -9,7 +9,6 @@ import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
 import { AuthPanel } from './components/AuthPanel'
 import { ProfilePage } from './components/ProfilePage'
-import { PostPage } from './components/PostPage'
 import { HomeFeed } from './components/HomeFeed'
 import { NotificationsPanel } from './components/NotificationsPanel'
 import { TopMonthlyChart, LeastAppliedChart, ClicksPerJobChart } from './components/RecruiterJobCharts'
@@ -22,13 +21,14 @@ import { Icon } from './components/Icon'
 import { SearchPage } from './components/SearchPage'
 import { PerformanceDashboard } from './components/PerformanceDashboard'
 import { JobsPage } from './components/jobs/JobsPage'
-import { EventsPage } from './components/EventsPage'
-import { SavedItemsPage } from './components/SavedItemsPage'
-import { NewsPage } from './components/NewsPage'
+import { SavedJobsPage } from './components/jobs/SavedJobsPage'
+import { MyJobsPage } from './components/jobs/MyJobsPage'
 
 type Tab =
   | 'overview'
   | 'jobs'
+  | 'saved-jobs'
+  | 'my-jobs'
   | 'members'
   | 'analytics'
   | 'ai'
@@ -41,10 +41,6 @@ type Tab =
   | 'perf'
   | 'settings'
   | 'career'
-  | 'post'
-  | 'events'
-  | 'saved'
-  | 'news'
 
 type AuthUser = {
   user_id: number
@@ -55,6 +51,8 @@ type AuthUser = {
 const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admin'>> = {
   overview:      ['guest', 'member', 'recruiter', 'admin'],
   jobs:          ['guest', 'member', 'recruiter', 'admin'],
+  'saved-jobs':  ['member'],
+  'my-jobs':     ['member'],
   members:       ['guest', 'member', 'admin'],
   analytics:     ['recruiter', 'admin'],
   career:        ['member', 'recruiter', 'admin'],
@@ -64,13 +62,9 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   ai:            ['recruiter', 'admin'],
   auth:          ['guest', 'member', 'recruiter', 'admin'],
   profile:       ['member', 'recruiter', 'admin'],
-  post:          ['guest', 'member', 'recruiter', 'admin'],
   search:        ['guest', 'member', 'recruiter', 'admin'],
   perf:          ['admin'],
   settings:      ['member', 'recruiter', 'admin'],
-  events:        ['member', 'recruiter', 'admin'],
-  saved:         ['member', 'recruiter', 'admin'],
-  news:          ['member', 'recruiter', 'admin'],
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -104,6 +98,8 @@ interface NotificationItem {
   actor_type?: string
   actor_photo_url?: string | null
   post_id?: number
+  job_id?: number
+  application_id?: number
   created_at?: string | null
   unread?: boolean
 }
@@ -120,7 +116,6 @@ function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
-  const [viewPostId, setViewPostId] = useState<number | null>(null)
 
   const handleAuthChange = () => {
     setAuthUser(parseStoredUser())
@@ -419,14 +414,21 @@ function App() {
         <div className="page-fade">
           {tab === 'overview' &&
             (authUser && me ? (
-              <HomeFeed me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} onNavigateTab={setTab} />
+              <HomeFeed
+                me={me}
+                onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
+                onOpenSavedJobs={() => setTab('saved-jobs')}
+                onOpenMyJobs={() => setTab('my-jobs')}
+              />
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
-          {tab === 'jobs' && <JobsPage />}
+          {tab === 'jobs' && <JobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'saved-jobs' && <SavedJobsPage />}
+          {tab === 'my-jobs' && <MyJobsPage />}
           {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'analytics' && <AnalyticsPanel />}
-          {tab === 'messages' && <MessagingPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onNavigatePost={(id: number) => { setViewPostId(id); setTab('post') }} />}
+          {tab === 'messages' && <MessagingPanel />}
           {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'notifications' && (
             <NotificationsPanel
@@ -440,13 +442,9 @@ function App() {
           {tab === 'career'      && <CareerCoach />}
           {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'perf'        && <PerformanceDashboard />}
-          {tab === 'post'        && viewPostId && <PostPage me={me} postId={viewPostId} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onBack={() => setTab('messages')} />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
           {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
-          {tab === 'events'      && <EventsPage />}
-          {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
-          {tab === 'news'        && <NewsPage />}
         </div>
       </main>
 

@@ -22,7 +22,6 @@ class PostDelete(BaseModel):
 
 class PostLikeRequest(BaseModel):
     post_id: int
-    reaction_type: Optional[str] = "like"
 
 
 class PostResponse(BaseModel):
@@ -38,20 +37,3 @@ class PostListResponse(BaseModel):
     total: Optional[int] = None
     page: Optional[int] = None
     page_size: Optional[int] = None
-
-
-class PostCommentCreate(BaseModel):
-    post_id: int
-    content: str = Field(..., min_length=1, max_length=1000)
-
-
-class PostCommentListRequest(BaseModel):
-    post_id: int
-    page: int = 1
-    page_size: int = 10
-
-
-class PostCommentResponse(BaseModel):
-    success: bool
-    message: str
-    data: Optional[Any] = None
