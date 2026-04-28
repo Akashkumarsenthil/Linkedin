@@ -122,11 +122,14 @@ function App() {
   const [me, setMe] = useState<MePayload | null>(null)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState<number>(0)
+  const [unreadMsgCount, setUnreadMsgCount] = useState<number>(0)
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
   const [searchDropdownResults, setSearchDropdownResults] = useState<{ people: any[], jobs: any[] }>({ people: [], jobs: [] })
   const [isSearching, setIsSearching] = useState(false)
   const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
+  const [messageTargetId, setMessageTargetId] = useState<number | null>(null)
+  const [messageTargetType, setMessageTargetType] = useState<'member' | 'recruiter'>('member')
 
   const handleAuthChange = () => {
     setAuthUser(parseStoredUser())
@@ -168,12 +171,38 @@ function App() {
     }
   }, [authUser])
 
+  const loadUnreadMessages = useCallback(async () => {
+    if (!authUser) return
+    try {
+      const res = await apiPost<any>('/messages/unread_count', {})
+      if (res.success) setUnreadMsgCount(res.data.count || 0)
+    } catch (err) {
+      console.error('Failed to load unread messages', err)
+    }
+  }, [authUser])
+
   useEffect(() => {
     if (!authUser) return
     void loadNotifications()
-    const id = setInterval(loadNotifications, 30_000)
+    void loadUnreadMessages()
+    const id = setInterval(() => {
+      loadNotifications()
+      loadUnreadMessages()
+    }, 30_000)
     return () => clearInterval(id)
-  }, [authUser, loadNotifications])
+  }, [authUser, loadNotifications, loadUnreadMessages])
+
+  const handleNotificationAction = (n: NotificationItem) => {
+    if (n.type === 'connection_request') setTab('connections')
+    else if (n.post_id) {
+      // In the future, navigate to post detail. For now, just go to feed.
+      setTab('overview')
+    } else if (n.job_id) {
+      setTab('jobs')
+    } else {
+      setTab('overview')
+    }
+  }
 
   const [recentSearches] = useState<string[]>(['Software Engineer', 'Google', 'Project Manager'])
   const trendingSearches = ['AI Agents', 'Remote Work', 'Product Management', 'Cybersecurity']
@@ -325,7 +354,7 @@ function App() {
 
           <nav className="nav" aria-label="Primary">
             {visibleTabs
-              .filter(([id]) => id !== 'auth' && id !== 'profile' && id !== 'notifications' && id !== 'search')
+              .filter(([id]) => id !== 'auth' && id !== 'profile' && id !== 'notifications' && id !== 'search' && id !== 'messages')
               .map(([id, label, icon]) => (
                 <button
                   key={id}
@@ -338,6 +367,25 @@ function App() {
                   <span className="nav-label">{label}</span>
                 </button>
               ))}
+
+            {authUser && (
+              <button
+                type="button"
+                className={tab === 'messages' ? 'nav-btn active nav-btn-bell' : 'nav-btn nav-btn-bell'}
+                onClick={() => { setTab('messages'); setUnreadMsgCount(0) }}
+                title="Messaging"
+              >
+                <span className="nav-bell-wrap">
+                  <Icon name="messaging" size={20} className="nav-icon-svg" />
+                  {unreadMsgCount > 0 && (
+                    <span className="nav-bell-badge" style={{ background: '#d11124' }}>
+                      {unreadMsgCount > 99 ? '99+' : unreadMsgCount}
+                    </span>
+                  )}
+                </span>
+                <span className="nav-label">Messaging</span>
+              </button>
+            )}
 
             {authUser && (
               <button
@@ -439,7 +487,7 @@ function App() {
           {tab === 'my-jobs' && <MyJobsPage />}
           {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'analytics' && <AnalyticsPanel />}
-          {tab === 'messages' && <MessagingPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'messages' && <MessagingPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} initialTargetId={messageTargetId} initialTargetType={messageTargetType} onTargetConsumed={() => setMessageTargetId(null)} />}
           {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'notifications' && (
             <NotificationsPanel
@@ -447,6 +495,8 @@ function App() {
               unreadCount={unreadCount}
               onRefresh={loadNotifications}
               onOpenConnections={() => setTab('connections')}
+              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
+              onNavigateAction={handleNotificationAction}
             />
           )}
           {tab === 'ai'          && <AiDashboard />}
@@ -454,7 +504,7 @@ function App() {
           {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'perf'        && <PerformanceDashboard />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
-          {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onMessageProfile={(id, type) => { setMessageTargetId(id); setMessageTargetType(type); setTab('messages') }} />}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
           {tab === 'events'      && <EventsPage />}
           {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
