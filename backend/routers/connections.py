@@ -39,6 +39,7 @@ def _get_user_name(db: Session, user_id: int) -> dict | None:
             "member_id": member.member_id,
             "name": f"{member.first_name} {member.last_name}",
             "headline": member.headline,
+            "photo_url": member.profile_photo_url,
             "user_type": "member",
         }
     recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == user_id).first()
@@ -47,6 +48,7 @@ def _get_user_name(db: Session, user_id: int) -> dict | None:
             "member_id": recruiter.recruiter_id,
             "name": f"{recruiter.first_name} {recruiter.last_name}",
             "headline": recruiter.company_name or recruiter.role or "Recruiter",
+            "photo_url": recruiter.profile_photo_url,
             "user_type": "recruiter",
         }
     return None

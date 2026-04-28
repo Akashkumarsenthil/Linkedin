@@ -33,21 +33,16 @@ class ApplicationGet(BaseModel):
     application_id: int
 
 
-class ApplicationWithdraw(BaseModel):
-    application_id: int = Field(..., description="Application to withdraw (must belong to the signed-in member)")
-
-
 class ApplicationByJob(BaseModel):
     job_id: int
     page: int = Field(1, ge=1)
-    # Recruiter dashboards may need larger pages; keep an upper bound to avoid accidental huge queries.
-    page_size: int = Field(20, ge=1, le=500)
+    page_size: int = Field(20, ge=1, le=100)
 
 
 class ApplicationByMember(BaseModel):
     member_id: int
     page: int = Field(1, ge=1)
-    page_size: int = Field(20, ge=1, le=500)
+    page_size: int = Field(20, ge=1, le=100)
 
 
 class ApplicationUpdateStatus(BaseModel):

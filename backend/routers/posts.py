@@ -8,13 +8,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from database import get_db
-from models.post import Post, PostLike
+from models.post import Post, PostLike, PostComment
 from models.member import Member
 from models.recruiter import Recruiter
 from auth import get_current_user, TokenPayload
 from schemas.post import (
     PostCreate, PostFeedRequest, PostDelete, PostLikeRequest,
     PostResponse, PostListResponse,
+    PostCommentCreate, PostCommentListRequest, PostCommentResponse
 )
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,26 @@ async def create_post(
     data["liked_by_me"] = False
     logger.info(f"User {current_user.user_type}#{current_user.user_id} created post {post.post_id}")
     return PostResponse(success=True, message="Post created", data=data)
+
+@router.get("/{post_id}", response_model=PostResponse, summary="Get a single post")
+async def get_single_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    post = db.query(Post).filter(Post.post_id == post_id).first()
+    if not post:
+        return PostResponse(success=False, message="Post not found", data=None)
+
+    data = post.to_dict()
+    data["author"] = _hydrate_author(db, post.author_id, post.author_type)
+    data["liked_by_me"] = db.query(PostLike).filter(
+        PostLike.post_id == post.post_id,
+        PostLike.user_id == current_user.user_id,
+        PostLike.user_type == current_user.user_type,
+    ).first() is not None
+
+    return PostResponse(success=True, message="Post found", data=data)
 
 
 # ── Feed ─────────────────────────────────────────────────────────────────────
@@ -132,9 +153,21 @@ async def list_feed(
         for r in db.query(Recruiter).filter(Recruiter.recruiter_id.in_(by_recruiter.keys())).all():
             by_recruiter[r.recruiter_id] = r
 
+    # Check which posts are liked by the current user
+    liked_post_ids = set()
+    if posts:
+        post_ids = [p.post_id for p in posts]
+        likes = db.query(PostLike.post_id).filter(
+            PostLike.post_id.in_(post_ids),
+            PostLike.user_id == current_user.user_id,
+            PostLike.user_type == current_user.user_type
+        ).all()
+        liked_post_ids = {l.post_id for l in likes}
+
     result = []
     for p in posts:
         item = p.to_dict()
+        item["liked_by_me"] = p.post_id in liked_post_ids
         if p.author_type == "member":
             m = by_member.get(p.author_id)
             item["author"] = {
@@ -218,6 +251,57 @@ async def delete_post(
         return PostResponse(success=False, message="You can only delete your own posts")
 
     db.query(PostLike).filter(PostLike.post_id == req.post_id).delete()
+    db.query(PostComment).filter(PostComment.post_id == req.post_id).delete()
     db.delete(post)
     db.commit()
     return PostResponse(success=True, message="Post deleted")
+
+
+# ── Comments ──────────────────────────────────────────────────────────────────
+
+@router.post("/comments/add", response_model=PostCommentResponse, summary="Add a comment")
+async def add_comment(
+    req: PostCommentCreate,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    post = db.query(Post).filter(Post.post_id == req.post_id).first()
+    if not post:
+        return PostCommentResponse(success=False, message="Post not found")
+
+    comment = PostComment(
+        post_id=req.post_id,
+        author_id=current_user.user_id,
+        author_type=current_user.user_type,
+        content=req.content,
+    )
+    db.add(comment)
+    post.comments_count = (post.comments_count or 0) + 1
+    db.commit()
+    db.refresh(comment)
+
+    # Hydrate author for response
+    author = _hydrate_author(db, comment.author_id, comment.author_type)
+    data = comment.to_dict()
+    data["author_name"] = author["name"]
+    data["author_photo_url"] = author["photo_url"]
+
+    return PostCommentResponse(success=True, message="Comment added", data=data)
+
+
+@router.post("/comments/list", response_model=PostCommentResponse, summary="List comments")
+async def list_comments(
+    req: PostCommentListRequest,
+    db: Session = Depends(get_db),
+):
+    comments = db.query(PostComment).filter(PostComment.post_id == req.post_id).order_by(PostComment.created_at.asc()).all()
+    
+    result = []
+    for c in comments:
+        author = _hydrate_author(db, c.author_id, c.author_type)
+        item = c.to_dict()
+        item["author_name"] = author["name"]
+        item["author_photo_url"] = author["photo_url"]
+        result.append(item)
+
+    return PostCommentResponse(success=True, message=f"Found {len(result)} comments", data=result)

@@ -3,7 +3,7 @@
  * Uses the stored JWT token for sender identity.
  */
 import { useState, useRef, useEffect } from 'react'
-import { apiPost, parseStoredUser } from '../api'
+import { apiGet, apiPost, parseStoredUser } from '../api'
 
 interface MsgData {
   message_id: number
@@ -18,6 +18,13 @@ interface ThreadData {
   subject: string | null
   created_at: string
   last_message?: MsgData
+  other_participant?: {
+    name: string
+    photo_url?: string
+    headline?: string
+    user_id: number
+    user_type: string
+  }
 }
 
 type UserType = 'member' | 'recruiter'
@@ -36,7 +43,94 @@ function fmtDate(iso: string): string {
   } catch { return iso }
 }
 
-export function MessagingPanel() {
+function tryParseSharedPost(text: string): { type: string; post_id: number; author_name?: string; author_headline?: string; author_photo_url?: string; content?: string; image_url?: string; created_at?: string } | null {
+  // New JSON format
+  try {
+    const parsed = JSON.parse(text)
+    if (parsed && parsed.type === 'shared_post') return parsed
+    return null
+  } catch { /* not JSON, try old format */ }
+
+  // Old plain text format: "Check out this post: http://.../posts/123"
+  const match = text.match(/Check out this post:\s*https?:\/\/[^/]+\/posts\/(\d+)/)
+  if (match) {
+    return { type: 'shared_post', post_id: parseInt(match[1]) }
+  }
+
+  return null
+}
+
+function SharedPostLoader({ 
+  sharedPost, 
+  onNavigatePost 
+}: { 
+  sharedPost: NonNullable<ReturnType<typeof tryParseSharedPost>>, 
+  onNavigatePost?: (id: number) => void 
+}) {
+  const [postData, setPostData] = useState<any>(sharedPost)
+
+  useEffect(() => {
+    // If it doesn't have an image_url but we know we can fetch it, let's try to get full data
+    // Or just always fetch to ensure it's up to date.
+    let mounted = true
+    apiGet(`/posts/${sharedPost.post_id}`).then((res: any) => {
+      if (mounted && res?.data) {
+        setPostData({
+          ...sharedPost,
+          author_name: res.data.author?.name || sharedPost.author_name,
+          author_headline: res.data.author?.headline || sharedPost.author_headline,
+          author_photo_url: res.data.author?.photo_url || sharedPost.author_photo_url,
+          content: res.data.content || sharedPost.content,
+          image_url: res.data.image_url || sharedPost.image_url,
+        })
+      }
+    }).catch(() => {})
+    return () => { mounted = false }
+  }, [sharedPost.post_id])
+
+  const hasFullData = !!(postData.author_name || postData.content)
+  
+  return (
+    <div 
+      className="shared-post-card" 
+      onClick={() => onNavigatePost && onNavigatePost(postData.post_id)}
+      style={{ cursor: onNavigatePost ? 'pointer' : 'default' }}
+    >
+      <div className="shared-post-header">
+        <div className="shared-post-avatar">
+          {postData.author_photo_url ? (
+            <img src={postData.author_photo_url} alt="" />
+          ) : (
+            <span>{hasFullData ? (postData.author_name?.[0] || '?') : '📄'}</span>
+          )}
+        </div>
+        <div className="shared-post-author">
+          <span className="shared-post-name">
+            {hasFullData ? postData.author_name : 'Shared Post'}
+          </span>
+          {postData.author_headline && (
+            <span className="shared-post-headline">{postData.author_headline}</span>
+          )}
+          {!hasFullData && (
+            <span className="shared-post-headline">Post #{postData.post_id}</span>
+          )}
+          {postData.created_at && (
+            <span className="shared-post-time">{fmtDate(postData.created_at)}</span>
+          )}
+        </div>
+      </div>
+      {postData.content && (
+        <p className="shared-post-content">{postData.content}</p>
+      )}
+      {postData.image_url && (
+        <img className="shared-post-image" src={postData.image_url} alt="Post" />
+      )}
+    </div>
+  )
+}
+
+export function MessagingPanel({ 
+onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void }) {
   const identity = parseStoredUser()
 
   const [threads, setThreads]         = useState<ThreadData[]>([])
@@ -213,13 +307,26 @@ export function MessagingPanel() {
                 tabIndex={0}
                 onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
               >
-                <span className="thread-subject">{t.subject || `Thread #${t.thread_id}`}</span>
-                {t.last_message && (
-                  <span className="thread-preview">
-                    {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
-                  </span>
-                )}
-                <span className="thread-date">{fmtDate(t.created_at)}</span>
+                <div className="thread-avatar">
+                  {t.other_participant?.photo_url ? (
+                    <img src={t.other_participant.photo_url} alt="" />
+                  ) : (
+                    <div className="avatar-placeholder">{t.other_participant?.name?.[0] || '?'}</div>
+                  )}
+                </div>
+                <div className="thread-info">
+                  <div className="thread-top">
+                    <span className="thread-subject">
+                      {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
+                    </span>
+                    <span className="thread-date">{fmtDate(t.created_at)}</span>
+                  </div>
+                  {t.last_message && (
+                    <span className="thread-preview">
+                      {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -266,7 +373,23 @@ export function MessagingPanel() {
           ) : (
             <>
               <div className="msg-thread-header">
-                <span className="thread-subject">{selectedThread?.subject || `Thread #${selectedId}`}</span>
+                <div className="msg-header-info">
+                  {selectedThread?.other_participant && (
+                    <button
+                      type="button"
+                      className="msg-header-name"
+                      onClick={() => onNavigateProfile?.(selectedThread.other_participant!.user_id)}
+                    >
+                      {selectedThread.other_participant.name}
+                    </button>
+                  )}
+                  {selectedThread?.other_participant?.headline && (
+                    <span className="msg-header-headline">{selectedThread.other_participant.headline}</span>
+                  )}
+                  {!selectedThread?.other_participant && (
+                    <span className="thread-subject">{selectedThread?.subject || `Thread #${selectedId}`}</span>
+                  )}
+                </div>
                 <button
                   type="button"
                   className="icon-btn"
@@ -288,6 +411,19 @@ export function MessagingPanel() {
                 )}
                 {messages.map(m => {
                   const isMe = m.sender_id === identity.user_id && m.sender_type === identity.user_type
+                  const sharedPost = tryParseSharedPost(m.message_text)
+                  
+                  if (sharedPost) {
+                    return (
+                      <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <SharedPostLoader sharedPost={sharedPost} onNavigatePost={onNavigatePost} />
+                          <span className="msg-time">{fmtTime(m.timestamp)}</span>
+                        </div>
+                      </div>
+                    )
+                  }
+
                   return (
                     <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
                       <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
