@@ -231,179 +231,188 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
 
   // Allow both members and recruiters to access the connections section
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">My Network</h2>
-        <p className="panel-subtitle">
-          Signed in as <strong>{identity.user_type} #{myId}</strong> · {identity.email}
-        </p>
+    <div className="page-grid-2" style={{ maxWidth: '1128px', margin: '0 auto', padding: '24px 0' }}>
+      {/* Left Rail */}
+      <div className="left-rail">
+        <div className="li-card">
+          <div style={{ padding: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '16px' }}>Manage my network</h2>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              <li style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', color: 'var(--text-sec)', fontSize: '14px', cursor: 'pointer' }} onClick={() => document.getElementById('conns-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                <span style={{ cursor: 'pointer' }}>Connections</span>
+                <span>{connsTotal}</span>
+              </li>
+              <li style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', color: 'var(--text-sec)', fontSize: '14px', cursor: 'pointer' }} onClick={() => document.getElementById('pending-section')?.scrollIntoView({ behavior: 'smooth' })}>
+                <span style={{ cursor: 'pointer' }}>Pending Requests</span>
+                <span>{pendingTotal}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
 
-      {/* Connections count banner */}
-      {connsTotal > 0 && (
-        <div className="identity-bar">
-          <strong>{connsTotal}</strong>
-          <span>accepted connection{connsTotal !== 1 ? 's' : ''}</span>
-        </div>
-      )}
-
-      <div className="conn-grid">
-        {/* ── Send request ────────────────────────── */}
-        <div className="chart-card">
-          <h3 className="chart-title">Connect with someone</h3>
-          <p className="hint" style={{ marginTop: 0 }}>Search by name to find someone to connect with.</p>
-          
-          <div className="search-input-wrap">
-            <input
-              type="text"
-              value={toName}
-              onChange={e => { setToName(e.target.value); if(!e.target.value) setToId('') }}
-              placeholder="Search by name..."
-              className="search-bar-input"
-            />
-            {toResults.length > 0 && !toId && (
-              <div className="search-dropdown panel">
-                {toResults.map(m => (
-                  <div key={m.member_id} className="search-item" onClick={() => { 
-                    setToId(String(m.member_id)); 
-                    setToName(`${m.first_name} ${m.last_name}`);
-                    setToResults([]);
-                  }}>
-                    <div className="search-item-info">
-                      <div className="search-item-name">{m.first_name} {m.last_name}</div>
-                      <div className="search-item-headline">{m.headline}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading || !toId}
-            style={{ alignSelf: 'flex-start', marginTop: 12 }}>
-            {reqLoading ? 'Sending…' : 'Send request'}
-          </button>
-          
-          {reqResult && (
-            <ResultBanner success={reqResult.success} message={reqResult.message} />
-          )}
-        </div>
-
-        {/* ── Accept / Reject ──────────────────────── */}
-        <div className="chart-card">
-          <div className="chart-header">
-            <h3 className="chart-title">
-              Respond to a request {pendingTotal > 0 && <span style={{ opacity: 0.6 }}>({pendingTotal})</span>}
-            </h3>
-            <button type="button" className="ghost-btn" onClick={() => loadPending(myId!)} disabled={pendingLoading}>
-              {pendingLoading ? '…' : '↺ Refresh'}
+      {/* Main Content */}
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        
+        {/* Invitations */}
+        <div id="pending-section" className="li-card">
+          <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 400, color: 'var(--text)' }}>Invitations</h2>
+            <button type="button" className="ghost-btn" onClick={() => loadPending(myId!)} disabled={pendingLoading} style={{ fontSize: '14px' }}>
+              {pendingLoading ? 'Loading...' : 'Refresh'}
             </button>
           </div>
-          {pendingErr && <p className="error">{pendingErr}</p>}
-          {arResult && <ResultBanner success={arResult.success} message={arResult.message} />}
-          {pending.length === 0 && !pendingLoading && (
-            <p className="hint">No pending requests.</p>
-          )}
-          {pending.length > 0 && (
-            <ul className="conn-list">
-              {pending.map(c => {
-                const m = c.connected_member
-                return (
-                  <li key={c.connection_id} className="conn-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div 
-                        className="member-avatar" 
-                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer' }}
-                        onClick={() => onNavigateProfile?.(c.requester_id)}
-                      >
-                        {(m?.name ?? '?')[0].toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ padding: '16px' }}>
+            {pendingErr && <p className="error">{pendingErr}</p>}
+            {arResult && <ResultBanner success={arResult.success} message={arResult.message} />}
+            {pending.length === 0 && !pendingLoading && (
+              <p className="hint">No pending requests.</p>
+            )}
+            {pending.length > 0 && (
+              <ul className="conn-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {pending.map(c => {
+                  const m = c.connected_member
+                  return (
+                    <li key={c.connection_id} className="conn-item" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '12px', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div 
-                          className="conn-item-name" 
-                          style={{ cursor: 'pointer' }}
+                          className="member-avatar" 
+                          style={{ width: 48, height: 48, fontSize: 20, background: '#0a66c2', flexShrink: 0, cursor: 'pointer', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                           onClick={() => onNavigateProfile?.(c.requester_id)}
                         >
-                          {m ? m.name : `Member #${c.requester_id}`}
+                          {(m?.name ?? '?')[0].toUpperCase()}
                         </div>
-                        {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
+                        <div>
+                          <div 
+                            className="conn-item-name" 
+                            style={{ cursor: 'pointer', fontWeight: 600, fontSize: '16px', color: 'var(--text)' }}
+                            onClick={() => onNavigateProfile?.(c.requester_id)}
+                          >
+                            {m ? m.name : `Member #${c.requester_id}`}
+                          </div>
+                          {m?.headline && <div className="conn-item-headline muted" style={{ fontSize: '14px' }}>{m.headline}</div>}
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-                      <button type="button" className="ghost-btn" onClick={() => rejectConn(c.connection_id)} disabled={arLoading}>
-                        Decline
-                      </button>
-                      <button type="button" className="primary" onClick={() => acceptConn(c.connection_id)} disabled={arLoading}>
-                        Accept
-                      </button>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button type="button" className="ghost-btn" onClick={() => rejectConn(c.connection_id)} disabled={arLoading} style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-sec)', padding: '6px 12px' }}>
+                          Ignore
+                        </button>
+                        <button type="button" className="secondary-btn" onClick={() => acceptConn(c.connection_id)} disabled={arLoading} style={{ fontSize: '16px', fontWeight: 600, padding: '6px 16px', borderRadius: '24px' }}>
+                          Accept
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </div>
 
-        {/* ── My connections ───────────────────────── */}
-        <div className="chart-card">
-          <div className="chart-header">
-            <h3 className="chart-title">My connections</h3>
-            <button type="button" className="ghost-btn" onClick={() => loadConnections(myId!)} disabled={connsLoading}>
-              {connsLoading ? '…' : '↺ Refresh'}
-            </button>
+        {/* Connect with someone */}
+        <div className="li-card" style={{ overflow: 'visible' }}>
+          <div style={{ padding: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>Grow your network</h2>
+            <p className="hint" style={{ marginTop: 0, fontSize: '14px', marginBottom: '16px' }}>Find people you know by searching for their name.</p>
+            
+            <div className="search-input-wrap" style={{ position: 'relative', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={toName}
+                onChange={e => { setToName(e.target.value); if(!e.target.value) setToId('') }}
+                placeholder="Search by name..."
+                className="search-bar-input"
+                style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '14px' }}
+              />
+              <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading || !toId} style={{ borderRadius: '24px', padding: '6px 16px', fontSize: '16px' }}>
+                {reqLoading ? 'Sending...' : 'Connect'}
+              </button>
+              
+              {toResults.length > 0 && !toId && (
+                <div className="search-dropdown panel" style={{ position: 'absolute', top: '100%', left: 0, right: '100px', zIndex: 10, background: '#fff', border: '1px solid var(--border)', borderRadius: '0 0 4px 4px', boxShadow: 'var(--sh-drop)' }}>
+                  {toResults.map(m => (
+                    <div key={m.member_id} className="search-item" style={{ padding: '12px', cursor: 'pointer', borderBottom: '1px solid var(--border)' }} onClick={() => { 
+                      setToId(String(m.member_id)); 
+                      setToName(`${m.first_name} ${m.last_name}`);
+                      setToResults([]);
+                    }}>
+                      <div className="search-item-info">
+                        <div className="search-item-name" style={{ fontWeight: 600, fontSize: '14px' }}>{m.first_name} {m.last_name}</div>
+                        <div className="search-item-headline" style={{ fontSize: '12px', color: 'var(--text-sec)' }}>{m.headline}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {reqResult && (
+              <ResultBanner success={reqResult.success} message={reqResult.message} />
+            )}
+          </div>
+        </div>
+
+        {/* My connections */}
+        <div id="conns-section" className="li-card">
+          <div style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)' }}>My connections</h2>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <input 
+                type="text" 
+                placeholder="Search connections..." 
+                value={connsFilter}
+                onChange={e => setConnsFilter(e.target.value)}
+                className="search-bar-input"
+                style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '14px' }}
+              />
+              <button type="button" className="ghost-btn" onClick={() => loadConnections(myId!)} disabled={connsLoading} style={{ fontSize: '14px' }}>
+                {connsLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
           </div>
           
-          <input 
-            type="text" 
-            placeholder="Search connections..." 
-            value={connsFilter}
-            onChange={e => setConnsFilter(e.target.value)}
-            className="search-bar-input"
-            style={{ marginBottom: 12 }}
-          />
-
-          {connsErr && <p className="error">{connsErr}</p>}
-          {connections.length === 0 && !connsLoading && (
-            <p className="hint">No accepted connections yet.</p>
-          )}
-          {filteredConnections.length === 0 && connections.length > 0 && (
-            <p className="hint">No matches for "{connsFilter}".</p>
-          )}
-          {filteredConnections.length > 0 && (
-            <ul className="conn-list">
-              {filteredConnections.map(c => {
-                const m = c.connected_member
-                return (
-                  <li key={c.connection_id} className="conn-item">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div 
-                        className="member-avatar" 
-                        style={{ width: 32, height: 32, fontSize: 13, background: '#0a66c2', flexShrink: 0, cursor: 'pointer' }}
-                        onClick={() => {
-                          const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
-                          onNavigateProfile?.(otherId)
-                        }}
-                      >
-                        {(m?.name ?? '?')[0].toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ padding: '16px' }}>
+            {connsErr && <p className="error">{connsErr}</p>}
+            {connections.length === 0 && !connsLoading && (
+              <p className="hint">You don't have any connections yet.</p>
+            )}
+            {filteredConnections.length === 0 && connections.length > 0 && (
+              <p className="hint">No matches for "{connsFilter}".</p>
+            )}
+            {filteredConnections.length > 0 && (
+              <ul className="conn-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {filteredConnections.map(c => {
+                  const m = c.connected_member
+                  return (
+                    <li key={c.connection_id} className="conn-item" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div 
-                          className="conn-item-name" 
-                          style={{ cursor: 'pointer' }}
+                          className="member-avatar" 
+                          style={{ width: 48, height: 48, fontSize: 20, background: '#0a66c2', flexShrink: 0, cursor: 'pointer', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
                           onClick={() => {
                             const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
                             onNavigateProfile?.(otherId)
                           }}
                         >
-                          {m ? m.name : `Member #${c.requester_id === myId ? c.receiver_id : c.requester_id}`}
+                          {(m?.name ?? '?')[0].toUpperCase()}
                         </div>
-                        {m?.headline && <div className="conn-item-headline muted">{m.headline}</div>}
+                        <div>
+                          <div 
+                            className="conn-item-name" 
+                            style={{ cursor: 'pointer', fontWeight: 600, fontSize: '16px', color: 'var(--text)' }}
+                            onClick={() => {
+                              const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
+                              onNavigateProfile?.(otherId)
+                            }}
+                          >
+                            {m ? m.name : `Member #${c.requester_id === myId ? c.receiver_id : c.requester_id}`}
+                          </div>
+                          {m?.headline && <div className="conn-item-headline muted" style={{ fontSize: '14px' }}>{m.headline}</div>}
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span className="conn-badge">Accepted</span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         <button 
                           className="ghost-btn" 
-                          style={{ color: '#d11124', fontSize: 12, padding: '2px 8px' }}
+                          style={{ color: '#d11124', fontSize: '14px', fontWeight: 600, padding: '6px 12px' }}
                           onClick={async () => {
                             if (!window.confirm('Are you sure you want to remove this connection?')) return
                             const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
@@ -419,71 +428,15 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                           Remove
                         </button>
                       </div>
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-
-        {/* ── Mutual connections ───────────────────── */}
-        <div className="chart-card">
-          <h3 className="chart-title">Mutual connections</h3>
-          <p className="hint" style={{ marginTop: 0 }}>
-            Search by name to find mutual connections with another member.
-          </p>
-          
-          <div className="search-input-wrap">
-            <input
-              type="text"
-              value={otherName}
-              onChange={e => { setOtherName(e.target.value); if(!e.target.value) setOtherId('') }}
-              placeholder="Search by name..."
-              className="search-bar-input"
-            />
-            {otherResults.length > 0 && !otherId && (
-              <div className="search-dropdown panel">
-                {otherResults.map(m => (
-                  <div key={m.member_id} className="search-item" onClick={() => { 
-                    setOtherId(String(m.member_id)); 
-                    setOtherName(`${m.first_name} ${m.last_name}`);
-                    setOtherResults([]);
-                  }}>
-                    <div className="search-item-info">
-                      <div className="search-item-name">{m.first_name} {m.last_name}</div>
-                      <div className="search-item-headline">{m.headline}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    </li>
+                  )
+                })}
+              </ul>
             )}
           </div>
-
-          <button type="button" className="primary" onClick={loadMutual} disabled={mutualLoading || !otherId}
-            style={{ alignSelf: 'flex-start', marginTop: 12 }}>
-            {mutualLoading ? 'Finding…' : 'Find mutual'}
-          </button>
-          
-          {mutualResult && <p className="meta" style={{ marginTop: 4 }}>{mutualResult}</p>}
-          {mutual.length > 0 && (
-            <ul className="conn-list" style={{ marginTop: 8 }}>
-              {mutual.map(m => (
-                <li key={m.member_id} className="conn-item">
-                  <div 
-                    className="conn-item-name" 
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => onNavigateProfile?.(m.member_id)}
-                  >
-                    {m.name}
-                  </div>
-                  {m.headline && <div className="conn-item-headline muted">{m.headline}</div>}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
+
       </div>
-    </section>
+    </div>
   )
 }
