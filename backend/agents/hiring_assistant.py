@@ -354,6 +354,7 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
                 )
                 outreach["match_score"] = match["overall_score"]
                 outreach["recommendation"] = match["recommendation"]
+                outreach["candidate_id"] = match["candidate_id"]
                 outreach_drafts.append(outreach)
 
         await update_task_status(

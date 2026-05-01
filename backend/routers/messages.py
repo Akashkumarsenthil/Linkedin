@@ -10,6 +10,8 @@ from sqlalchemy import desc
 
 from database import get_db
 from models.message import Thread, ThreadParticipant, Message
+from models.member import Member
+from models.recruiter import Recruiter
 from auth import get_current_user, TokenPayload
 from schemas.message import (
     ThreadOpen, ThreadGet, ThreadsByUser, MessageSend, MessageList,
@@ -31,6 +33,29 @@ async def open_thread(
     Create a new messaging thread between participants. Requires authentication.
     Each participant is identified by user_id and user_type (member/recruiter).
     """
+    # Check if a 1-on-1 thread already exists
+    if len(req.participant_ids) == 2:
+        p1 = req.participant_ids[0]
+        p2 = req.participant_ids[1]
+        
+        p1_threads = db.query(ThreadParticipant.thread_id).filter(
+            ThreadParticipant.user_id == p1["user_id"],
+            ThreadParticipant.user_type == p1["user_type"]
+        ).subquery()
+        
+        existing_tp = db.query(ThreadParticipant.thread_id).filter(
+            ThreadParticipant.user_id == p2["user_id"],
+            ThreadParticipant.user_type == p2["user_type"],
+            ThreadParticipant.thread_id.in_(p1_threads)
+        ).first()
+        
+        if existing_tp:
+            thread_id = existing_tp[0]
+            thread = db.query(Thread).filter(Thread.thread_id == thread_id).first()
+            if thread:
+                data = thread.to_dict()
+                return MessageResponse(success=True, message="Existing thread found", data=data)
+
     thread = Thread(subject=req.subject)
     db.add(thread)
     db.flush()  # Get the thread_id
@@ -101,6 +126,30 @@ async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
     result = []
     for thread in threads:
         data = thread.to_dict()
+        
+        # Get other participant
+        other_tp = db.query(ThreadParticipant).filter(
+            ThreadParticipant.thread_id == thread.thread_id,
+            (ThreadParticipant.user_id != req.user_id) | (ThreadParticipant.user_type != req.user_type)
+        ).first()
+        
+        if other_tp:
+            other_data = {
+                "user_id": other_tp.user_id,
+                "user_type": other_tp.user_type,
+            }
+            if other_tp.user_type == "member":
+                member = db.query(Member).filter(Member.member_id == other_tp.user_id).first()
+                if member:
+                    other_data["name"] = f"{member.first_name} {member.last_name}"
+                    other_data["headline"] = member.headline
+            elif other_tp.user_type == "recruiter":
+                recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == other_tp.user_id).first()
+                if recruiter:
+                    other_data["name"] = f"{recruiter.first_name} {recruiter.last_name}"
+                    other_data["headline"] = recruiter.company_name
+            data["other_participant"] = other_data
+            
         last_msg = db.query(Message).filter(
             Message.thread_id == thread.thread_id
         ).order_by(desc(Message.timestamp)).first()
