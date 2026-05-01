@@ -77,7 +77,7 @@ function AnalyticsCard({ label, value }: { label: string; value: string | number
   )
 }
 
-export function RecruiterJobsPage({ onNavigateProfile }: { onNavigateProfile?: (id: number) => void }) {
+export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavigateProfile?: (id: number) => void; onNavigateAi?: (jobId: number) => void }) {
   const [jobs, setJobs] = useState<JobPosting[]>([])
   const [selectedJobId, setSelectedJobId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -428,10 +428,14 @@ export function RecruiterJobsPage({ onNavigateProfile }: { onNavigateProfile?: (
                 <div>
                   <h3>{selectedJob.title}</h3>
                   <p>{selectedJob.company_name || `Company #${selectedJob.company_id}`} · {selectedJob.location}</p>
-                  <p>Posted {new Date(selectedJob.posted_datetime).toLocaleDateString()} · Status: {selectedJob.status === 'open' ? 'Active' : 'Closed'}</p>
+                  <p>Posted {new Date(selectedJob.posted_datetime).toLocaleDateString()} · Status: {selectedJob.status === 'open' ? 'Active' : 'Closed'} · Job ID: {selectedJob.job_id}</p>
                 </div>
                 <div className="rj-detail__actions">
-                  <button type="button" onClick={() => alert('Edit flow can be connected to /jobs/update.')}>Edit Job</button>
+                  {onNavigateAi && (
+                    <button type="button" style={{ background: 'var(--accent)', color: 'white', border: 'none' }} onClick={() => onNavigateAi(selectedJob.job_id)}>
+                      AI Hiring Workflow
+                    </button>
+                  )}
                   <button type="button" onClick={handleCloseJob} disabled={selectedJob.status === 'closed'}>Close Job</button>
                 </div>
               </header>

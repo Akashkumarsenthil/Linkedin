@@ -7,9 +7,12 @@ interface JobDetailsProps {
   isApplied: boolean
   onApplySuccess: () => void
   readOnly?: boolean
+  onNavigateAi?: (jobId: number) => void
 }
 
-export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false }: JobDetailsProps) {
+export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false, onNavigateAi }: JobDetailsProps) {
+  const user = parseStoredUser()
+  const isRecruiter = user?.user_type === 'recruiter'
   const [applying, setApplying] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showToast, setShowToast] = useState(false)
@@ -81,7 +84,7 @@ export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false }:
     }
   }
 
-  const companyName = `Company #${job.company_id || 'Unknown'}`
+  const companyName = job.company_name || `Company #${job.company_id || 'Unknown'}`
   const companyLogo = companyName.charAt(0)
   const dateStr = new Date(job.posted_datetime).toLocaleDateString()
   
@@ -151,41 +154,55 @@ export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false }:
 
         {!readOnly && (
           <div className="jobs-detail__actions">
-            <button
-              type="button"
-              className={`jobs-detail__apply-btn${isApplied ? ' jobs-detail__apply-btn--applied' : ''}`}
-              onClick={handleApply}
-              disabled={isApplied || applying}
-            >
-              {isApplied ? (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5" />
+            {!isRecruiter && (
+              <>
+                <button
+                  type="button"
+                  className={`jobs-detail__apply-btn${isApplied ? ' jobs-detail__apply-btn--applied' : ''}`}
+                  onClick={handleApply}
+                  disabled={isApplied || applying}
+                >
+                  {isApplied ? (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      Applied
+                    </>
+                  ) : applying ? (
+                    'Applying...'
+                  ) : (
+                    <>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 2 11 13" />
+                        <path d="M22 2 15 22 11 13 2 9l20-7z" />
+                      </svg>
+                      Apply
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`jobs-detail__save-btn${saved ? ' jobs-detail__save-btn--saved' : ''}`}
+                  onClick={handleSave}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                   </svg>
-                  Applied
-                </>
-              ) : applying ? (
-                'Applying...'
-              ) : (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 2 11 13" />
-                    <path d="M22 2 15 22 11 13 2 9l20-7z" />
-                  </svg>
-                  Apply
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              className={`jobs-detail__save-btn${saved ? ' jobs-detail__save-btn--saved' : ''}`}
-              onClick={handleSave}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
-              {saved ? 'Saved' : 'Save'}
-            </button>
+                  {saved ? 'Saved' : 'Save'}
+                </button>
+              </>
+            )}
+            {isRecruiter && onNavigateAi && (
+              <button
+                type="button"
+                className="jobs-detail__apply-btn"
+                style={{ background: 'var(--accent)', color: 'white', border: 'none' }}
+                onClick={() => onNavigateAi(job.job_id)}
+              >
+                AI Hiring Workflow
+              </button>
+            )}
           </div>
         )}
       </div>
