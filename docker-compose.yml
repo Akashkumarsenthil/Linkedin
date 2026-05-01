@@ -7,18 +7,18 @@ x-backend-common: &backend-common
   restart: unless-stopped
   env_file: .env
   environment:
-    # Connect to local containers within the same network
-    MYSQL_HOST: mysql
+    # Remote AWS databases
+    MYSQL_HOST: 3.80.47.57
     MYSQL_PORT: 3306
-    MYSQL_USER: ${MYSQL_USER:-linkedin_user}
-    MYSQL_PASSWORD: ${MYSQL_PASSWORD:-linkedin_pass}
-    MYSQL_DATABASE: ${MYSQL_DATABASE:-linkedin}
-    MONGO_HOST: mongodb
+    MYSQL_USER: teamuser
+    MYSQL_PASSWORD: ChangeThisMySQLPass123!
+    MYSQL_DATABASE: team_mysql_db
+    MONGO_HOST: 3.80.47.57
     MONGO_PORT: 27017
-    MONGO_USER: ${MONGO_USER:-mongo_user}
-    MONGO_PASSWORD: ${MONGO_PASSWORD:-mongo_pass}
-    MONGO_DATABASE: ${MONGO_DATABASE:-linkedin}
-    MONGO_AUTH_SOURCE: ${MONGO_AUTH_SOURCE:-admin}
+    MONGO_USER: teammongo
+    MONGO_PASSWORD: ChangeThisMongoUserPass123!
+    MONGO_DATABASE: team_mongo_db
+    MONGO_AUTH_SOURCE: team_mongo_db
     REDIS_HOST: redis
     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
   depends_on:
