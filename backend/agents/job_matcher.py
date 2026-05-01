@@ -176,5 +176,6 @@ async def match_candidate_to_job(
             "seniority": seniority_result,
         },
         "candidate_id": candidate_data.get("member_id"),
+        "candidate_name": f"{candidate_data.get('first_name', '')} {candidate_data.get('last_name', '')}".strip() or f"Candidate #{candidate_data.get('member_id')}",
         "job_id": job_data.get("job_id"),
     }

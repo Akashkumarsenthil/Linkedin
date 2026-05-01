@@ -137,7 +137,7 @@ function StepTimeline({ steps }: { steps: { step: string; status: string; timest
 }
 
 
-function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
+function ShortlistCard({ entry, onNavigateProfile }: { entry: ShortlistEntry; onNavigateProfile?: (id: number) => void }) {
   const pct = Math.round(entry.overall_score * 100)
   const initials = (entry.candidate_name ?? `#${entry.candidate_id}`)
     .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
@@ -149,9 +149,25 @@ function ShortlistCard({ entry }: { entry: ShortlistEntry }) {
   return (
     <div className="li-candidate-card">
       <div className="li-candidate-top">
-        <div className="li-avatar">{initials}</div>
+        <div 
+          className="li-avatar" 
+          onClick={() => onNavigateProfile?.(entry.candidate_id)}
+          style={{ cursor: onNavigateProfile ? 'pointer' : 'default' }}
+        >
+          {initials}
+        </div>
         <div className="li-candidate-meta">
-          <span className="li-candidate-name">{entry.candidate_name ?? `Candidate #${entry.candidate_id}`}</span>
+          <span 
+            className="li-candidate-name"
+            onClick={() => onNavigateProfile?.(entry.candidate_id)}
+            style={{ 
+              cursor: onNavigateProfile ? 'pointer' : 'default',
+              textDecoration: onNavigateProfile ? 'underline' : 'none',
+              color: onNavigateProfile ? 'var(--li-blue-primary)' : 'inherit'
+            }}
+          >
+            {entry.candidate_name ?? `Candidate #${entry.candidate_id}`}
+          </span>
           <span className={`li-rec-badge ${recClass}`}>{entry.recommendation}</span>
         </div>
         <div className="li-score-circle" style={{ color: scoreColor, borderColor: scoreColor }}>
@@ -341,16 +357,20 @@ function ResumeView({ data }: { data: Record<string, unknown> }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function AiDashboard() {
+export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?: number | null; onNavigateProfile?: (id: number) => void } = {}) {
   // ── task list state ──────────────────────────────────────────────
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [tasksLoading, setTasksLoading] = useState(false)
 
   // ── new task form ────────────────────────────────────────────────
-  const [jobId, setJobId] = useState('')
+  const [jobId, setJobId] = useState(initialJobId ? String(initialJobId) : '')
   const [topN, setTopN] = useState('5')
   const [startLoading, setStartLoading] = useState(false)
   const [startErr, setStartErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (initialJobId) setJobId(String(initialJobId))
+  }, [initialJobId])
 
   // ── selected task ────────────────────────────────────────────────
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -677,7 +697,7 @@ export function AiDashboard() {
                     </p>
                     <div className="candidate-grid">
                       {result.shortlist.map((entry, i) => (
-                        <ShortlistCard key={i} entry={entry} />
+                        <ShortlistCard key={i} entry={entry} onNavigateProfile={onNavigateProfile} />
                       ))}
                     </div>
                   </div>

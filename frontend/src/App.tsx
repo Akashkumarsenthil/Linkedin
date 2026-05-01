@@ -23,6 +23,7 @@ import { PerformanceDashboard } from './components/PerformanceDashboard'
 import { JobsPage } from './components/jobs/JobsPage'
 import { SavedJobsPage } from './components/jobs/SavedJobsPage'
 import { MyJobsPage } from './components/jobs/MyJobsPage'
+import { RecruiterJobsPage } from './components/jobs/RecruiterJobsPage'
 import { EventsPage } from './components/EventsPage'
 import { SavedItemsPage } from './components/SavedItemsPage'
 import { NewsPage } from './components/NewsPage'
@@ -127,6 +128,7 @@ function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
+  const [initialAiJobId, setInitialAiJobId] = useState<number | null>(null)
 
   const handleAuthChange = () => {
     const newUser = parseStoredUser()
@@ -435,7 +437,8 @@ function App() {
             ) : (
               <OverviewPanel onNavigate={setTab} />
             ))}
-          {tab === 'jobs' && <JobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'jobs' && role === 'recruiter' && <RecruiterJobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onNavigateAi={(jobId) => { setInitialAiJobId(jobId); setTab('ai') }} />}
+          {tab === 'jobs' && role !== 'recruiter' && <JobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onNavigateAi={(jobId) => { setInitialAiJobId(jobId); setTab('ai') }} />}
           {tab === 'saved-jobs' && <SavedJobsPage />}
           {tab === 'my-jobs' && <MyJobsPage />}
           {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
@@ -450,7 +453,7 @@ function App() {
               onOpenConnections={() => setTab('connections')}
             />
           )}
-          {tab === 'ai'          && <AiDashboard />}
+          {tab === 'ai'          && <AiDashboard initialJobId={initialAiJobId} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'career'      && <CareerCoach />}
           {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'perf'        && <PerformanceDashboard />}

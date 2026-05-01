@@ -3,7 +3,8 @@ AI Service Router — REST + WebSocket endpoints for Agentic AI workflows.
 """
 
 import logging
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, File, UploadFile, Form
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, File, UploadFile, Form, HTTPException
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
@@ -14,6 +15,8 @@ from agents.hiring_assistant import (
 )
 from agents.resume_parser import parse_resume_with_llm
 from agents.job_matcher import match_candidate_to_job
+from database import get_db
+from models.job import JobPosting
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["AI Agent Service"])
@@ -96,6 +99,7 @@ class AIResponse(BaseModel):
 async def analyze_candidates(
     req: AnalyzeCandidatesRequest,
     current_user: TokenPayload = Depends(require_recruiter),
+    db: Session = Depends(get_db),
 ):
     """
     Start the Hiring Assistant multi-step AI workflow:
@@ -106,6 +110,13 @@ async def analyze_candidates(
     
     Returns a task_id to track progress via /ai/task-status or WebSocket.
     """
+    if current_user.user_type != "admin":
+        job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.recruiter_id != current_user.user_id:
+            raise HTTPException(status_code=403, detail="You can only analyze candidates for jobs you created")
+
     task_id = await start_task(req.job_id, req.top_n)
     return AIResponse(
         success=True,

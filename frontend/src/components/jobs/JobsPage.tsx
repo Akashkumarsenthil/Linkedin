@@ -6,6 +6,7 @@ import { apiPost, parseStoredUser } from '../../api'
 export interface JobPosting {
   job_id: number;
   company_id: number;
+  company_name?: string;
   recruiter_id: number;
   title: string;
   description: string;
@@ -22,7 +23,12 @@ export interface JobPosting {
   applicants_count: number;
 }
 
-export function JobsPage() {
+interface JobsPageProps {
+  onNavigateProfile?: (id: number | null) => void;
+  onNavigateAi?: (jobId: number) => void;
+}
+
+export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
   const [jobs, setJobs] = useState<JobPosting[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [appliedJobIds, setAppliedJobIds] = useState<Set<number>>(new Set())
@@ -36,10 +42,19 @@ export function JobsPage() {
   const fetchJobs = async (searchKw = '') => {
     setLoading(true)
     try {
-      const res = await apiPost<{ data: JobPosting[] }>('/jobs/search', {
-        keyword: searchKw,
-        page_size: 50
-      })
+      const user = parseStoredUser()
+      let res;
+      if (user?.user_type === 'recruiter') {
+        res = await apiPost<{ data: JobPosting[] }>('/jobs/byRecruiter', {
+          recruiter_id: user.user_id,
+          page_size: 50
+        })
+      } else {
+        res = await apiPost<{ data: JobPosting[] }>('/jobs/search', {
+          keyword: searchKw,
+          page_size: 50
+        })
+      }
       setJobs(res.data || [])
       if (res.data?.length && !selectedId) {
         setSelectedId(res.data[0].job_id)
@@ -126,6 +141,7 @@ export function JobsPage() {
               }
             }}
             readOnly={readOnly}
+            onNavigateAi={onNavigateAi}
           />
         </div>
       </div>

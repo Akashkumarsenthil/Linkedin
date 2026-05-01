@@ -11,7 +11,7 @@ interface JobCardProps {
 
 export function JobCard({ job, isSelected, isApplied, onClick, onDismiss, readOnly = false }: JobCardProps) {
   // Mock company name/logo based on company_id
-  const companyName = `Company #${job.company_id || 'Unknown'}`
+  const companyName = job.company_name || `Company #${job.company_id || 'Unknown'}`
   const companyLogo = companyName.charAt(0)
   
   const dateStr = new Date(job.posted_datetime).toLocaleDateString()
