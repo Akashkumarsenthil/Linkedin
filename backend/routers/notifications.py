@@ -1,9 +1,12 @@
 """
 Notifications Service — aggregated "bell" feed for the signed-in user.
 
-Pulls from a few existing tables (pending connection requests, recent post
-likes, recent posts from the user's connections) and returns a unified list
-that the web UI can render in a dropdown / notifications tab.
+Sources:
+  1. Pending connection requests (actionable) — MySQL connections table.
+  2. Recent likes on my posts — MySQL post_likes table.
+  3. Recent posts by my accepted connections — MySQL posts table.
+
+All sources are synchronous REST + MySQL queries. Sorted newest-first, capped at 30 items.
 """
 
 import logging

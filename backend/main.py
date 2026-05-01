@@ -45,19 +45,43 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"✗ Kafka producer failed to start: {e}")
 
-    # Start Kafka consumer in background
+    # Start Kafka consumer in background with auto-restart on crash
     consumer_task = None
+    _consumer_topics = [
+        "job.viewed", "job.saved", "job.created", "job.closed",
+        "application.submitted", "application.statusChanged",
+        "message.sent", "connection.requested", "connection.accepted",
+        "profile.viewed",
+        "ai.requests", "ai.results",
+    ]
+
+    async def _run_consumer_with_restart():
+        """Run the consumer loop; restart automatically if it exits unexpectedly."""
+        delay = 5
+        while kafka_consumer._running is not False:
+            try:
+                await kafka_consumer.start(_consumer_topics)
+                logger.info("✓ Kafka consumer started")
+                await kafka_consumer.consume()
+                # consume() returned normally — only happens on CancelledError or
+                # explicit stop(); break out of the restart loop in both cases.
+                break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(
+                    f"Kafka consumer crashed: {e} — restarting in {delay}s"
+                )
+                try:
+                    await kafka_consumer.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)  # exponential back-off, cap at 60 s
+
     try:
-        topics = [
-            "job.viewed", "job.saved", "job.created", "job.closed",
-            "application.submitted", "application.statusChanged",
-            "message.sent", "connection.requested", "connection.accepted",
-            "profile.viewed",
-            "ai.requests", "ai.results",
-        ]
-        await kafka_consumer.start(topics)
-        consumer_task = asyncio.create_task(kafka_consumer.consume())
-        logger.info("✓ Kafka consumer started")
+        kafka_consumer._running = True  # allow the restart loop to begin
+        consumer_task = asyncio.create_task(_run_consumer_with_restart())
     except Exception as e:
         logger.warning(f"✗ Kafka consumer failed to start: {e}")
 

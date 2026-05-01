@@ -56,26 +56,26 @@ type AuthUser = {
 } | null
 
 const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admin'>> = {
-  overview:      ['guest', 'member', 'recruiter', 'admin'],
+  overview:      ['guest', 'member', 'recruiter'],          // admin lands on perf instead
   jobs:          ['guest', 'member', 'recruiter', 'admin'],
   'saved-jobs':  ['member'],
   'my-jobs':     ['member'],
   members:       ['guest', 'member', 'admin'],
   analytics:     ['recruiter', 'admin'],
-  career:        ['member', 'recruiter', 'admin'],
-  messages:      ['member', 'recruiter', 'admin'],
-  connections:   ['member', 'recruiter', 'admin'],
-  notifications: ['member', 'recruiter', 'admin'],
+  career:        ['member', 'recruiter'],                   // admin-irrelevant
+  messages:      ['member', 'recruiter'],                   // admin-irrelevant
+  connections:   ['member', 'recruiter'],                   // admin-irrelevant
+  notifications: ['member', 'recruiter'],                   // admin-irrelevant; bell hidden separately
   ai:            ['recruiter', 'admin'],
   auth:          ['guest', 'member', 'recruiter', 'admin'],
-  post:          ['guest', 'member', 'recruiter', 'admin'],
   profile:       ['member', 'recruiter', 'admin'],
+  post:          ['guest', 'member', 'recruiter'],          // admin-irrelevant
   search:        ['guest', 'member', 'recruiter', 'admin'],
   perf:          ['admin'],
   settings:      ['member', 'recruiter', 'admin'],
-  events:        ['member', 'recruiter', 'admin'],
-  saved:         ['member', 'recruiter', 'admin'],
-  news:          ['member', 'recruiter', 'admin'],
+  events:        ['member', 'recruiter'],                   // admin-irrelevant
+  saved:         ['member', 'recruiter'],                   // admin-irrelevant
+  news:          ['member', 'recruiter'],                   // admin-irrelevant
 }
 
 const ALL_NAV: [Tab, string, string][] = [
@@ -87,7 +87,7 @@ const ALL_NAV: [Tab, string, string][] = [
   ['career',        'Career Coach',  'ai'],
   ['analytics',     'Analytics',     'analytics'],
   ['ai',            'AI Recruiter',  'ai'],
-  ['perf',          'Performance',   'analytics'],
+  ['perf',          'Dashboard',     'analytics'],
   ['auth',          'Sign In',       'user'],
   ['profile',       'Me',            'user'],
   ['search',        'Search',        'search'],
@@ -116,7 +116,7 @@ interface NotificationItem {
 }
 
 function App() {
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTab] = useState<Tab>(() => parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
   const [authUser, setAuthUser] = useState<AuthUser>(() => parseStoredUser())
   const [searchVal, setSearchVal] = useState('')
   const [me, setMe] = useState<MePayload | null>(null)
@@ -129,18 +129,19 @@ function App() {
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
 
   const handleAuthChange = () => {
-    setAuthUser(parseStoredUser())
+    const newUser = parseStoredUser()
+    setAuthUser(newUser)
     setMe(null)
     setNotifications([])
     setUnreadCount(0)
-    setTab('overview')
+    setTab(newUser?.user_type === 'admin' ? 'perf' : 'overview')
   }
 
   const role: 'guest' | 'member' | 'recruiter' | 'admin' = authUser?.user_type ?? 'guest'
   const visibleTabs = ALL_NAV.filter(([id]) => TAB_VISIBILITY[id].includes(role))
 
   useEffect(() => {
-    if (!TAB_VISIBILITY[tab].includes(role)) setTab('overview')
+    if (!TAB_VISIBILITY[tab].includes(role)) setTab(role === 'admin' ? 'perf' : 'overview')
   }, [role, tab])
 
   useEffect(() => {
@@ -224,7 +225,7 @@ function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar-inner">
-          <button className="brand" type="button" onClick={() => setTab('overview')}>
+          <button className="brand" type="button" onClick={() => setTab(role === 'admin' ? 'perf' : 'overview')}>
             <div className="logo-mark"><span className="logo-in">in</span></div>
           </button>
 
@@ -339,7 +340,7 @@ function App() {
                 </button>
               ))}
 
-            {authUser && (
+            {authUser && role !== 'admin' && (
               <button
                 type="button"
                 className={tab === 'notifications' ? 'nav-btn active nav-btn-bell' : 'nav-btn nav-btn-bell'}
@@ -720,7 +721,7 @@ const AVATAR_COLORS = [
   '#0a66c2', '#0d7764', '#b24020', '#9c45c2', '#b87a0a', '#1a7a34',
 ]
 
-function MembersPanel({ onNavigateProfile }: { onNavigateProfile: (id: number) => void }) {
+function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: number) => void; role: 'guest' | 'member' | 'recruiter' | 'admin' }) {
   const [keyword, setKeyword] = useState('data')
   const [sortBy, setSortBy] = useState('id')
   const [members, setMembers] = useState<Record<string, unknown>[]>([])
@@ -858,39 +859,41 @@ function MembersPanel({ onNavigateProfile }: { onNavigateProfile: (id: number) =
                     {m.location_city ? <span className="pill"><Icon name="location" size={11} className="meta-icon" /> {String(m.location_city)}</span> : null}
                     <span className="member-id-chip">#{String(m.member_id)}</span>
                   </div>
-                  <div style={{ marginTop: 12 }}>
-                    {connections.includes(Number(m.member_id)) ? (
-                      <button type="button" className="btn-message" style={{ width: '100%', justifyContent: 'center' }}>
-                        Message
-                      </button>
-                    ) : pendingConnections.includes(Number(m.member_id)) ? (
-                      <button type="button" className="btn-pending" style={{ width: '100%', justifyContent: 'center', cursor: 'default' }}>
-                        Pending
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn-connect"
-                        style={{ width: '100%', justifyContent: 'center' }}
-                        onClick={() => {
-                          const user = parseStoredUser()
-                          if (!user || user.user_type !== 'member') return
-                          apiPost<any>('/connections/request', {
-                            requester_id: user.user_id,
-                            receiver_id: Number(m.member_id)
-                          }).then(res => {
-                            if (res.success || res.message?.includes('pending')) {
-                              setPendingConnections(prev => [...prev, Number(m.member_id)])
-                            } else {
-                              alert(res.message)
-                            }
-                          })
-                        }}
-                      >
-                        Connect
-                      </button>
-                    )}
-                  </div>
+                  {role !== 'admin' && (
+                    <div style={{ marginTop: 12 }}>
+                      {connections.includes(Number(m.member_id)) ? (
+                        <button type="button" className="btn-message" style={{ width: '100%', justifyContent: 'center' }}>
+                          Message
+                        </button>
+                      ) : pendingConnections.includes(Number(m.member_id)) ? (
+                        <button type="button" className="btn-pending" style={{ width: '100%', justifyContent: 'center', cursor: 'default' }}>
+                          Pending
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-connect"
+                          style={{ width: '100%', justifyContent: 'center' }}
+                          onClick={() => {
+                            const user = parseStoredUser()
+                            if (!user || user.user_type !== 'member') return
+                            apiPost<any>('/connections/request', {
+                              requester_id: user.user_id,
+                              receiver_id: Number(m.member_id)
+                            }).then(res => {
+                              if (res.success || res.message?.includes('pending')) {
+                                setPendingConnections(prev => [...prev, Number(m.member_id)])
+                              } else {
+                                alert(res.message)
+                              }
+                            })
+                          }}
+                        >
+                          Connect
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </li>
             )

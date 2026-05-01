@@ -701,6 +701,123 @@ def seed_admin_user(db) -> int:
     return member.member_id
 
 
+async def seed_mongo_analytics(db) -> None:
+    """
+    Populate MongoDB analytics collections from existing SQL data so the
+    Performance tab event-trend chart and Kafka KPI tiles are non-empty
+    immediately after seeding, without waiting for real Kafka events.
+
+    Reads real date-aggregated counts from SQL and upserts them into:
+      analytics_applications_daily  — from applications.application_datetime
+      analytics_saves_daily         — from saved_jobs.saved_at
+      analytics_connections_daily   — from connections.created_at
+      analytics_job_clicks_daily    — distributes jobs.views_count across dates
+    """
+    from database import mongo_db as _mongo
+
+    # ── Applications per day ──────────────────────────────────────────────────
+    rows = db.execute(text(
+        "SELECT DATE(application_datetime) AS d, COUNT(*) AS cnt "
+        "FROM applications GROUP BY d ORDER BY d"
+    )).fetchall()
+    app_count = 0
+    for date_val, cnt in rows:
+        if not date_val:
+            continue
+        date_str = str(date_val)
+        week_str = date_val.strftime("%G-W%V") if hasattr(date_val, "strftime") else date_str[:7]
+        await _mongo.analytics_applications_daily.update_one(
+            {"date": date_str},
+            {"$set": {"count": int(cnt), "week": week_str}},
+            upsert=True,
+        )
+        app_count += int(cnt)
+    print(f"   ✓ analytics_applications_daily: {len(rows)} days, {app_count:,} total")
+
+    # ── Saved jobs per day ────────────────────────────────────────────────────
+    rows = db.execute(text(
+        "SELECT DATE(saved_at) AS d, COUNT(*) AS cnt "
+        "FROM saved_jobs GROUP BY d ORDER BY d"
+    )).fetchall()
+    saves_count = 0
+    for date_val, cnt in rows:
+        if not date_val:
+            continue
+        date_str = str(date_val)
+        week_str = date_val.strftime("%G-W%V") if hasattr(date_val, "strftime") else date_str[:7]
+        await _mongo.analytics_saves_daily.update_one(
+            {"date": date_str},
+            {"$set": {"saves": int(cnt), "week": week_str}},
+            upsert=True,
+        )
+        saves_count += int(cnt)
+    print(f"   ✓ analytics_saves_daily: {len(rows)} days, {saves_count:,} total")
+
+    # ── Connections per day ───────────────────────────────────────────────────
+    # connection.requested = all connections (each started as a request)
+    # connection.accepted  = accepted connections only
+    req_rows = db.execute(text(
+        "SELECT DATE(created_at) AS d, COUNT(*) AS cnt "
+        "FROM connections GROUP BY d ORDER BY d"
+    )).fetchall()
+    acc_rows = db.execute(text(
+        "SELECT DATE(created_at) AS d, COUNT(*) AS cnt "
+        "FROM connections WHERE status='accepted' GROUP BY d ORDER BY d"
+    )).fetchall()
+    acc_by_date = {str(d): int(c) for d, c in acc_rows if d}
+    conn_days = 0
+    for date_val, cnt in req_rows:
+        if not date_val:
+            continue
+        date_str = str(date_val)
+        week_str = date_val.strftime("%G-W%V") if hasattr(date_val, "strftime") else date_str[:7]
+        await _mongo.analytics_connections_daily.update_one(
+            {"date": date_str},
+            {"$set": {
+                "requested": int(cnt),
+                "accepted": acc_by_date.get(date_str, 0),
+                "week": week_str,
+            }},
+            upsert=True,
+        )
+        conn_days += 1
+    print(f"   ✓ analytics_connections_daily: {conn_days} days")
+
+    # ── Job clicks per day (distribute views_count across past 30 days) ───────
+    # views_count on each job is a total; distribute it randomly across dates
+    # in the same range as applications to produce a realistic daily time-series.
+    job_rows = db.execute(text(
+        "SELECT job_id, views_count FROM job_postings WHERE views_count > 0 LIMIT 500"
+    )).fetchall()
+    if job_rows:
+        import random as _random
+        _random.seed(99)  # stable distribution across re-seeds
+        date_rows = db.execute(text(
+            "SELECT DISTINCT DATE(application_datetime) AS d "
+            "FROM applications ORDER BY d DESC LIMIT 30"
+        )).fetchall()
+        date_pool = [str(r[0]) for r in date_rows if r[0]]
+        if date_pool:
+            click_totals: dict = {}
+            for job_id, views_count in job_rows:
+                for _ in range(int(views_count or 0)):
+                    d = _random.choice(date_pool)
+                    click_totals[(job_id, d)] = click_totals.get((job_id, d), 0) + 1
+            total_clicks = 0
+            for (job_id, date_str), clicks in click_totals.items():
+                await _mongo.analytics_job_clicks_daily.update_one(
+                    {"job_id": job_id, "date": date_str},
+                    {"$set": {"clicks": clicks}},
+                    upsert=True,
+                )
+                total_clicks += clicks
+            print(f"   ✓ analytics_job_clicks_daily: {len(date_pool)} days, {total_clicks:,} clicks distributed")
+        else:
+            print("   ℹ analytics_job_clicks_daily: no date range found, skipped")
+    else:
+        print("   ℹ analytics_job_clicks_daily: no jobs with views_count > 0, skipped")
+
+
 def run_seed(db, profile: SeedProfile, assume_yes: bool, append: bool = False) -> None:
     existing = db.execute(text("SELECT COUNT(*) FROM members")).scalar()
     if existing > 0 and not append:
@@ -753,6 +870,10 @@ def run_seed(db, profile: SeedProfile, assume_yes: bool, append: bool = False) -
 
     print("🔑 Seeding admin user (full tab access)...")
     seed_admin_user(db)
+
+    print("\n📊 Seeding MongoDB analytics collections from SQL data...")
+    import asyncio as _asyncio
+    _asyncio.run(seed_mongo_analytics(db))
 
     print("\n" + "=" * 60)
     print("  ✅ Seeding complete!")

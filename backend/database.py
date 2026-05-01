@@ -139,6 +139,28 @@ async def create_mongo_indexes() -> None:
             "week", name="week_1"
         )
 
+        # analytics_applications_daily ───────────────────────────
+        # Pre-aggregated daily application-submitted counts.
+        # Written by the Kafka application.submitted consumer handler.
+        # Unique on date supports upsert; date index supports range queries.
+        await mongo_db.analytics_applications_daily.create_index(
+            "date", unique=True, name="date_unique"
+        )
+        await mongo_db.analytics_applications_daily.create_index(
+            "week", name="week_1"
+        )
+
+        # analytics_connections_daily ────────────────────────────
+        # Pre-aggregated daily connection request/accept counts.
+        # Written by the Kafka connection.requested / connection.accepted handlers.
+        await mongo_db.analytics_connections_daily.create_index(
+            "date", unique=True, name="date_unique"
+        )
+        await mongo_db.analytics_connections_daily.create_index(
+            "week", name="week_1"
+        )
+
+<<<<<<< Updated upstream
         # job_member_views ─────────────────────────────────────────
         # Tracks one logical job view per (job_id, member_id) pair
         # so repeated opens by the same member don't inflate views.
@@ -154,6 +176,8 @@ async def create_mongo_indexes() -> None:
             name="member_notifications_member_created",
         )
 
+=======
+>>>>>>> Stashed changes
         logger.info("✓ MongoDB indexes ensured")
     except Exception as e:
         # Non-fatal: indexes are a performance optimisation, not a correctness

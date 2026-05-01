@@ -110,9 +110,10 @@ async def send_connection_request(
             entity_type="connection",
             entity_id=str(connection.connection_id),
             payload={"receiver_id": req.receiver_id},
+            idempotency_key=f"conn_request:{req.requester_id}:{req.receiver_id}",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Kafka publish failed for connection.requested (conn_id={connection.connection_id}): {e}")
 
     return ConnectionResponse(success=True, message="Connection request sent", data=connection.to_dict())
 
@@ -161,9 +162,10 @@ async def accept_connection(
             entity_type="connection",
             entity_id=str(req.connection_id),
             payload={"requester_id": conn.requester_id},
+            idempotency_key=f"conn_accept:{req.connection_id}",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Kafka publish failed for connection.accepted (conn_id={req.connection_id}): {e}")
 
     return ConnectionResponse(success=True, message="Connection accepted", data=conn.to_dict())
 

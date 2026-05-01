@@ -7,16 +7,19 @@ interface JobListProps {
   appliedJobIds: Set<number>
   onSelect: (id: number) => void
   onDismiss: (id: number) => void
+  readOnly?: boolean
 }
 
-export function JobList({ jobs, selectedId, appliedJobIds, onSelect, onDismiss }: JobListProps) {
+export function JobList({ jobs, selectedId, appliedJobIds, onSelect, onDismiss, readOnly = false }: JobListProps) {
   return (
     <div className="jobs-list-panel">
       <div className="jobs-list-panel__header">
-        <h2 className="jobs-list-panel__title">Top job picks for you</h2>
-        <p className="jobs-list-panel__subtitle">
-          Based on your profile, preferences, and activity like applies, searches, and saves
-        </p>
+        <h2 className="jobs-list-panel__title">{readOnly ? 'All jobs' : 'Top job picks for you'}</h2>
+        {!readOnly && (
+          <p className="jobs-list-panel__subtitle">
+            Based on your profile, preferences, and activity like applies, searches, and saves
+          </p>
+        )}
         <p className="jobs-list-panel__count">{jobs.length} results</p>
       </div>
 
@@ -29,6 +32,7 @@ export function JobList({ jobs, selectedId, appliedJobIds, onSelect, onDismiss }
             isApplied={appliedJobIds.has(job.job_id)}
             onClick={() => onSelect(job.job_id)}
             onDismiss={() => onDismiss(job.job_id)}
+            readOnly={readOnly}
           />
         ))}
       </ul>

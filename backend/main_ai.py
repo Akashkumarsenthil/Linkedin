@@ -57,15 +57,23 @@ async def lifespan(app: FastAPI):
 
     async def _start_kafka():
         topics = ["ai.requests", "ai.results"]
-        for attempt in range(20):
+        delay = 3
+        while True:
             try:
                 await kafka_consumer.start(topics)
                 logger.info("Kafka consumer connected successfully")
                 await kafka_consumer.consume()
                 break
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.warning(f"Kafka not ready (attempt {attempt + 1}/20): {e}")
-                await asyncio.sleep(3)
+                logger.warning(f"Kafka consumer error: {e} — restarting in {delay}s")
+                try:
+                    await kafka_consumer.stop()
+                except Exception:
+                    pass
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 60)
 
     kafka_task = asyncio.create_task(_start_kafka(), name="kafka-consumer")
     dispatcher_task = asyncio.create_task(run_dispatcher(), name="ai-dispatcher")

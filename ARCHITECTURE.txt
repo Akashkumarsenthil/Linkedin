@@ -1,0 +1,172 @@
+
+flowchart TD
+
+    %% ─────────────────────────────────────────────────────────────────────────
+    %%  LINKEDIN AGENTIC AI – FULL SYSTEM ARCHITECTURE
+    %%  Deployment: Docker Compose on AWS EC2  (ip: 3.80.47.57)
+    %%  CI/CD: GitHub Actions → SSH → docker-compose up --build -d
+    %%
+    %%  Paste into https://mermaid.live to render
+    %% ─────────────────────────────────────────────────────────────────────────
+
+    %% ── Developer / CI ────────────────────────────────────────────────────────
+    DEV["👨‍💻 Developer\ngit push → main"]
+    GHA["GitHub Actions\n.github/workflows/deploy.yml\nSSH into EC2 → git pull → docker-compose up --build -d"]
+
+    DEV -->|"git push"| GHA
+
+    %% ── User ──────────────────────────────────────────────────────────────────
+    Browser["🌐 Browser\nGuest / Member / Recruiter / Admin"]
+
+    %% ═══════════════════════════════════════════════════════════════════════════
+    %%  AWS EC2  (3.80.47.57)  —  everything below runs on this single host
+    %% ═══════════════════════════════════════════════════════════════════════════
+    subgraph AWS["☁️  AWS EC2  (3.80.47.57) — Docker Compose"]
+
+        %% ── Frontend ──────────────────────────────────────────────────────────
+        subgraph FRONTEND["linkedin-frontend  :5173"]
+            SPA["React 19 SPA  (TypeScript + Vite)\nRole-based tab visibility:\n  Admin    → Dashboard · Jobs · Members · Analytics · AI\n  Member   → Home · Jobs · Messaging · Connections · Career\n  Recruiter→ Home · Jobs · Analytics · AI · Messaging"]
+            FNginx["Nginx  :5173\n/api/*  →  gateway:8000\nSPA fallback → index.html\nResolver: 127.0.0.11 (Docker DNS)"]
+        end
+
+        %% ── API Gateway ───────────────────────────────────────────────────────
+        subgraph GATEWAY["linkedin-gateway  :8000"]
+            GW["Nginx API Gateway\n──────────────────────────────────\n/auth/*  /members/*  /recruiters/*\n/notifications/*         → profile-service:8000\n/jobs/*  /posts/*        → job-service:8000\n/applications/*          → application-service:8000\n/threads/*  /messages/*  → messaging-service:8000\n/connections/*           → connection-service:8000\n/analytics/* /events/*\n/perf/*                  → analytics-service:8000\n/ai/*  (HTTP + WS)       → ai-service:8000"]
+        end
+
+        %% ── Microservices ─────────────────────────────────────────────────────
+        subgraph SERVICES["Microservices — FastAPI  :8000 each"]
+
+            PS["linkedin-profile-service\n(main_profile.py)\n──────────────────────────\nRouters: members · recruiters\n         auth · notifications\n──────────────────────────\n/auth   login · register · JWT\n/members  CRUD · search · photo/resume upload\n/recruiters  CRUD · search\n/notifications  bell feed\n──────────────────────────\nKafka PRODUCE → profile.viewed\nRedis cache  (TTL 300 s)"]
+
+            JS["linkedin-job-service\n(main_job.py)\n──────────────────────────\nRouters: jobs · posts\n──────────────────────────\n/jobs  create · get · update · close\n       search · save · unsave\n/posts create · feed · like · comment\n──────────────────────────\nKafka PRODUCE →\n  job.viewed · job.saved\n  job.created · job.closed"]
+
+            AppS["linkedin-application-service\n(main_application.py)\n──────────────────────────\nRouter: applications\n──────────────────────────\n/applications\n  submit · get · by-job\n  by-member · update-status\n  add-note\n──────────────────────────\nKafka PRODUCE →\n  application.submitted\n  application.statusChanged\nFallback → failed_kafka_events (MySQL)"]
+
+            MS["linkedin-messaging-service\n(main_messaging.py)\n──────────────────────────\nRouter: messages\n──────────────────────────\n/threads  open · get · list\n/messages send · list · mark-read\n──────────────────────────\nKafka PRODUCE → message.sent\nPolymorphic: member + recruiter"]
+
+            ConS["linkedin-connection-service\n(main_connection.py)\n──────────────────────────\nRouter: connections\n──────────────────────────\n/connections\n  request · accept · reject\n  remove · list · mutuals\n──────────────────────────\nKafka PRODUCE →\n  connection.requested\n  connection.accepted"]
+
+            ANS["linkedin-analytics-service\n(main_analytics.py)\n──────────────────────────\nRouters: analytics · perf_router\n──────────────────────────\n/analytics  top-jobs · funnel · geo\n            member-dashboard\n            saves-trend · least-applied\n            clicks-per-job\n/events     ingest (client-side)\n/perf       kafka-stats · mysql-stats\n            redis-stats · system-stats\n──────────────────────────\nKafka CONSUMER ← all domain topics\n  Idempotency: in-memory + MongoDB\n  Dead-letter after 3 failures\n  Aggregates → MongoDB daily collections"]
+
+            AIS["linkedin-ai-service\n(main_ai.py)\n──────────────────────────\nRouter: ai_service\n──────────────────────────\n/ai  analyze-candidates\n     task-status · approve\n     parse-resume · match-candidate\nWS   /ai/ws/task/{id}  (live stream)\n──────────────────────────\nKafka CONSUMER ← ai.requests · ai.results\nKafka PRODUCE  → ai.requests · ai.results\nDispatcher: async task queue coroutine\nAgents:\n  hiring_assistant  end-to-end shortlist\n  resume_parser     text → structured JSON\n  job_matcher       candidate × job score"]
+
+        end
+
+        %% ── Kafka ─────────────────────────────────────────────────────────────
+        subgraph KAFKA["linkedin-kafka  :9092  (Apache Kafka 3.7 KRaft — single broker)"]
+            direction LR
+            KJ["Job Events\njob.viewed\njob.saved\njob.created\njob.closed"]
+            KA["Application Events\napplication.submitted\napplication.statusChanged"]
+            KC["Social Events\nconnection.requested\nconnection.accepted\nmessage.sent\nprofile.viewed"]
+            KAI["AI Events\nai.requests\nai.results"]
+        end
+
+        %% ── Data Layer ────────────────────────────────────────────────────────
+        subgraph DATA["Data Layer  (all on EC2)"]
+
+            subgraph MYSQL["linkedin-mysql  :3306  (MySQL 8.0)"]
+                MY_A["Identity\nmembers · recruiters\nuser_credentials"]
+                MY_B["Jobs & Applications\njob_postings · saved_jobs\napplications"]
+                MY_C["Social Graph\nconnections\nthreads · thread_participants\nmessages\nposts · post_likes · post_comments\nprofile_view_daily"]
+                MY_D["Infra\nfailed_kafka_events"]
+            end
+
+            subgraph MONGO["linkedin-mongodb  :27017  (MongoDB 7)"]
+                MG_A["Event Store\nevent_logs\nprocessed_events  ← idempotency\ndead_letters\nprocessing_attempts"]
+                MG_B["Analytics Aggregates\nanalytics_job_clicks_daily\nanalytics_saves_daily\nanalytics_applications_daily\nanalytics_connections_daily\njob_member_views  ← view dedup"]
+                MG_C["AI State\nagent_tasks · agent_traces\nmember_notifications"]
+            end
+
+            subgraph REDIS["linkedin-redis  :6379  (Redis 7)"]
+                RD["Profile Cache\nmembers:get:{id}     TTL 300 s\nrecruiters:get:{id}  TTL 300 s\nInvalidated on update / delete"]
+            end
+
+        end
+
+    end
+
+    %% ── External Services (outside AWS) ───────────────────────────────────────
+    OAI["🤖 OpenAI  GPT-4o-mini\nResume parsing\nCandidate scoring\nJob-fit matching\nCareer coaching"]
+
+    GHA -->|"SSH deploy"| AWS
+
+    %% ─────────────────────────────────────────────────────────────────────────
+    %%  CONNECTIONS
+    %% ─────────────────────────────────────────────────────────────────────────
+
+    %% Browser → Frontend
+    Browser -->|"HTTP  :5173"| FNginx
+    FNginx --- SPA
+    FNginx -->|"/api/* proxy"| GW
+
+    %% Gateway → Microservices
+    GW -->|"/auth /members /recruiters /notifications"| PS
+    GW -->|"/jobs /posts"| JS
+    GW -->|"/applications"| AppS
+    GW -->|"/threads /messages"| MS
+    GW -->|"/connections"| ConS
+    GW -->|"/analytics /events /perf"| ANS
+    GW -->|"/ai  HTTP + WS"| AIS
+
+    %% Services → MySQL
+    PS --- MY_A
+    JS --- MY_B
+    AppS --- MY_B
+    AppS --- MY_D
+    MS --- MY_C
+    ConS --- MY_C
+    JS --- MY_C
+    ANS --- MY_B
+
+    %% Services → Redis
+    PS <-->|"cache R/W"| RD
+
+    %% Services → Kafka  (produce)
+    JS  -->|"publish"| KJ
+    AppS -->|"publish"| KA
+    ConS -->|"publish"| KC
+    MS  -->|"publish"| KC
+    PS  -->|"publish"| KC
+    AIS -->|"publish"| KAI
+
+    %% Kafka → Consumers
+    KJ  -->|"consume"| ANS
+    KA  -->|"consume"| ANS
+    KC  -->|"consume"| ANS
+    KAI -->|"consume"| AIS
+
+    %% Analytics → MongoDB
+    ANS --> MG_A
+    ANS --> MG_B
+
+    %% AI → MongoDB + OpenAI
+    AIS --> MG_C
+    AIS --> MG_A
+    AIS -->|"HTTPS API call"| OAI
+
+    %% Profile → MongoDB (notifications)
+    PS --> MG_C
+
+    %% ─────────────────────────────────────────────────────────────────────────
+    %%  STYLES
+    %% ─────────────────────────────────────────────────────────────────────────
+    classDef service  fill:#1e3a5f,stroke:#4a90d9,color:#e8f4ff
+    classDef kafka    fill:#1a1a2e,stroke:#e94560,color:#ff9999
+    classDef mysql    fill:#003545,stroke:#00b4d8,color:#caf0f8
+    classDef mongo    fill:#1a3a1a,stroke:#4caf50,color:#c8e6c9
+    classDef redis    fill:#3a0000,stroke:#f44336,color:#ffcdd2
+    classDef external fill:#2a1a3a,stroke:#9c27b0,color:#e1bee7
+    classDef frontend fill:#1a2a1a,stroke:#8bc34a,color:#dcedc8
+    classDef gateway  fill:#2a2a1a,stroke:#ffc107,color:#fff9c4
+    classDef cicd     fill:#0d1117,stroke:#f0f6fc,color:#f0f6fc
+
+    class PS,JS,AppS,MS,ConS,ANS,AIS service
+    class KJ,KA,KC,KAI kafka
+    class MY_A,MY_B,MY_C,MY_D mysql
+    class MG_A,MG_B,MG_C mongo
+    class RD redis
+    class OAI external
+    class SPA,FNginx frontend
+    class GW gateway
+    class DEV,GHA cicd

@@ -44,9 +44,27 @@ interface KafkaStats {
     events_last_24h: number
     job_clicks_aggregated: number
     job_saves_aggregated: number
+    applications_aggregated: number
+    connections_requested_aggregated: number
+    connections_accepted_aggregated: number
   }
   events_by_type: KafkaEventType[]
   recent_events: RecentEvent[]
+}
+
+interface EventTrendDay {
+  date: string
+  job_clicks: number
+  job_saves: number
+  applications: number
+  conn_requested: number
+  conn_accepted: number
+}
+
+interface EventTrend {
+  status: string
+  days: number
+  series: EventTrendDay[]
 }
 
 interface MySQLStats {
@@ -141,22 +159,49 @@ function KpiTile({ label, value, sub, color, icon }: {
   )
 }
 
-// ── Benchmark constants ───────────────────────────────────────────────────────
+// ── Benchmark types and embedded fallback ─────────────────────────────────────
 
 interface BenchResult {
   mode: string; scenario: string; throughput_rps: number
   mean_ms: number; p50_ms: number; p95_ms: number; p99_ms: number; error_rate: number
+  total_requests?: number; total_failures?: number; min_ms?: number; max_ms?: number
 }
 
-const BENCH_RESULTS: BenchResult[] = [
-  { mode: 'B',       scenario: 'A', throughput_rps: 93.67, mean_ms: 8.4, p50_ms: 5.9, p95_ms: 24.1, p99_ms: 87.3, error_rate: 0 },
-  { mode: 'B+S',     scenario: 'A', throughput_rps: 98.83, mean_ms: 2.9, p50_ms: 2.1, p95_ms: 5.8,  p99_ms: 14.2, error_rate: 0 },
-  { mode: 'B+S+K',   scenario: 'A', throughput_rps: 98.03, mean_ms: 3.1, p50_ms: 2.2, p95_ms: 6.3,  p99_ms: 18.7, error_rate: 0 },
-  { mode: 'B+S+K+O', scenario: 'A', throughput_rps: 99.27, mean_ms: 2.8, p50_ms: 2.0, p95_ms: 5.5,  p99_ms: 13.1, error_rate: 0 },
-  { mode: 'B',       scenario: 'B', throughput_rps: 94.10, mean_ms: 8.2, p50_ms: 6.1, p95_ms: 16.7, p99_ms: 85.1, error_rate: 0 },
-  { mode: 'B+S',     scenario: 'B', throughput_rps: 93.97, mean_ms: 8.4, p50_ms: 6.2, p95_ms: 17.1, p99_ms: 82.4, error_rate: 0 },
-  { mode: 'B+S+K',   scenario: 'B', throughput_rps: 93.03, mean_ms: 9.7, p50_ms: 7.8, p95_ms: 19.4, p99_ms: 91.2, error_rate: 0 },
-  { mode: 'B+S+K+O', scenario: 'B', throughput_rps: 94.47, mean_ms: 8.8, p50_ms: 6.9, p95_ms: 17.8, p99_ms: 79.6, error_rate: 0 },
+interface BenchAnalysis {
+  scenario_a_cache_impact?: {
+    b_vs_bps_p95_reduction?: string
+    b_vs_bps_throughput_gain?: string
+    key_finding?: string
+  }
+  scenario_b_kafka_overhead?: {
+    bps_vs_bpsk_p50_delta_ms?: number
+    key_finding?: string
+  }
+}
+
+interface BenchData {
+  status: string
+  parameters?: {
+    run_date?: string
+    machine?: string
+    seed_profile?: string
+    notes?: string[]
+  }
+  results?: BenchResult[]
+  analysis?: BenchAnalysis
+}
+
+// Embedded fallback — identical to load_tests/results.json at last benchmark run.
+// Used when the backend cannot serve the file (offline / not found).
+const benchResults_FALLBACK: BenchResult[] = [
+  { mode: 'B',       scenario: 'A', throughput_rps: 93.67, mean_ms: 8.4, p50_ms: 5.9, p95_ms: 24.1, p99_ms: 87.3, error_rate: 0, total_requests: 2810 },
+  { mode: 'B+S',     scenario: 'A', throughput_rps: 98.83, mean_ms: 2.9, p50_ms: 2.1, p95_ms: 5.8,  p99_ms: 14.2, error_rate: 0, total_requests: 2965 },
+  { mode: 'B+S+K',   scenario: 'A', throughput_rps: 98.03, mean_ms: 3.1, p50_ms: 2.2, p95_ms: 6.3,  p99_ms: 18.7, error_rate: 0, total_requests: 2941 },
+  { mode: 'B+S+K+O', scenario: 'A', throughput_rps: 99.27, mean_ms: 2.8, p50_ms: 2.0, p95_ms: 5.5,  p99_ms: 13.1, error_rate: 0, total_requests: 2978 },
+  { mode: 'B',       scenario: 'B', throughput_rps: 94.10, mean_ms: 8.2, p50_ms: 6.1, p95_ms: 16.7, p99_ms: 85.1, error_rate: 0, total_requests: 2823 },
+  { mode: 'B+S',     scenario: 'B', throughput_rps: 93.97, mean_ms: 8.4, p50_ms: 6.2, p95_ms: 17.1, p99_ms: 82.4, error_rate: 0, total_requests: 2819 },
+  { mode: 'B+S+K',   scenario: 'B', throughput_rps: 93.03, mean_ms: 9.7, p50_ms: 7.8, p95_ms: 19.4, p99_ms: 91.2, error_rate: 0, total_requests: 2791 },
+  { mode: 'B+S+K+O', scenario: 'B', throughput_rps: 94.47, mean_ms: 8.8, p50_ms: 6.9, p95_ms: 17.8, p99_ms: 79.6, error_rate: 0, total_requests: 2834 },
 ]
 
 const MODE_COLORS: Record<string, string> = {
@@ -248,6 +293,9 @@ export function PerformanceDashboard() {
   const [kafkaLoading, setKafkaLoading] = useState(true)
   const [mysqlStats, setMysqlStats]   = useState<MySQLStats | null>(null)
   const [mysqlLoading, setMysqlLoading] = useState(true)
+  const [eventTrend, setEventTrend]   = useState<EventTrend | null>(null)
+  const [trendDays, setTrendDays]     = useState<14 | 7>(14)
+  const [benchData, setBenchData]     = useState<BenchData | null>(null)
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -273,13 +321,29 @@ export function PerformanceDashboard() {
     finally { setMysqlLoading(false) }
   }, [])
 
+  const fetchEventTrend = useCallback(async (d: number) => {
+    try { setEventTrend(await apiGet<EventTrend>(`/perf/event-trend?days=${d}`)) }
+    catch { setEventTrend(null) }
+  }, [])
+
+  const fetchBenchData = useCallback(async () => {
+    try { setBenchData(await apiGet<BenchData>('/perf/bench-results')) }
+    catch { setBenchData(null) }
+  }, [])
+
   useEffect(() => {
-    fetchHealth(); fetchKafkaStats(); fetchMysqlStats()
+    fetchHealth(); fetchKafkaStats(); fetchMysqlStats(); fetchEventTrend(trendDays); fetchBenchData()
     const i1 = setInterval(fetchHealth, 5000)
     const i2 = setInterval(fetchKafkaStats, 10000)
     const i3 = setInterval(fetchMysqlStats, 15000)
-    return () => { clearInterval(i1); clearInterval(i2); clearInterval(i3) }
-  }, [fetchHealth, fetchKafkaStats, fetchMysqlStats])
+    const i4 = setInterval(() => fetchEventTrend(trendDays), 30000)
+    return () => { clearInterval(i1); clearInterval(i2); clearInterval(i3); clearInterval(i4) }
+  }, [fetchHealth, fetchKafkaStats, fetchMysqlStats, fetchEventTrend, fetchBenchData, trendDays])
+
+  // Benchmark results: prefer live data from /perf/bench-results, fall back to embedded constant
+  const benchResults: BenchResult[] = (benchData?.status === 'ok' && benchData.results?.length)
+    ? benchData.results
+    : benchResults_FALLBACK
 
   // Service health helpers (same logic as OverviewPanel)
   const svcState = (flatKey: string, nestedKey: string): ServiceStatus => {
@@ -303,9 +367,9 @@ export function PerformanceDashboard() {
   ]
   const onlineCount   = services.filter(s => s.status === 'online').length
   const redisOnline   = services.find(s => s.key === 'redis')?.status === 'online'
-  const scenarioResults = BENCH_RESULTS.filter(r => r.scenario === activeScenario)
+  const scenarioResults = benchResults.filter(r => r.scenario === activeScenario)
   const maxVal          = Math.max(...scenarioResults.map(r => r[activeMetric]))
-  const aResults = BENCH_RESULTS.filter(r => r.scenario === 'A')
+  const aResults = benchResults.filter(r => r.scenario === 'A')
   const bBase    = aResults.find(r => r.mode === 'B')
   const bCached  = aResults.find(r => r.mode === 'B+S')
   const p95Improvement = bBase && bCached
@@ -457,7 +521,22 @@ export function PerformanceDashboard() {
       {/* ── Benchmark bar chart ── */}
       <Card>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          <CardTitle>Benchmark — B / B+S / B+S+K / B+S+K+O</CardTitle>
+          <div>
+            <CardTitle>Benchmark — B / B+S / B+S+K / B+S+K+O</CardTitle>
+            {benchData?.status === 'ok' && benchData.parameters && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: -6, marginBottom: 4 }}>
+                {benchData.parameters.run_date && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Run: {benchData.parameters.run_date}</span>
+                )}
+                {benchData.parameters.machine && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{benchData.parameters.machine}</span>
+                )}
+                {benchData.parameters.seed_profile && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{benchData.parameters.seed_profile}</span>
+                )}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(['A', 'B'] as const).map(s => (
               <button key={s} onClick={() => setActiveScenario(s)}
@@ -479,7 +558,8 @@ export function PerformanceDashboard() {
           {activeScenario === 'A'
             ? 'Scenario A: Job search + detail view (read-heavy). 20 concurrent users, 30s. Redis pre-warmed in B+S modes.'
             : 'Scenario B: Application submit (DB write + Kafka event). 20 concurrent users, 30s. JWT auth via perf-test account.'}
-          {' '}Source: load_tests/results.json
+          {' '}Source: <code style={{ fontSize: 11 }}>load_tests/results.json</code>
+          {benchData?.status === 'ok' ? ' (live)' : ' (embedded fallback)'}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {scenarioResults.map(r => (
@@ -489,6 +569,9 @@ export function PerformanceDashboard() {
                   <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: MODE_BG[r.mode], color: MODE_COLORS[r.mode] }}>{r.mode}</span>
                   <span style={{ color: 'var(--text-sec)' }}>{MODE_LABELS[r.mode]}</span>
                 </span>
+                {r.total_requests != null && (
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.total_requests.toLocaleString()} reqs</span>
+                )}
               </div>
               <Bar value={r[activeMetric]} max={maxVal} color={MODE_COLORS[r.mode] || 'var(--accent)'} />
             </div>
@@ -497,6 +580,16 @@ export function PerformanceDashboard() {
         {activeScenario === 'A' && activeMetric === 'p95_ms' && p95Improvement !== null && (
           <div style={{ marginTop: 14, padding: '8px 12px', borderRadius: 6, background: 'rgba(5,118,66,0.07)', border: '1px solid rgba(5,118,66,0.2)', fontSize: 13, color: 'var(--success)', fontWeight: 500 }}>
             Redis cache reduces P95 latency by <strong>{p95Improvement}%</strong> on read-heavy traffic — B: {bBase?.p95_ms}ms → B+S: {bCached?.p95_ms}ms
+            {benchData?.analysis?.scenario_a_cache_impact?.key_finding && (
+              <div style={{ marginTop: 6, fontSize: 12, fontWeight: 400, color: 'var(--text-sec)' }}>
+                {benchData.analysis.scenario_a_cache_impact.key_finding}
+              </div>
+            )}
+          </div>
+        )}
+        {activeScenario === 'B' && benchData?.analysis?.scenario_b_kafka_overhead?.key_finding && (
+          <div style={{ marginTop: 14, padding: '8px 12px', borderRadius: 6, background: 'rgba(10,102,194,0.07)', border: '1px solid rgba(10,102,194,0.2)', fontSize: 13, color: 'var(--accent)', fontWeight: 500 }}>
+            {benchData.analysis.scenario_b_kafka_overhead.key_finding}
           </div>
         )}
       </Card>
@@ -513,12 +606,15 @@ export function PerformanceDashboard() {
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginBottom: 16 }}>
               {([
-                { label: 'Events Logged',    value: kafkaStats.totals.events_logged,           color: 'var(--accent)' },
-                { label: 'Unique Processed', value: kafkaStats.totals.events_processed_unique, color: 'var(--success)' },
-                { label: 'Dead Letters',     value: kafkaStats.totals.dead_letters,            color: kafkaStats.totals.dead_letters > 0 ? 'var(--error)' : 'var(--text-muted)' },
-                { label: 'Last 24h',         value: kafkaStats.totals.events_last_24h,         color: 'var(--warn)' },
-                { label: 'Job Clicks',       value: kafkaStats.totals.job_clicks_aggregated,   color: 'var(--accent)' },
-                { label: 'Job Saves',        value: kafkaStats.totals.job_saves_aggregated,    color: 'var(--accent)' },
+                { label: 'Total Events',          value: kafkaStats.totals.events_logged,                    color: 'var(--accent)' },
+                { label: 'Dedup Processed',       value: kafkaStats.totals.events_processed_unique,          color: 'var(--success)' },
+                { label: 'Dead Letters',          value: kafkaStats.totals.dead_letters,                     color: kafkaStats.totals.dead_letters > 0 ? 'var(--error)' : 'var(--text-muted)' },
+                { label: 'Events (24h)',          value: kafkaStats.totals.events_last_24h,                  color: 'var(--warn)' },
+                { label: 'Job Views',             value: kafkaStats.totals.job_clicks_aggregated,            color: 'var(--accent)' },
+                { label: 'Job Saves',             value: kafkaStats.totals.job_saves_aggregated,             color: 'var(--accent)' },
+                { label: 'Applications',          value: kafkaStats.totals.applications_aggregated ?? 0,     color: 'var(--success)' },
+                { label: 'Connections Sent',      value: kafkaStats.totals.connections_requested_aggregated ?? 0, color: 'var(--text-sec)' },
+                { label: 'Connections Accepted',  value: kafkaStats.totals.connections_accepted_aggregated ?? 0,  color: 'var(--success)' },
               ] as { label: string; value: number; color: string }[]).map(({ label, value, color }) => (
                 <div key={label} style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{label}</div>
@@ -549,6 +645,85 @@ export function PerformanceDashboard() {
         ) : (
           <p style={{ fontSize: 13, color: 'var(--text-sec)' }}>Could not reach /perf/kafka-stats — ensure the backend is running and MongoDB is reachable.</p>
         )}
+      </Card>
+
+      {/* ── Kafka Event Trend (daily, from pre-aggregated MongoDB) ── */}
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <CardTitle>Kafka Event Trend — Daily Analytics</CardTitle>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {([7, 14] as const).map(d => (
+              <button key={d} onClick={() => { setTrendDays(d); fetchEventTrend(d) }}
+                className={trendDays === d ? 'primary' : 'ghost-btn'}
+                style={{ fontSize: 12, padding: '3px 10px' }}>
+                {d}d
+              </button>
+            ))}
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 14 }}>
+          Daily event counts written by the Kafka consumer to pre-aggregated MongoDB collections.
+          Each bar represents one calendar day. Source: <code style={{ fontSize: 11 }}>/perf/event-trend</code>
+        </p>
+        {!eventTrend || eventTrend.series.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--text-sec)', margin: 0 }}>
+            No trend data yet — run the seed script or generate events via the platform.
+          </p>
+        ) : (() => {
+          const SERIES_KEYS: { key: keyof EventTrendDay; label: string; color: string }[] = [
+            { key: 'job_clicks',    label: 'Job clicks',    color: '#0a66c2' },
+            { key: 'job_saves',     label: 'Job saves',     color: '#057642' },
+            { key: 'applications',  label: 'Applications',  color: '#cc1016' },
+            { key: 'conn_requested',label: 'Conn. req.',    color: '#915907' },
+            { key: 'conn_accepted', label: 'Conn. acc.',    color: '#6d28d9' },
+          ]
+          const allValues = eventTrend.series.flatMap(row =>
+            SERIES_KEYS.map(s => (row[s.key] as number) ?? 0)
+          )
+          const maxVal = Math.max(...allValues, 1)
+          return (
+            <div>
+              {/* Legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+                {SERIES_KEYS.map(({ label, color }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />
+                    <span style={{ color: 'var(--text-sec)' }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Rows: one per event type */}
+              {SERIES_KEYS.map(({ key, label, color }) => {
+                const dayValues = eventTrend.series.map(row => (row[key] as number) ?? 0)
+                const total = dayValues.reduce((a, b) => a + b, 0)
+                if (total === 0) return null
+                return (
+                  <div key={String(key)} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color }}>{label}</span>
+                      <span>total {trendDays}d: {total.toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 40 }}>
+                      {eventTrend.series.map((row, i) => {
+                        const v = (row[key] as number) ?? 0
+                        const pct = Math.round((v / maxVal) * 100)
+                        return (
+                          <div key={i} title={`${row.date}: ${v}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                            <div style={{ width: '100%', height: `${Math.max(pct, v > 0 ? 4 : 0)}%`, background: color, borderRadius: '2px 2px 0 0', opacity: 0.85 }} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
+                      <span>{eventTrend.series[0]?.date?.slice(5)}</span>
+                      <span>{eventTrend.series[eventTrend.series.length - 1]?.date?.slice(5)}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
       </Card>
 
       {/* ── Live Activity Feed (human-readable) ── */}
@@ -608,19 +783,20 @@ export function PerformanceDashboard() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                {['Mode', 'Scenario', 'RPS', 'Mean', 'P50', 'P95', 'P99', 'Errors'].map(h => (
+                {['Mode', 'Scenario', 'RPS', 'n', 'Mean', 'P50', 'P95', 'P99', 'Errors'].map(h => (
                   <th key={h} style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-sec)', fontWeight: 600, fontSize: 12 }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {BENCH_RESULTS.map((r, i) => (
+              {benchResults.map((r, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--surface2)' }}>
                   <td style={{ padding: '7px 10px' }}>
                     <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, fontSize: 11, fontWeight: 700, background: MODE_BG[r.mode], color: MODE_COLORS[r.mode] }}>{r.mode}</span>
                   </td>
                   <td style={{ padding: '7px 10px', color: r.scenario === 'A' ? 'var(--accent)' : 'var(--warn)', fontWeight: 600 }}>{r.scenario === 'A' ? 'A — Read' : 'B — Write'}</td>
                   <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600 }}>{r.throughput_rps}</td>
+                  <td style={{ padding: '7px 10px', color: 'var(--text-muted)' }}>{r.total_requests != null ? r.total_requests.toLocaleString() : '—'}</td>
                   <td style={{ padding: '7px 10px', color: 'var(--text-sec)' }}>{r.mean_ms}ms</td>
                   <td style={{ padding: '7px 10px', color: 'var(--text-sec)' }}>{r.p50_ms}ms</td>
                   <td style={{ padding: '7px 10px', color: r.p95_ms > 20 ? 'var(--warn)' : 'var(--success)', fontWeight: 600 }}>{r.p95_ms}ms</td>
