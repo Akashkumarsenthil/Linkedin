@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { apiPost, apiGet } from '../api'
+import { apiPost, apiGet, parseStoredUser } from '../api'
 import { useAiTaskWs } from '../hooks/useAiTaskWs'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -34,6 +34,7 @@ interface ShortlistEntry {
 }
 
 interface OutreachDraft {
+  candidate_id?: number
   candidate_name?: string
   subject: string
   body: string
@@ -220,15 +221,58 @@ function ShortlistCard({ entry, onNavigateProfile }: { entry: ShortlistEntry; on
 function OutreachCard({ draft, index }: { draft: OutreachDraft; index: number }) {
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [localBody, setLocalBody] = useState(draft.body)
   const initials = (draft.candidate_name ?? `C${index + 1}`)
     .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
-    navigator.clipboard.writeText(draft.body).then(() => {
+    navigator.clipboard.writeText(localBody).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  const handleSend = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const identity = parseStoredUser()
+    if (!identity || !draft.candidate_id) {
+      alert("Missing user identity or candidate ID")
+      return
+    }
+    setSending(true)
+    try {
+      const tr = await apiPost<{ success: boolean; data: { thread_id: number } }>(
+        '/threads/open',
+        {
+          participant_ids: [
+            { user_id: identity.user_id, user_type: identity.user_type },
+            { user_id: draft.candidate_id, user_type: 'member' }
+          ],
+          subject: draft.subject || 'Opportunity'
+        }
+      )
+      if (!tr.success || !tr.data?.thread_id) throw new Error('Failed to create thread')
+      
+      const mr = await apiPost<{ success: boolean }>(
+        '/messages/send',
+        {
+          thread_id: tr.data.thread_id,
+          sender_id: identity.user_id,
+          sender_type: identity.user_type,
+          message_text: localBody
+        }
+      )
+      if (!mr.success) throw new Error('Failed to send message')
+      setSent(true)
+    } catch (err) {
+      console.error(err)
+      alert('Failed to send message')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -244,9 +288,21 @@ function OutreachCard({ draft, index }: { draft: OutreachDraft; index: number })
         </div>
         <div className="li-inmail-actions">
           {expanded && (
-            <button type="button" className="li-copy-btn" onClick={handleCopy} title="Copy message">
-              {copied ? '✓' : '⎘'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                type="button" 
+                className="li-copy-btn primary" 
+                onClick={handleSend} 
+                disabled={sending || sent || !draft.candidate_id}
+                title="Send directly to candidate"
+                style={{ padding: '4px 12px', fontSize: '13px', borderRadius: '4px' }}
+              >
+                {sent ? 'Sent ✓' : sending ? 'Sending...' : 'Send Message'}
+              </button>
+              <button type="button" className="li-copy-btn" onClick={handleCopy} title="Copy message">
+                {copied ? '✓' : '⎘'}
+              </button>
+            </div>
           )}
           <span className="li-inmail-chevron">{expanded ? '▴' : '▾'}</span>
         </div>
@@ -254,7 +310,22 @@ function OutreachCard({ draft, index }: { draft: OutreachDraft; index: number })
       {expanded && (
         <div className="li-inmail-body">
           <div className="li-inmail-divider" />
-          <p className="li-inmail-text">{draft.body}</p>
+          <textarea 
+            value={localBody}
+            onChange={(e) => setLocalBody(e.target.value)}
+            style={{ 
+              width: '100%', 
+              minHeight: '200px', 
+              padding: '12px', 
+              border: '1px solid #ccc', 
+              borderRadius: '4px', 
+              resize: 'vertical', 
+              fontFamily: 'inherit', 
+              fontSize: '14px',
+              lineHeight: '1.5',
+              boxSizing: 'border-box'
+            }}
+          />
         </div>
       )}
     </div>

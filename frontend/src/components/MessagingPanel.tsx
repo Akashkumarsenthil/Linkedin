@@ -152,6 +152,27 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
   const [newParticType, setNewPType]  = useState<UserType>('member')
   const [newLoading, setNewL]         = useState(false)
   const [newErr, setNewErr]           = useState<string | null>(null)
+  
+  const [searchName, setSearchName] = useState('')
+  const [searchResults, setSearchResults] = useState<{ id: number; name: string; headline: string; type: UserType }[]>([])
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      if (searchName.length < 2) { setSearchResults([]); return }
+      try {
+        const [mRes, rRes] = await Promise.all([
+          apiPost<{ data: any[] }>('/members/search', { keyword: searchName, page_size: 5 }).catch(() => ({ data: [] })),
+          apiPost<{ data: any[] }>('/recruiters/search', { keyword: searchName, page_size: 5 }).catch(() => ({ data: [] }))
+        ])
+        const mData = (mRes.data || []).map(m => ({ id: m.member_id, name: `${m.first_name} ${m.last_name}`, headline: m.headline || 'Member', type: 'member' as UserType }))
+        const rData = (rRes.data || []).map(r => ({ id: r.user_id, name: `${r.first_name} ${r.last_name}`, headline: r.company || 'Recruiter', type: 'recruiter' as UserType }))
+        setSearchResults([...mData, ...rData])
+      } catch {
+        setSearchResults([])
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchName])
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -235,6 +256,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
       setShowNew(false)
       setNewSubject('')
       setNewPart('')
+      setSearchName('')
       await loadThreads(identity.user_id, identity.user_type)
       setSelectedId(r.data.thread_id)
       setMessages([])
@@ -342,16 +364,35 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                   Subject (optional)
                   <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="e.g. Job inquiry" />
                 </label>
-                <label className="form-label">
-                  Recipient ID
-                  <input type="number" value={newParticipant} min={1} onChange={e => setNewPart(e.target.value)} placeholder="e.g. 2" />
-                </label>
-                <label className="form-label">
-                  Recipient type
-                  <select value={newParticType} onChange={e => setNewPType(e.target.value as UserType)} className="identity-select">
-                    <option value="member">member</option>
-                    <option value="recruiter">recruiter</option>
-                  </select>
+                <label className="form-label" style={{ position: 'relative' }}>
+                  Recipient
+                  <div className="search-input-wrap">
+                    <input
+                      type="text"
+                      value={searchName}
+                      onChange={e => { setSearchName(e.target.value); if(!e.target.value) setNewPart('') }}
+                      placeholder="Search by name..."
+                      className="search-bar-input"
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                    />
+                    {searchResults.length > 0 && !newParticipant && (
+                      <div className="search-dropdown panel" style={{ zIndex: 10, position: 'absolute', width: '100%' }}>
+                        {searchResults.map(m => (
+                          <div key={`${m.type}-${m.id}`} className="search-item" onClick={() => { 
+                            setNewPart(String(m.id))
+                            setNewPType(m.type)
+                            setSearchName(`${m.name} (${m.type})`)
+                            setSearchResults([])
+                          }}>
+                            <div className="search-item-info">
+                              <div className="search-item-name">{m.name}</div>
+                              <div className="search-item-headline">{m.headline}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </label>
                 {newErr && <p className="error">{newErr}</p>}
                 <button type="button" className="primary" onClick={openThread} disabled={newLoading}>
