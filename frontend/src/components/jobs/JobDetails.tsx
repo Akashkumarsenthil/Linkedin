@@ -16,6 +16,7 @@ export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false, o
   const [applying, setApplying] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showToast, setShowToast] = useState(false)
+  const [showSignInModal, setShowSignInModal] = useState(false)
 
   // Reset state when job changes
   const [prevJobId, setPrevJobId] = useState<number | null>(null)
@@ -44,7 +45,10 @@ export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false, o
 
   const handleApply = async () => {
     const user = parseStoredUser()
-    if (!user) return alert('Please log in to apply.')
+    if (!user) {
+      setShowSignInModal(true)
+      return
+    }
     
     setApplying(true)
     try {
@@ -241,6 +245,26 @@ export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false, o
           </div>
         </section>
       </div>
+      {/* Sign In Required Modal */}
+      {showSignInModal && (
+        <div className="modal-overlay" onClick={() => setShowSignInModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380, padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>Sign In Required</h3>
+            <p style={{ margin: '0 0 20px', color: 'var(--text-sec)', fontSize: 14, lineHeight: 1.5 }}>
+              Please sign in to apply for jobs.
+            </p>
+            <button
+              type="button"
+              className="primary"
+              style={{ padding: '8px 32px', borderRadius: 24, fontSize: 14, fontWeight: 600 }}
+              onClick={() => setShowSignInModal(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
