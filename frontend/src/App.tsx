@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import { apiGet, apiPost, clearStoredToken, parseStoredUser } from './api'
 import { TopJobsChart } from './components/TopJobsChart'
@@ -8,6 +8,7 @@ import { MemberDashboard } from './components/MemberDashboard'
 import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
 import { AuthPanel } from './components/AuthPanel'
+import { SinglePostPage } from './components/SinglePostPage'
 import { ProfilePage } from './components/ProfilePage'
 import { HomeFeed } from './components/HomeFeed'
 import { NotificationsPanel } from './components/NotificationsPanel'
@@ -117,7 +118,38 @@ interface NotificationItem {
 }
 
 function App() {
-  const [tab, setTab] = useState<Tab>(() => parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
+  // Map tab names to URL paths
+  const TAB_TO_PATH: Record<Tab, string> = {
+    overview: '/',
+    jobs: '/jobs',
+    'saved-jobs': '/saved-jobs',
+    'my-jobs': '/my-jobs',
+    members: '/my-network',
+    analytics: '/analytics',
+    career: '/career-coach',
+    messages: '/messaging',
+    connections: '/connections',
+    notifications: '/notifications',
+    ai: '/ai-recruiter',
+    auth: '/auth',
+    profile: '/profile',
+    post: '/post',
+    search: '/search',
+    perf: '/dashboard',
+    settings: '/settings',
+    events: '/events',
+    saved: '/saved',
+    news: '/news',
+  }
+
+  const PATH_TO_TAB: Record<string, Tab> = Object.fromEntries(
+    Object.entries(TAB_TO_PATH).map(([tab, path]) => [path, tab as Tab])
+  ) as Record<string, Tab>
+
+  const [tab, setTab] = useState<Tab>(() => {
+    const p = window.location.pathname
+    return PATH_TO_TAB[p] ?? (parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
+  })
   const [authUser, setAuthUser] = useState<AuthUser>(() => parseStoredUser())
   const [searchVal, setSearchVal] = useState('')
   const [me, setMe] = useState<MePayload | null>(null)
@@ -128,7 +160,32 @@ function App() {
   const [isSearching, setIsSearching] = useState(false)
   const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
+  const [viewPostId, setViewPostId] = useState<number | null>(null)
   const [initialAiJobId, setInitialAiJobId] = useState<number | null>(null)
+  const [unreadMsgCount, setUnreadMsgCount] = useState<number>(0)
+  const [targetMessagingId, setTargetMessagingId] = useState<number | null>(null)
+  const tabRef = useRef(tab)
+  tabRef.current = tab
+
+  // Sync tab changes to URL
+  useEffect(() => {
+    const path = TAB_TO_PATH[tab] || '/'
+    if (window.location.pathname !== path) {
+      window.history.pushState({ tab }, '', path)
+    }
+  }, [tab])
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      const p = window.location.pathname
+      const t = PATH_TO_TAB[p]
+      if (t) setTab(t)
+      else setTab(parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   const handleAuthChange = () => {
     const newUser = parseStoredUser()
@@ -136,6 +193,7 @@ function App() {
     setMe(null)
     setNotifications([])
     setUnreadCount(0)
+    setUnreadMsgCount(0)
     setTab(newUser?.user_type === 'admin' ? 'perf' : 'overview')
   }
 
@@ -165,18 +223,41 @@ function App() {
         '/notifications/list', {},
       )
       setNotifications(res.data || [])
-      setUnreadCount(res.unread_count || 0)
-    } catch {
-      // preserve prior state on transient errors
-    }
+      // Don't update badge if user is currently viewing notifications
+      if (tabRef.current !== 'notifications') {
+        const itemUnread = (res.data || []).filter(n => n.unread).length
+        setUnreadCount(Math.max(res.unread_count || 0, itemUnread))
+      }
+    } catch { }
+  }, [authUser])
+
+  const loadUnreadMsgCount = useCallback(async () => {
+    if (!authUser) return
+    try {
+      const res = await apiPost<{ data: { unread_count: number } }>('/messages/unreadCount', {})
+      // Don't update badge if user is currently viewing messages
+      if (tabRef.current !== 'messages') {
+        setUnreadMsgCount(res.data?.unread_count || 0)
+      }
+    } catch { }
   }, [authUser])
 
   useEffect(() => {
     if (!authUser) return
     void loadNotifications()
-    const id = setInterval(loadNotifications, 30_000)
+    void loadUnreadMsgCount()
+    const id = setInterval(() => {
+      void loadNotifications()
+      void loadUnreadMsgCount()
+    }, 30_000)
     return () => clearInterval(id)
-  }, [authUser, loadNotifications])
+  }, [authUser, loadNotifications, loadUnreadMsgCount])
+
+  // Clear badge counts when the user opens the respective tab
+  useEffect(() => {
+    if (tab === 'notifications') setUnreadCount(0)
+    if (tab === 'messages') setUnreadMsgCount(0)
+  }, [tab])
 
   const [recentSearches] = useState<string[]>(['Software Engineer', 'Google', 'Project Manager'])
   const trendingSearches = ['AI Agents', 'Remote Work', 'Product Management', 'Cybersecurity']
@@ -337,7 +418,14 @@ function App() {
                   onClick={() => setTab(id)}
                   title={label}
                 >
-                  <Icon name={icon} size={20} className="nav-icon-svg" />
+                  <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <Icon name={icon} size={20} className="nav-icon-svg" />
+                    {id === 'messages' && unreadMsgCount > 0 && tab !== 'messages' && (
+                      <span className="nav-bell-badge" style={{ top: -4, right: -4, background: '#cc1016' }}>
+                        {unreadMsgCount > 9 ? '9+' : unreadMsgCount}
+                      </span>
+                    )}
+                  </div>
                   <span className="nav-label">{label}</span>
                 </button>
               ))}
@@ -351,7 +439,7 @@ function App() {
               >
                 <span className="nav-bell-wrap">
                   <Icon name="bell" size={20} className="nav-icon-svg" />
-                  {unreadCount > 0 && (
+                  {unreadCount > 0 && tab !== 'notifications' && (
                     <span className="nav-bell-badge">
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
@@ -441,9 +529,15 @@ function App() {
           {tab === 'jobs' && role !== 'recruiter' && <JobsPage onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} onNavigateAi={(jobId) => { setInitialAiJobId(jobId); setTab('ai') }} />}
           {tab === 'saved-jobs' && <SavedJobsPage />}
           {tab === 'my-jobs' && <MyJobsPage />}
-          {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'members' && <MembersPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} role={role} />}
           {tab === 'analytics' && <AnalyticsPanel />}
-          {tab === 'messages' && <MessagingPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'messages' && (
+            <MessagingPanel 
+              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} 
+              targetUserId={targetMessagingId}
+              onClearTarget={() => setTargetMessagingId(null)}
+            />
+          )}
           {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'notifications' && (
             <NotificationsPanel
@@ -451,6 +545,8 @@ function App() {
               unreadCount={unreadCount}
               onRefresh={loadNotifications}
               onOpenConnections={() => setTab('connections')}
+              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
+              onNavigatePost={(id) => { setViewPostId(id); setTab('post') }}
             />
           )}
           {tab === 'ai'          && <AiDashboard initialJobId={initialAiJobId} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
@@ -458,7 +554,22 @@ function App() {
           {tab === 'search'      && <SearchPage query={searchVal} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
           {tab === 'perf'        && <PerformanceDashboard />}
           {tab === 'auth'        && <AuthPanel onAuthChange={handleAuthChange} />}
-          {tab === 'profile'     && <ProfilePage me={me} viewMemberId={viewProfileId} onAuthChange={handleAuthChange} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+          {tab === 'profile'     && (
+            <ProfilePage 
+              me={me} 
+              viewMemberId={viewProfileId} 
+              onAuthChange={handleAuthChange} 
+              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} 
+              onNavigateMessaging={(id) => { setTargetMessagingId(id); setTab('messages') }}
+            />
+          )}
+          {tab === 'post'        && viewPostId && (
+            <SinglePostPage 
+              postId={viewPostId} 
+              onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} 
+              onBack={() => setTab('notifications')}
+            />
+          )}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
           {tab === 'events'      && <EventsPage />}
           {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
@@ -735,6 +846,7 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
   const [loading, setLoading] = useState(false)
   const [connections, setConnections] = useState<number[]>([])
   const [pendingConnections, setPendingConnections] = useState<number[]>([])
+  const [showSignInModal, setShowSignInModal] = useState(false)
 
   useEffect(() => {
     const user = parseStoredUser()
@@ -862,7 +974,18 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
                     {m.location_city ? <span className="pill"><Icon name="location" size={11} className="meta-icon" /> {String(m.location_city)}</span> : null}
                     <span className="member-id-chip">#{String(m.member_id)}</span>
                   </div>
-                  {role !== 'admin' && (
+                  {role === 'guest' ? (
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="btn-connect"
+                        style={{ width: '100%', justifyContent: 'center' }}
+                        onClick={() => setShowSignInModal(true)}
+                      >
+                        View
+                      </button>
+                    </div>
+                  ) : role !== 'admin' && (
                     <div style={{ marginTop: 12 }}>
                       {connections.includes(Number(m.member_id)) ? (
                         <button type="button" className="btn-message" style={{ width: '100%', justifyContent: 'center' }}>
@@ -909,6 +1032,26 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
           {loading ? 'Loading...' : 'Show more results'}
         </button>
       )}
+      {/* Sign In Required Modal */}
+      {showSignInModal && (
+        <div className="modal-overlay" onClick={() => setShowSignInModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380, padding: 24, textAlign: 'center' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>Sign In Required</h3>
+            <p style={{ margin: '0 0 20px', color: 'var(--text-sec)', fontSize: 14, lineHeight: 1.5 }}>
+              Please Sign In to view the profile.
+            </p>
+            <button
+              type="button"
+              className="primary"
+              style={{ padding: '8px 32px', borderRadius: 24, fontSize: 14, fontWeight: 600 }}
+              onClick={() => setShowSignInModal(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -916,31 +1059,66 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
 function AnalyticsPanel() {
   return (
     <section className="panel analytics-dashboard">
-      <div className="panel-header">
-        <h2 className="panel-title">Analytics</h2>
-        <p className="panel-subtitle">
-          Recruiter KPIs, applicant trends, and platform metrics
+      <div className="premium-header">
+        <h2 className="premium-title">Recruiter Analytics</h2>
+        <p className="premium-subtitle">
+          Real-time performance metrics, applicant funnel analysis, and geographic trends for your active job listings.
         </p>
       </div>
 
-      <div className="ad-section">
-        <h3 className="ad-section-title">Recruiter Insights</h3>
-        <div className="ad-grid">
-          <TopMonthlyChart />
-          <LeastAppliedChart />
-          <ClicksPerJobChart />
-          <GeoMonthlyChart />
-          <SavesTrendChart />
+      <div className="ad-kpi-row">
+        <div className="ad-kpi">
+          <span className="ad-kpi-label">Active Jobs</span>
+          <span className="ad-kpi-value">24</span>
+        </div>
+        <div className="ad-kpi">
+          <span className="ad-kpi-label">Total Applicants</span>
+          <span className="ad-kpi-value">1.2k</span>
+        </div>
+        <div className="ad-kpi">
+          <span className="ad-kpi-label">Avg. Match Score</span>
+          <span className="ad-kpi-value">84%</span>
+        </div>
+        <div className="ad-kpi danger">
+          <span className="ad-kpi-label">Pending Reviews</span>
+          <span className="ad-kpi-value">12</span>
         </div>
       </div>
 
-      <div className="ad-section">
-        <h3 className="ad-section-title">Platform Overview</h3>
-        <div className="ad-grid">
-          <TopJobsChart />
+      <div className="bento-grid">
+        <div className="bento-col-8">
+          <SavesTrendChart />
+        </div>
+        <div className="bento-col-4">
           <FunnelChart />
-          <GeoTable />
-          <MemberDashboard />
+        </div>
+        
+        <div className="bento-col-6">
+          <TopMonthlyChart />
+        </div>
+        <div className="bento-col-6">
+          <LeastAppliedChart />
+        </div>
+
+        <div className="bento-col-4">
+          <ClicksPerJobChart />
+        </div>
+        <div className="bento-col-8">
+          <GeoMonthlyChart />
+        </div>
+
+        <div className="bento-col-12">
+          <div className="ad-section">
+            <h3 className="ad-section-title">Platform & Market Insights</h3>
+            <div className="bento-grid">
+              <div className="bento-col-6">
+                <TopJobsChart />
+              </div>
+              <div className="bento-col-6">
+                <GeoTable />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

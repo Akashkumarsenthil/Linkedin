@@ -64,8 +64,20 @@ export function TopMonthlyChart() {
   const chartData = data.map(d => ({ ...d, label: `${d.month} — ${shortTitle(d.title)}` }))
   const totalApps = data.reduce((s, d) => s + (d.count ?? 0), 0)
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.label}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong> applications</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div className="ad-card">
+    <div className="ad-card col-span-2">
       <h3 className="ad-card-title">Top 10 Jobs by Applications (Monthly)</h3>
       {loading ? <ChartSkeleton bars={8} /> : err ? <p className="ad-error">{err}</p> : data.length === 0 ? (
         <p className="ad-empty">No application data found.</p>
@@ -77,11 +89,17 @@ export function TopMonthlyChart() {
           </div>
           <ResponsiveContainer width="100%" height={340}>
             <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={200} tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#0a66c2" radius={[0, 4, 4, 0]} barSize={14} />
+              <defs>
+                <linearGradient id="colorBlue" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="5%" stopColor="#4395fb" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#0a66c2" stopOpacity={1}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={200} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+              <Bar dataKey="count" fill="url(#colorBlue)" radius={[0, 6, 6, 0]} barSize={16} />
             </BarChart>
           </ResponsiveContainer>
         </>
@@ -113,19 +131,37 @@ export function LeastAppliedChart() {
 
   const chartData = data.map(d => ({ ...d, label: shortTitle(d.title) }))
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.label}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong> applications</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="ad-card">
       <h3 className="ad-card-title">Bottom 5 Jobs (Fewest Applications)</h3>
       {loading ? <ChartSkeleton bars={5} /> : err ? <p className="ad-error">{err}</p> : data.length === 0 ? (
         <p className="ad-empty">No open jobs found.</p>
       ) : (
-        <ResponsiveContainer width="100%" height={220}>
+        <ResponsiveContainer width="100%" height={260}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" horizontal={false} />
-            <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} axisLine={false} tickLine={false} />
-            <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#b24020" radius={[0, 4, 4, 0]} barSize={14} />
+            <defs>
+              <linearGradient id="colorRed" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="5%" stopColor="#f87171" stopOpacity={1}/>
+                <stop offset="95%" stopColor="#dc2626" stopOpacity={1}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
+            <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} allowDecimals={false} axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+            <Bar dataKey="count" fill="url(#colorRed)" radius={[0, 6, 6, 0]} barSize={16} />
           </BarChart>
         </ResponsiveContainer>
       )}
@@ -157,6 +193,18 @@ export function ClicksPerJobChart() {
   const chartData = data.map(d => ({ ...d, label: shortTitle(d.title), count: d.clicks ?? 0 }))
   const totalClicks = chartData.reduce((s, d) => s + d.count, 0)
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.label}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong> clicks</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="ad-card">
       <h3 className="ad-card-title">Clicks per Job</h3>
@@ -171,11 +219,17 @@ export function ClicksPerJobChart() {
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#378fe9" radius={[0, 4, 4, 0]} barSize={14} />
+              <defs>
+                <linearGradient id="colorPurple" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="5%" stopColor="#a855f7" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#7e22ce" stopOpacity={1}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+              <Bar dataKey="count" fill="url(#colorPurple)" radius={[0, 6, 6, 0]} barSize={16} />
             </BarChart>
           </ResponsiveContainer>
         </>

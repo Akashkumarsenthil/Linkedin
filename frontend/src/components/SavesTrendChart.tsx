@@ -38,6 +38,18 @@ export function SavesTrendChart() {
   const fmtPeriod = (p: string) => granularity === 'day' ? p.slice(5) : p
   const total = data.reduce((s, d) => s + d.count, 0)
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.period}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong> saves</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="ad-card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
@@ -62,20 +74,20 @@ export function SavesTrendChart() {
         <p className="ad-empty">No saved-job data in the selected window.</p>
       ) : (
         <>
-          <p className="ad-card-hint">{total} saves over {data.length} {granularity === 'day' ? 'days' : 'weeks'}</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={data} margin={{ top: 4, right: 12, bottom: 4, left: 0 }}>
+          <p className="ad-card-hint" style={{ marginTop: 4 }}>{total} saves over {data.length} {granularity === 'day' ? 'days' : 'weeks'}</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={data} margin={{ top: 12, right: 12, bottom: 4, left: -20 }}>
               <defs>
                 <linearGradient id="savesFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0a66c2" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#0a66c2" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--accent-vibrant)" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="var(--accent-vibrant)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" />
-              <XAxis dataKey="period" tick={{ fontSize: 10, fill: '#6b7280' }} tickFormatter={fmtPeriod} interval="preserveStartEnd" axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} width={32} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Area type="monotone" dataKey="count" stroke="#0a66c2" strokeWidth={2} fill="url(#savesFill)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" vertical={false} />
+              <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#888', fontWeight: 500 }} tickFormatter={fmtPeriod} interval="preserveStartEnd" axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#888', fontWeight: 500 }} allowDecimals={false} width={40} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="count" stroke="var(--accent-vibrant)" strokeWidth={4} fill="url(#savesFill)" activeDot={{ r: 6, strokeWidth: 0, fill: 'var(--accent-vibrant)' }} />
             </AreaChart>
           </ResponsiveContainer>
         </>
