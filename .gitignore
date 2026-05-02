@@ -53,3 +53,4 @@ htmlcov/
 
 mongodb_data/
 linkedin-clone-revamp-plan.md
+test_*.py
