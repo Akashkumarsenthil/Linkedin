@@ -191,6 +191,39 @@ async def list_feed(
     )
 
 
+# ── Single Post ──────────────────────────────────────────────────────────────
+
+@router.get("/{post_id}", response_model=PostResponse, summary="Get a single post")
+async def get_post(
+    post_id: int,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user),
+):
+    p = db.query(Post).filter(Post.post_id == post_id).first()
+    if not p:
+        return PostResponse(success=False, message="Post not found")
+        
+    author = _hydrate_author(db, p.author_id, p.author_type)
+    
+    like = db.query(PostLike).filter(
+        PostLike.post_id == post_id,
+        PostLike.user_id == current_user.user_id,
+        PostLike.user_type == current_user.user_type
+    ).first()
+    
+    from sqlalchemy import func
+    counts = db.query(PostLike.reaction_type, func.count(PostLike.like_id)).filter(PostLike.post_id == post_id).group_by(PostLike.reaction_type).all()
+    reaction_counts = {r: c for r, c in counts}
+    
+    item = p.to_dict()
+    item["liked_by_me"] = like is not None
+    item["active_reaction"] = like.reaction_type if like else None
+    item["reaction_counts"] = reaction_counts
+    item["author"] = author
+    
+    return PostResponse(success=True, message="Post retrieved", data=item)
+
+
 # ── Like (toggle) ────────────────────────────────────────────────────────────
 
 @router.post("/like", response_model=PostResponse, summary="Toggle a reaction on a post")
