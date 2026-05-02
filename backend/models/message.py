@@ -31,6 +31,7 @@ class ThreadParticipant(Base):
     thread_id = Column(Integer, nullable=False)
     user_id = Column(Integer, nullable=False)
     user_type = Column(Enum("member", "recruiter"), nullable=False)
+    last_read_at = Column(TIMESTAMP, server_default=func.now())
 
 
 class Message(Base):
