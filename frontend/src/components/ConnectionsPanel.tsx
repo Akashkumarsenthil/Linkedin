@@ -384,10 +384,10 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                   const m = c.connected_member
                   return (
                     <li key={c.connection_id} className="conn-item" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                         <div 
                           className="member-avatar" 
-                          style={{ width: 48, height: 48, fontSize: 20, background: '#0a66c2', flexShrink: 0, cursor: 'pointer', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
+                          style={{ width: 48, height: 48, minWidth: 48, minHeight: 48, fontSize: 20, background: '#0a66c2', flexShrink: 0, cursor: 'pointer', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', lineHeight: 1 }}
                           onClick={() => {
                             const otherId = c.requester_id === myId ? c.receiver_id : c.requester_id
                             onNavigateProfile?.(otherId)
@@ -395,7 +395,7 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                         >
                           {(m?.name ?? '?')[0].toUpperCase()}
                         </div>
-                        <div>
+                        <div style={{ minWidth: 0 }}>
                           <div 
                             className="conn-item-name" 
                             style={{ cursor: 'pointer', fontWeight: 600, fontSize: '16px', color: 'var(--text)' }}
@@ -406,10 +406,10 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                           >
                             {m ? m.name : `Member #${c.requester_id === myId ? c.receiver_id : c.requester_id}`}
                           </div>
-                          {m?.headline && <div className="conn-item-headline muted" style={{ fontSize: '14px' }}>{m.headline}</div>}
+                          {m?.headline && <div className="conn-item-headline muted" style={{ fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.headline}</div>}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
                         <button 
                           className="ghost-btn" 
                           style={{ color: '#d11124', fontSize: '14px', fontWeight: 600, padding: '6px 12px' }}

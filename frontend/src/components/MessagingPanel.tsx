@@ -2,7 +2,7 @@
  * MessagingPanel — LinkedIn-style 2-column messaging UI.
  * Uses the stored JWT token for sender identity.
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { apiGet, apiPost, parseStoredUser } from '../api'
 
 interface MsgData {
@@ -17,6 +17,7 @@ interface ThreadData {
   thread_id: number
   subject: string | null
   created_at: string
+  unread_count: number
   last_message?: MsgData
   other_participant?: {
     name: string
@@ -29,17 +30,36 @@ interface ThreadData {
 
 type UserType = 'member' | 'recruiter'
 
+/** Normalize bare MySQL timestamps (no timezone) to UTC */
+function toUTC(iso: string): string {
+  // "2026-05-02 13:26:08" → "2026-05-02T13:26:08Z"
+  let s = iso.trim()
+  if (!s.includes('T')) s = s.replace(' ', 'T')
+  // If no timezone indicator exists, assume UTC
+  if (!s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s)) {
+    s += 'Z'
+  }
+  return s
+}
+
 function fmtTime(iso: string): string {
-  try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-  catch { return iso }
+  try {
+    return new Date(toUTC(iso)).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'America/Los_Angeles'
+    })
+  } catch { return iso }
 }
 
 function fmtDate(iso: string): string {
   try {
-    const d = new Date(iso)
+    const d = new Date(toUTC(iso))
     const today = new Date()
-    if (d.toDateString() === today.toDateString()) return fmtTime(iso)
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+    const pstOpts: Intl.DateTimeFormatOptions = { timeZone: 'America/Los_Angeles' }
+    const dStr = d.toLocaleDateString('en-US', pstOpts)
+    const tStr = today.toLocaleDateString('en-US', pstOpts)
+    if (dStr === tStr) return fmtTime(iso)
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' })
   } catch { return iso }
 }
 
@@ -130,8 +150,8 @@ function SharedPostLoader({
 }
 
 export function MessagingPanel({ 
-onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void }) {
-  const identity = parseStoredUser()
+onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void, targetUserId?: number | null, onClearTarget?: () => void }) {
+  const identity = useMemo(() => parseStoredUser(), [])
 
   const [threads, setThreads]         = useState<ThreadData[]>([])
   const [threadsLoading, setThreadsL] = useState(false)
@@ -147,7 +167,6 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
   const [sendErr, setSendErr]         = useState<string | null>(null)
 
   const [showNew, setShowNew]         = useState(false)
-  const [newSubject, setNewSubject]   = useState('')
   const [newParticipant, setNewPart]  = useState('')
   const [newParticType, setNewPType]  = useState<UserType>('member')
   const [newLoading, setNewL]         = useState(false)
@@ -157,20 +176,25 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
   const [searchResults, setSearchResults] = useState<{ id: number; name: string; headline: string; type: UserType }[]>([])
 
   useEffect(() => {
+    // Clear results immediately when typing starts
+    if (searchName.length < 2) {
+      setSearchResults([])
+    }
+
     const t = setTimeout(async () => {
-      if (searchName.length < 2) { setSearchResults([]); return }
+      if (searchName.length < 2) return
       try {
         const [mRes, rRes] = await Promise.all([
-          apiPost<{ data: any[] }>('/members/search', { keyword: searchName, page_size: 5 }).catch(() => ({ data: [] })),
-          apiPost<{ data: any[] }>('/recruiters/search', { keyword: searchName, page_size: 5 }).catch(() => ({ data: [] }))
+          apiPost<{ data: any[] }>('/members/search', { keyword: searchName, page_size: 20 }).catch(() => ({ data: [] })),
+          apiPost<{ data: any[] }>('/recruiters/search', { keyword: searchName, page_size: 20 }).catch(() => ({ data: [] }))
         ])
         const mData = (mRes.data || []).map(m => ({ id: m.member_id, name: `${m.first_name} ${m.last_name}`, headline: m.headline || 'Member', type: 'member' as UserType }))
-        const rData = (rRes.data || []).map(r => ({ id: r.user_id, name: `${r.first_name} ${r.last_name}`, headline: r.company || 'Recruiter', type: 'recruiter' as UserType }))
+        const rData = (rRes.data || []).map(r => ({ id: r.user_id, name: `${r.first_name} ${r.last_name}`, headline: r.company_name || r.company || 'Recruiter', type: 'recruiter' as UserType }))
         setSearchResults([...mData, ...rData])
       } catch {
         setSearchResults([])
       }
-    }, 300)
+    }, 250) // Slightly faster debounce
     return () => clearTimeout(t)
   }, [searchName])
 
@@ -180,11 +204,60 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Auto-load threads when component mounts if identity is available
+  // Track whether we've already handled a given targetUserId to prevent loops
+  const handledTargetRef = useRef<number | null>(null)
+
+  // Auto-load threads when component mounts
   useEffect(() => {
-    if (identity) loadThreads(identity.user_id, identity.user_type)
+    if (identity?.user_id && identity?.user_type) {
+      loadThreads(identity.user_id, identity.user_type)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []) // Run once on mount
+
+  // Handle targetUserId for direct messaging from profile
+  useEffect(() => {
+    if (!targetUserId || !identity || handledTargetRef.current === targetUserId) return
+    handledTargetRef.current = targetUserId
+
+    async function handleTarget() {
+      // First reload threads to get latest state
+      const freshThreads = await apiPost<{ success: boolean; data: ThreadData[] }>(
+        '/threads/byUser', { user_id: identity!.user_id, user_type: identity!.user_type, page: 1, page_size: 30 }
+      )
+      const threadList = freshThreads.data ?? []
+      setThreads(threadList)
+
+      // Check if thread already exists with the target user
+      const existing = threadList.find(t => t.other_participant?.user_id === targetUserId)
+      if (existing) {
+        selectThread(existing.thread_id)
+        onClearTarget?.()
+        return
+      }
+
+      // Create new thread
+      try {
+        const res = await apiPost<{ success: boolean; data: ThreadData }>('/threads/open', {
+          participant_ids: [
+            { user_id: identity!.user_id, user_type: identity!.user_type },
+            { user_id: targetUserId, user_type: 'member' }
+          ]
+        })
+        if (res.success) {
+          // Reload threads to include the new one
+          const updated = await apiPost<{ success: boolean; data: ThreadData[] }>(
+            '/threads/byUser', { user_id: identity!.user_id, user_type: identity!.user_type, page: 1, page_size: 30 }
+          )
+          setThreads(updated.data ?? [])
+          setSelectedId(res.data.thread_id)
+        }
+      } catch { /* thread creation may fail if not connected */ }
+      onClearTarget?.()
+    }
+    handleTarget()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUserId])
 
   async function loadThreads(id: number, type: UserType) {
     setThreadsL(true)
@@ -212,6 +285,10 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
       )
       if (!r.success) throw new Error(r.message)
       setMessages((r.data ?? []).slice().reverse())
+      // Clear unread highlight locally (backend already marks as read via /messages/list)
+      setThreads(prev => prev.map(t =>
+        t.thread_id === threadId ? { ...t, unread_count: 0 } : t
+      ))
     } catch (e) {
       setMsgsErr(e instanceof Error ? e.message : 'Failed to load messages')
     } finally {
@@ -250,11 +327,10 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
         { participant_ids: [
             { user_id: identity.user_id, user_type: identity.user_type },
             { user_id: otherId, user_type: newParticType },
-          ], subject: newSubject || undefined },
+          ] },
       )
       if (!r.success) throw new Error(r.message)
       setShowNew(false)
-      setNewSubject('')
       setNewPart('')
       setSearchName('')
       await loadThreads(identity.user_id, identity.user_type)
@@ -291,8 +367,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
       <div className="panel-header">
         <h2 className="panel-title">Messaging</h2>
         <p className="panel-subtitle">
-          Signed in as{' '}
-          <strong>{identity.user_type} #{identity.user_id}</strong> · {identity.email}
+          Signed in as <strong>{identity.email}</strong> ({identity.user_type})
         </p>
       </div>
 
@@ -312,58 +387,13 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
             </button>
           </div>
 
-          {threadsErr && <p className="error" style={{ padding: '8px 14px', fontSize: 12 }}>{threadsErr}</p>}
-
-          <ul className="thread-list" style={{ flex: 1, overflowY: 'auto' }}>
-            {threads.length === 0 && !threadsLoading && (
-              <li style={{ padding: '16px 14px' }}>
-                <p className="hint">No conversations yet.</p>
-              </li>
-            )}
-            {threads.map(t => (
-              <li
-                key={t.thread_id}
-                className={`thread-item${selectedId === t.thread_id ? ' active' : ''}`}
-                onClick={() => selectThread(t.thread_id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
-              >
-                <div className="thread-avatar">
-                  {t.other_participant?.photo_url ? (
-                    <img src={t.other_participant.photo_url} alt="" />
-                  ) : (
-                    <div className="avatar-placeholder">{t.other_participant?.name?.[0] || '?'}</div>
-                  )}
-                </div>
-                <div className="thread-info">
-                  <div className="thread-top">
-                    <span className="thread-subject">
-                      {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
-                    </span>
-                    <span className="thread-date">{fmtDate(t.created_at)}</span>
-                  </div>
-                  {t.last_message && (
-                    <span className="thread-preview">
-                      {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {/* New thread */}
-          <div className="new-thread-section">
-            <button type="button" className="ghost-btn full-width" onClick={() => setShowNew(v => !v)}>
+          {/* New thread moved to TOP */}
+          <div className="new-thread-section" style={{ padding: '8px 14px', borderBottom: '1px solid #eee' }}>
+            <button type="button" className="ghost-btn full-width" style={{ textAlign: 'left', fontWeight: 600, color: 'var(--ln-blue)' }} onClick={() => setShowNew(v => !v)}>
               {showNew ? '✕ Cancel' : '+ New conversation'}
             </button>
             {showNew && (
-              <div className="new-thread-form">
-                <label className="form-label">
-                  Subject (optional)
-                  <input value={newSubject} onChange={e => setNewSubject(e.target.value)} placeholder="e.g. Job inquiry" />
-                </label>
+              <div className="new-thread-form" style={{ marginTop: 10 }}>
                 <label className="form-label" style={{ position: 'relative' }}>
                   Recipient
                   <div className="search-input-wrap">
@@ -376,17 +406,28 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                       style={{ width: '100%', boxSizing: 'border-box' }}
                     />
                     {searchResults.length > 0 && !newParticipant && (
-                      <div className="search-dropdown panel" style={{ zIndex: 10, position: 'absolute', width: '100%' }}>
+                      <div className="search-dropdown panel" style={{ 
+                        zIndex: 100, 
+                        position: 'absolute', 
+                        width: '100%', 
+                        maxHeight: '400px', 
+                        overflowY: 'auto',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+                        marginTop: '4px',
+                        background: '#fff',
+                        left: 0,
+                        right: 0
+                      }}>
                         {searchResults.map(m => (
-                          <div key={`${m.type}-${m.id}`} className="search-item" onClick={() => { 
+                          <div key={`${m.type}-${m.id}`} className="search-item" style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => { 
                             setNewPart(String(m.id))
                             setNewPType(m.type)
-                            setSearchName(`${m.name} (${m.type})`)
+                            setSearchName(`${m.name}`) 
                             setSearchResults([])
                           }}>
                             <div className="search-item-info">
-                              <div className="search-item-name">{m.name}</div>
-                              <div className="search-item-headline">{m.headline}</div>
+                              <div className="search-item-name" style={{ fontWeight: 600, color: '#333' }}>{m.name}</div>
+                              <div className="search-item-headline" style={{ fontSize: '12px', color: '#666' }}>{m.headline}</div>
                             </div>
                           </div>
                         ))}
@@ -394,13 +435,76 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                     )}
                   </div>
                 </label>
-                {newErr && <p className="error">{newErr}</p>}
-                <button type="button" className="primary" onClick={openThread} disabled={newLoading}>
+                {newErr && <p className="error" style={{ fontSize: 12, marginTop: 4 }}>{newErr}</p>}
+                <button type="button" className="primary full-width" style={{ marginTop: 10 }} onClick={openThread} disabled={newLoading || !newParticipant}>
                   {newLoading ? 'Creating…' : 'Start conversation'}
                 </button>
               </div>
             )}
           </div>
+
+          {threadsErr && <p className="error" style={{ padding: '8px 14px', fontSize: 12 }}>{threadsErr}</p>}
+
+          <ul className="thread-list" style={{ flex: 1, overflowY: 'auto' }}>
+            {threads.length === 0 && !threadsLoading && (
+              <li style={{ padding: '16px 14px' }}>
+                <p className="hint">No conversations yet.</p>
+              </li>
+            )}
+            {threads.map(t => (
+              <li
+                key={t.thread_id}
+                className={`thread-item${selectedId === t.thread_id ? ' active' : ''}${t.unread_count > 0 ? ' unread' : ''}`}
+                onClick={() => selectThread(t.thread_id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
+                style={t.unread_count > 0 ? { borderLeft: '4px solid #cc1016', background: '#fff9f9' } : {}}
+              >
+                <div 
+                  className="thread-avatar" 
+                  style={{ position: 'relative', cursor: 'pointer' }}
+                  onClick={(e) => {
+                    if (t.other_participant) {
+                      e.stopPropagation()
+                      onNavigateProfile?.(t.other_participant.user_id)
+                    }
+                  }}
+                >
+                  {t.other_participant?.photo_url ? (
+                    <img src={t.other_participant.photo_url} alt="" />
+                  ) : (
+                    <div className="avatar-placeholder">{t.other_participant?.name?.[0] || '?'}</div>
+                  )}
+                  {t.unread_count > 0 && (
+                    <div className="unread-dot" style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, background: '#cc1016', borderRadius: '50%', border: '2px solid white' }} />
+                  )}
+                </div>
+                <div className="thread-info">
+                  <div className="thread-top">
+                    <span 
+                      className="thread-subject" 
+                      style={t.unread_count > 0 ? { fontWeight: 800, color: '#000', cursor: 'pointer' } : { cursor: 'pointer' }}
+                      onClick={(e) => {
+                        if (t.other_participant) {
+                          e.stopPropagation()
+                          onNavigateProfile?.(t.other_participant.user_id)
+                        }
+                      }}
+                    >
+                      {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
+                    </span>
+                    <span className="thread-date" style={t.unread_count > 0 ? { color: '#cc1016', fontWeight: 600 } : {}}>{fmtDate(t.created_at)}</span>
+                  </div>
+                  {t.last_message && (
+                    <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
+                      {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* ── Message area ─────────────────────────────── */}
@@ -469,7 +573,7 @@ onNavigateProfile, onNavigatePost }: { onNavigateProfile?: (id: number) => void,
                     <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
                       <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
                         {!isMe && (
-                          <span className="msg-sender">{m.sender_type} #{m.sender_id}</span>
+                          <span className="msg-sender">{selectedThread?.other_participant?.name || `${m.sender_type}`}</span>
                         )}
                         <span className="msg-text">{m.message_text}</span>
                         <span className="msg-time">{fmtTime(m.timestamp)}</span>

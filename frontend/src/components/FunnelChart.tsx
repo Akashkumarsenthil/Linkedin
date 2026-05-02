@@ -52,19 +52,28 @@ export function FunnelChart() {
       ]
     : []
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.stage}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong></div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="ad-card">
       <h3 className="ad-card-title">Application Funnel</h3>
 
-      <div className="ad-inline-controls">
-        <label className="ad-inline-label">
-          Job ID
-          <input className="ad-inline-input" type="number" value={jobId} min={1}
-            onChange={e => setJobId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && load()} />
-        </label>
-        <button type="button" className="ad-load-btn" onClick={() => load()} disabled={loading}>
-          {loading ? 'Loading…' : 'Go'}
+      <div className="ad-form-row">
+        <input className="ad-input" type="number" value={jobId} min={1} placeholder="Job ID"
+          onChange={e => setJobId(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && load()} />
+        <button type="button" className="ad-btn" onClick={() => load()} disabled={loading}>
+          {loading ? '...' : 'Go'}
         </button>
       </div>
 
@@ -76,33 +85,47 @@ export function FunnelChart() {
         </div>
       ) : data && (
         <>
-          <p className="ad-card-hint">{data.title}</p>
-          <ResponsiveContainer width="100%" height={200}>
+          <p className="ad-card-hint" style={{ marginTop: 8 }}>{data.title}</p>
+          <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} margin={{ top: 24, right: 16, bottom: 4, left: 0 }}>
-              <XAxis dataKey="stage" tick={{ fontSize: 12, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={48}>
-                <LabelList dataKey="value" position="top" style={{ fontSize: 13, fontWeight: 700, fill: 'var(--text)' }} />
-                {chartData.map(entry => <Cell key={entry.stage} fill={entry.color} />)}
+              <defs>
+                <linearGradient id="colorStage0" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#70B5F9" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#0A66C2" stopOpacity={1}/>
+                </linearGradient>
+                <linearGradient id="colorStage1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0A66C2" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#004182" stopOpacity={1}/>
+                </linearGradient>
+                <linearGradient id="colorStage2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#004182" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#002244" stopOpacity={1}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="stage" tick={{ fontSize: 12, fill: '#888', fontWeight: 600 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={48}>
+                <LabelList dataKey="value" position="top" style={{ fontSize: 14, fontWeight: 800, fill: 'var(--accent-vibrant)' }} />
+                {chartData.map((entry, index) => <Cell key={entry.stage} fill={`url(#colorStage${index})`} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
 
-          <div className="funnel-rates">
-            <div className="funnel-rate-item">
-              <span className="funnel-rate-label">View → Save</span>
-              <span className="funnel-rate-value">{data.view_to_save_rate}%</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px', background: 'var(--surface2)', borderRadius: '8px', marginTop: '8px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-sec)', textTransform: 'uppercase' }}>View → Save</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>{data.view_to_save_rate}%</div>
             </div>
-            <div className="funnel-rate-divider" />
-            <div className="funnel-rate-item">
-              <span className="funnel-rate-label">Save → Apply</span>
-              <span className="funnel-rate-value">{data.save_to_apply_rate}%</span>
+            <div style={{ width: 1, background: 'var(--border)' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-sec)', textTransform: 'uppercase' }}>Save → Apply</div>
+              <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text)' }}>{data.save_to_apply_rate}%</div>
             </div>
-            <div className="funnel-rate-divider" />
-            <div className="funnel-rate-item">
-              <span className="funnel-rate-label">Overall</span>
-              <span className="funnel-rate-value" style={{ color: 'var(--accent)' }}>{data.view_to_apply_rate}%</span>
+            <div style={{ width: 1, background: 'var(--border)' }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-sec)', textTransform: 'uppercase' }}>Overall</div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0a66c2' }}>{data.view_to_apply_rate}%</div>
             </div>
           </div>
         </>

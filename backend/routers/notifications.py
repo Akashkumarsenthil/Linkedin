@@ -248,6 +248,6 @@ async def list_notifications(
     return NotificationsResponse(
         success=True,
         message=f"{len(notifications)} notifications",
-        unread_count=pending_count,
+        unread_count=len(notifications),
         data=notifications,
     )

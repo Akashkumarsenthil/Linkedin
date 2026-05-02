@@ -28,6 +28,7 @@ interface ProfilePageProps {
   viewMemberId?: number | null
   onAuthChange?: () => void
   onNavigateProfile?: (id: number) => void
+  onNavigateMessaging?: (id: number) => void
 }
 
 // ── Client-side image resize → JPEG data URL ──────────────────────────────────
@@ -230,7 +231,7 @@ function recruiterFromProfile(p: Record<string, unknown>): RecruiterState {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile }: ProfilePageProps) {
+export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile, onNavigateMessaging }: ProfilePageProps) {
   const storedUser = parseStoredUser()
 
   const [loading, setLoading] = useState(true)
@@ -243,6 +244,8 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
   const [showPhotoMenu, setShowPhotoMenu] = useState(false)
   const [connections, setConnections] = useState<number[]>([])
   const [pendingConnections, setPendingConnections] = useState<number[]>([])
+  const [removingConnection, setRemovingConnection] = useState(false)
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
 
   // New states for modals
   const [showPhotoModal, setShowPhotoModal] = useState(false)
@@ -848,32 +851,17 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
               <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
                 {connections.includes(viewMemberId) ? (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="btn-message">
+                    <button type="button" className="btn-message" onClick={() => viewMemberId && onNavigateMessaging?.(viewMemberId)}>
                       Message
                     </button>
                     <button 
                       type="button" 
                       className="ghost-btn" 
                       style={{ border: '1px solid #d11124', color: '#d11124' }}
-                      onClick={async () => {
-                        if (!window.confirm('Are you sure you want to remove this connection?')) return
-                        try {
-                          const res = await apiPost<any>('/connections/remove', { 
-                            user_id: storedUser.user_id, 
-                            other_id: viewMemberId 
-                          })
-                          if (res.success) {
-                            setConnections(prev => prev.filter(id => id !== viewMemberId))
-                            setToast('Connection removed')
-                          } else {
-                            alert(res.message)
-                          }
-                        } catch (e) {
-                          alert('Failed to remove connection')
-                        }
-                      }}
+                      disabled={removingConnection}
+                      onClick={() => setShowRemoveConfirm(true)}
                     >
-                      Remove Connection
+                      {removingConnection ? 'Removing...' : 'Remove Connection'}
                     </button>
                   </div>
                 ) : pendingConnections.includes(viewMemberId) ? (
@@ -1064,6 +1052,56 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile 
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Remove Connection Confirm Modal */}
+      {showRemoveConfirm && (
+        <div className="modal-overlay" onClick={() => setShowRemoveConfirm(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 400, padding: 24 }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}>Remove Connection</h3>
+            <p style={{ margin: '0 0 20px', color: 'var(--text-sec)', fontSize: 14, lineHeight: 1.5 }}>
+              Are you sure you want to remove this connection? You'll need to send a new request to reconnect.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="ghost-btn"
+                style={{ padding: '8px 20px', borderRadius: 24, fontSize: 14, fontWeight: 600 }}
+                onClick={() => setShowRemoveConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                style={{ padding: '8px 20px', borderRadius: 24, fontSize: 14, fontWeight: 600, background: '#d11124', border: 'none', color: '#fff' }}
+                disabled={removingConnection}
+                onClick={async () => {
+                  if (!storedUser || !viewMemberId) return
+                  setRemovingConnection(true)
+                  try {
+                    const res = await apiPost<any>('/connections/remove', {
+                      user_id: storedUser.user_id,
+                      other_id: viewMemberId
+                    })
+                    if (res.success) {
+                      setConnections(prev => prev.filter(id => id !== viewMemberId))
+                      setToast('Connection removed')
+                    } else {
+                      setToast(res.message || 'Failed')
+                    }
+                  } catch {
+                    setToast('Failed to remove connection')
+                  } finally {
+                    setRemovingConnection(false)
+                    setShowRemoveConfirm(false)
+                  }
+                }}
+              >
+                {removingConnection ? 'Removing...' : 'Remove'}
+              </button>
             </div>
           </div>
         </div>

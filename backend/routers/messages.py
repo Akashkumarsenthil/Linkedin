@@ -6,7 +6,7 @@ Handles message threads, sending messages with retry logic, and conversation his
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func, and_
 
 from database import get_db
 from models.message import Thread, ThreadParticipant, Message
@@ -108,24 +108,39 @@ async def get_thread(req: ThreadGet, db: Session = Depends(get_db)):
 
 @router.post("/threads/byUser", response_model=MessageListResponse, summary="List user's threads")
 async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
-    """List all messaging threads for a specific user."""
-    participant_threads = db.query(ThreadParticipant.thread_id).filter(
+    """List all messaging threads for a specific user, sorted by newest message."""
+    # Find all threads the user is in
+    user_threads = db.query(ThreadParticipant).filter(
         ThreadParticipant.user_id == req.user_id,
         ThreadParticipant.user_type == req.user_type,
     ).all()
 
-    thread_ids = [t[0] for t in participant_threads]
-    if not thread_ids:
+    if not user_threads:
         return MessageListResponse(success=True, message="No threads found", data=[], total=0)
 
-    total = len(thread_ids)
-    offset = (req.page - 1) * req.page_size
-    paginated_ids = thread_ids[offset : offset + req.page_size]
+    # For each thread, get the latest message timestamp or thread creation time
+    thread_data_list = []
+    for ut in user_threads:
+        thread = db.query(Thread).filter(Thread.thread_id == ut.thread_id).first()
+        if not thread: continue
 
-    threads = db.query(Thread).filter(Thread.thread_id.in_(paginated_ids)).all()
-    result = []
-    for thread in threads:
+        last_msg = db.query(Message).filter(
+            Message.thread_id == thread.thread_id
+        ).order_by(desc(Message.timestamp)).first()
+        
+        sort_time = last_msg.timestamp if last_msg else thread.created_at
+        
+        # Calculate unread count for THIS user in THIS thread
+        unread_q = db.query(Message).filter(
+            Message.thread_id == thread.thread_id,
+            Message.sender_id != req.user_id, # Don't count own messages
+            Message.timestamp > ut.last_read_at
+        )
+        unread_count = unread_q.count()
+
         data = thread.to_dict()
+        data["sort_time"] = sort_time
+        data["unread_count"] = unread_count
         
         # Get other participant
         other_tp = db.query(ThreadParticipant).filter(
@@ -134,30 +149,32 @@ async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
         ).first()
         
         if other_tp:
-            other_data = {
-                "user_id": other_tp.user_id,
-                "user_type": other_tp.user_type,
-            }
+            other_data = {"user_id": other_tp.user_id, "user_type": other_tp.user_type}
             if other_tp.user_type == "member":
-                member = db.query(Member).filter(Member.member_id == other_tp.user_id).first()
-                if member:
-                    other_data["name"] = f"{member.first_name} {member.last_name}"
-                    other_data["headline"] = member.headline
+                m = db.query(Member).filter(Member.member_id == other_tp.user_id).first()
+                if m:
+                    other_data["name"] = f"{m.first_name} {m.last_name}"
+                    other_data["headline"] = m.headline
             elif other_tp.user_type == "recruiter":
-                recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == other_tp.user_id).first()
-                if recruiter:
-                    other_data["name"] = f"{recruiter.first_name} {recruiter.last_name}"
-                    other_data["headline"] = recruiter.company_name
+                r = db.query(Recruiter).filter(Recruiter.recruiter_id == other_tp.user_id).first()
+                if r:
+                    other_data["name"] = f"{r.first_name} {r.last_name}"
+                    other_data["headline"] = r.company_name
             data["other_participant"] = other_data
-            
-        last_msg = db.query(Message).filter(
-            Message.thread_id == thread.thread_id
-        ).order_by(desc(Message.timestamp)).first()
+
         if last_msg:
             data["last_message"] = last_msg.to_dict()
-        result.append(data)
+        
+        thread_data_list.append(data)
 
-    return MessageListResponse(success=True, message=f"Found {total} threads", data=result, total=total)
+    # Sort by sort_time descending
+    thread_data_list.sort(key=lambda x: x["sort_time"], reverse=True)
+
+    total = len(thread_data_list)
+    offset = (req.page - 1) * req.page_size
+    paginated_data = thread_data_list[offset : offset + req.page_size]
+
+    return MessageListResponse(success=True, message=f"Found {total} threads", data=paginated_data, total=total)
 
 
 @router.post("/messages/send", response_model=MessageResponse, summary="Send a message")
@@ -227,8 +244,23 @@ async def send_message(
 
 
 @router.post("/messages/list", response_model=MessageListResponse, summary="List messages in a thread")
-async def list_messages(req: MessageList, db: Session = Depends(get_db)):
-    """List all messages in a thread, ordered by timestamp (newest first)."""
+async def list_messages(
+    req: MessageList, 
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user)
+):
+    """List all messages in a thread, and mark as read for the current user."""
+    # Mark as read: update ThreadParticipant.last_read_at
+    participant = db.query(ThreadParticipant).filter(
+        ThreadParticipant.thread_id == req.thread_id,
+        ThreadParticipant.user_id == current_user.user_id,
+        ThreadParticipant.user_type == current_user.user_type
+    ).first()
+    
+    if participant:
+        participant.last_read_at = func.now()
+        db.commit()
+
     query = db.query(Message).filter(Message.thread_id == req.thread_id)
     total = query.count()
     offset = (req.page - 1) * req.page_size
@@ -240,3 +272,26 @@ async def list_messages(req: MessageList, db: Session = Depends(get_db)):
         data=[m.to_dict() for m in messages],
         total=total,
     )
+
+@router.post("/messages/unreadCount", response_model=MessageResponse, summary="Get total unread message count")
+async def get_unread_count(
+    db: Session = Depends(get_db),
+    current_user: TokenPayload = Depends(get_current_user)
+):
+    """Get the total number of unread messages across all threads for the current user."""
+    # Find all threads the user is in
+    user_threads = db.query(ThreadParticipant).filter(
+        ThreadParticipant.user_id == current_user.user_id,
+        ThreadParticipant.user_type == current_user.user_type
+    ).all()
+    
+    total_unread = 0
+    for ut in user_threads:
+        unread_q = db.query(Message).filter(
+            Message.thread_id == ut.thread_id,
+            Message.sender_id != current_user.user_id,
+            Message.timestamp > ut.last_read_at
+        )
+        total_unread += unread_q.count()
+        
+    return MessageResponse(success=True, message="Unread count retrieved", data={"unread_count": total_unread})

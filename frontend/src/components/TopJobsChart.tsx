@@ -57,8 +57,28 @@ export function TopJobsChart() {
   const chartData = data.map(d => ({ ...d, label: shortTitle(d.title) }))
   const total = data.reduce((s, d) => s + d.count, 0)
 
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="ad-custom-tooltip">
+          <div className="ad-custom-tooltip-label">{payload[0].payload.label}</div>
+          <div className="ad-custom-tooltip-value"><strong>{payload[0].value}</strong> {metric}</div>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const getGradientId = () => {
+    switch(metric) {
+      case 'applications': return 'colorApps';
+      case 'views': return 'colorViews';
+      case 'saves': return 'colorSaves';
+    }
+  }
+
   return (
-    <div className="ad-card">
+    <div className="ad-card col-span-2">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <h3 className="ad-card-title">Top Jobs</h3>
         <div className="ad-metric-tabs">
@@ -88,11 +108,25 @@ export function TopJobsChart() {
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="count" fill={METRIC_COLOR[metric]} radius={[0, 4, 4, 0]} barSize={14} />
+              <defs>
+                <linearGradient id="colorApps" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="5%" stopColor="#70B5F9" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#0A66C2" stopOpacity={1}/>
+                </linearGradient>
+                <linearGradient id="colorViews" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="5%" stopColor="#0A66C2" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#004182" stopOpacity={1}/>
+                </linearGradient>
+                <linearGradient id="colorSaves" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="5%" stopColor="#004182" stopOpacity={1}/>
+                  <stop offset="95%" stopColor="#002244" stopOpacity={1}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
+              <XAxis type="number" tick={{ fontSize: 11, fill: '#888', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 600 }} axisLine={false} tickLine={false} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
+              <Bar dataKey="count" fill={`url(#${getGradientId()})`} radius={[0, 8, 8, 0]} barSize={16} />
             </BarChart>
           </ResponsiveContainer>
         </>

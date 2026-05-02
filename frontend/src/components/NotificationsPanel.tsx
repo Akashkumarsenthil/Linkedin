@@ -18,6 +18,8 @@ interface NotificationsPanelProps {
   unreadCount: number
   onRefresh: () => void
   onOpenConnections: () => void
+  onNavigateProfile?: (id: number) => void
+  onNavigatePost?: (id: number) => void
 }
 
 function iconForType(type: string): string {
@@ -47,6 +49,8 @@ export function NotificationsPanel({
   unreadCount,
   onRefresh,
   onOpenConnections,
+  onNavigateProfile,
+  onNavigatePost,
 }: NotificationsPanelProps) {
   return (
     <section className="panel notif-panel">
@@ -88,8 +92,21 @@ export function NotificationsPanel({
               <li
                 key={n.id}
                 className={`notif-item${n.unread ? ' notif-item-unread' : ''}`}
+                style={{ cursor: n.post_id ? 'pointer' : 'default' }}
+                onClick={() => {
+                  if (n.post_id && onNavigatePost) onNavigatePost(n.post_id)
+                }}
               >
-                <div className="notif-avatar">
+                <div 
+                  className="notif-avatar"
+                  style={{ cursor: n.actor_id ? 'pointer' : 'default' }}
+                  onClick={(e) => {
+                    if (n.actor_id && onNavigateProfile) {
+                      e.stopPropagation()
+                      onNavigateProfile(n.actor_id)
+                    }
+                  }}
+                >
                   {n.actor_photo_url ? (
                     <img src={n.actor_photo_url} alt="" />
                   ) : (
@@ -100,7 +117,16 @@ export function NotificationsPanel({
                   </span>
                 </div>
                 <div className="notif-body">
-                  <p className="notif-title">{n.title}</p>
+                  <p 
+                    className="notif-title" 
+                    style={{ cursor: n.actor_id ? 'pointer' : 'default' }}
+                    onClick={(e) => {
+                      if (n.actor_id && onNavigateProfile && !n.post_id) {
+                        e.stopPropagation()
+                        onNavigateProfile(n.actor_id)
+                      }
+                    }}
+                  >{n.title}</p>
                   {n.subtitle && <p className="notif-subtitle">{n.subtitle}</p>}
                   <p className="notif-time">{formatRelative(n.created_at)}</p>
                 </div>

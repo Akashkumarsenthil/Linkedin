@@ -35,15 +35,12 @@ export function GeoMonthlyChart() {
     <div className="ad-card">
       <h3 className="ad-card-title">City Applications by Month</h3>
 
-      <div className="ad-inline-controls">
-        <label className="ad-inline-label">
-          Job ID
-          <input className="ad-inline-input" type="number" value={jobId} min={1}
-            onChange={e => setJobId(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && load()} />
-        </label>
-        <button type="button" className="ad-load-btn" onClick={() => load()} disabled={loading}>
-          {loading ? 'Loading…' : 'Go'}
+      <div className="ad-form-row">
+        <input className="ad-input" type="number" value={jobId} min={1} placeholder="Job ID"
+          onChange={e => setJobId(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && load()} />
+        <button type="button" className="ad-btn" onClick={() => load()} disabled={loading}>
+          {loading ? '...' : 'Go'}
         </button>
       </div>
 
