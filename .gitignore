@@ -54,6 +54,3 @@ htmlcov/
 mongodb_data/
 linkedin-clone-revamp-plan.md
 test_*.py
-dataset_graphs/
-mongo_dump/
-mysql_dump.sql

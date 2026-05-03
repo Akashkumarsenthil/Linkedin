@@ -148,7 +148,7 @@ export function MyJobsPage() {
       : ''
 
   return (
-    <div className="jobs-page">
+    <div className="jobs-page jobs-page--my-jobs">
       <div
         className="jobs-page__search-bar"
         style={{ padding: '14px 16px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-light)' }}
@@ -174,8 +174,10 @@ export function MyJobsPage() {
           ) : (
             <div className="my-jobs-list">
               <div className="my-jobs-list__header">
-                <span className="my-jobs-list__title">Your applications</span>
-                <span className="my-jobs-list__count">{rows.length}</span>
+                <h3 className="my-jobs-list__heading">Your applications</h3>
+                <span className="my-jobs-list__count-badge" aria-label={`${rows.length} applications`}>
+                  {rows.length}
+                </span>
               </div>
               <ul className="my-jobs-list__ul" role="list">
                 {rows.map(({ app, job }) => {
@@ -186,14 +188,14 @@ export function MyJobsPage() {
                     : '—'
                   const active = selectedAppId === app.application_id
                   return (
-                    <li key={app.application_id}>
+                    <li key={app.application_id} className="my-jobs-list__li">
                       <button
                         type="button"
                         className={`my-jobs-row${active ? ' my-jobs-row--active' : ''}`}
                         onClick={() => setSelectedAppId(app.application_id)}
                       >
-                        <div className="my-jobs-row__logo">
-                          <span>{(company || '?').charAt(0)}</span>
+                        <div className="my-jobs-row__logo" aria-hidden>
+                          <span>{(company || '?').charAt(0).toUpperCase()}</span>
                         </div>
                         <div className="my-jobs-row__body">
                           <div className="my-jobs-row__title">{title}</div>

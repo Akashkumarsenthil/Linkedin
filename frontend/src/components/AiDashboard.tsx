@@ -23,14 +23,29 @@ interface TaskSummary {
   created_at?: string
 }
 
+interface BreakdownDim {
+  score: number
+  matched?: string[]
+  missing?: string[]
+  reasoning?: string
+  reason?: string
+}
+
 interface ShortlistEntry {
   candidate_id: number
   candidate_name?: string
   overall_score: number
   recommendation: string
+  scoring_method?: string
   skills_score?: number
   location_score?: number
   seniority_score?: number
+  breakdown?: {
+    skills?: BreakdownDim
+    location?: BreakdownDim
+    seniority?: BreakdownDim
+    title_relevance?: BreakdownDim
+  }
 }
 
 interface OutreachDraft {
@@ -111,13 +126,18 @@ function ProgressBar({ value }: { value: number }) {
 
 function StepTimeline({ steps }: { steps: { step: string; status: string; timestamp: string }[] }) {
   if (!steps.length) return null
+  // Each step fires update_task_status twice (start + completion). Keep the last
+  // occurrence of each step name so every step only appears once in the UI.
+  const seen = new Map<string, { step: string; status: string; timestamp: string }>()
+  steps.forEach(s => seen.set(s.step, s))
+  const deduped = Array.from(seen.values())
   return (
     <div className="li-timeline">
-      {steps.map((s, i) => {
+      {deduped.map((s, i) => {
         const isDone    = s.status === 'completed' || s.status === 'done'
         const isRunning = s.status === 'running'
         const isError   = s.status === 'error' || s.status === 'failed'
-        const isLast    = i === steps.length - 1
+        const isLast    = i === deduped.length - 1
         return (
           <div key={i} className="li-timeline-row">
             <div className="li-timeline-spine">
@@ -138,30 +158,76 @@ function StepTimeline({ steps }: { steps: { step: string; status: string; timest
 }
 
 
-function ShortlistCard({ entry, onNavigateProfile }: { entry: ShortlistEntry; onNavigateProfile?: (id: number) => void }) {
+type PipelineDecision = 'interview' | 'selected' | 'rejected' | null
+
+function ShortlistCard({ entry, jobId, onNavigateProfile }: { entry: ShortlistEntry; jobId?: number; onNavigateProfile?: (id: number) => void }) {
+  const [expanded, setExpanded]   = useState(false)
+  const [decision, setDecision]   = useState<PipelineDecision>(null)
+  const [deciding, setDeciding]   = useState(false)
+
   const pct = Math.round(entry.overall_score * 100)
   const initials = (entry.candidate_name ?? `#${entry.candidate_id}`)
     .split(' ').slice(0, 2).map((w: string) => w[0]).join('').toUpperCase()
-  const isStrong = entry.recommendation?.toLowerCase().includes('strong')
-  const isGood   = entry.recommendation?.toLowerCase().includes('good')
-  const recClass = isStrong ? 'li-rec-strong' : isGood ? 'li-rec-good' : 'li-rec-weak'
-  const scoreColor = pct >= 70 ? 'var(--success)' : pct >= 45 ? '#915907' : 'var(--error)'
+  const recShort   = pct >= 70 ? 'Strong Match' : pct >= 45 ? 'Good Match' : 'Weak Match'
+  const isStrong   = pct >= 70
+  const isGood     = pct >= 45 && pct < 70
+  const recClass   = isStrong ? 'li-rec-strong' : isGood ? 'li-rec-good' : 'li-rec-weak'
+  const scoreColor = isStrong ? 'var(--success)' : isGood ? '#915907' : 'var(--error)'
+
+  // Resolve per-dimension scores from breakdown (LLM) or top-level fields (legacy)
+  const bd = entry.breakdown
+  const skillsScore    = bd?.skills?.score    ?? entry.skills_score
+  const locationScore  = bd?.location?.score  ?? entry.location_score
+  const seniorityScore = bd?.seniority?.score ?? entry.seniority_score
+  const titleScore     = bd?.title_relevance?.score
+
+  // Reasoning text lines — present for LLM-scored tasks
+  const reasoningLines: { label: string; text: string }[] = []
+  if (bd?.skills?.reasoning)
+    reasoningLines.push({ label: 'Skills',    text: bd.skills.reasoning })
+  if (bd?.location?.reasoning || bd?.location?.reason)
+    reasoningLines.push({ label: 'Location',  text: (bd.location?.reasoning ?? bd.location?.reason)! })
+  if (bd?.seniority?.reasoning || bd?.seniority?.reason)
+    reasoningLines.push({ label: 'Seniority', text: (bd.seniority?.reasoning ?? bd.seniority?.reason)! })
+  if (bd?.title_relevance?.reasoning || bd?.title_relevance?.reason)
+    reasoningLines.push({ label: 'Role Fit',  text: (bd.title_relevance?.reasoning ?? bd.title_relevance?.reason)! })
+
+  // Matched / missing skills from either LLM or rule-based breakdown
+  const matchedSkills: string[] = bd?.skills?.matched ?? []
+  const missingSkills: string[] = bd?.skills?.missing ?? []
+
+  // Panel is always expandable — shows scores + skills even without LLM text
+  const hasPanel = reasoningLines.length > 0 || matchedSkills.length > 0 || missingSkills.length > 0
+    || skillsScore !== undefined || locationScore !== undefined || seniorityScore !== undefined
+
+  const handleDecision = async (d: PipelineDecision) => {
+    if (!d || deciding) return
+    const next = decision === d ? null : d   // toggle off if already selected
+    setDecision(next)
+    if (!jobId || !next) return
+    setDeciding(true)
+    try {
+      await apiPost('/ai/candidate-decision', { candidate_id: entry.candidate_id, job_id: jobId, decision: next })
+    } catch { /* best-effort */ } finally {
+      setDeciding(false)
+    }
+  }
 
   return (
     <div className="li-candidate-card">
       <div className="li-candidate-top">
-        <div 
-          className="li-avatar" 
+        <div
+          className="li-avatar"
           onClick={() => onNavigateProfile?.(entry.candidate_id)}
           style={{ cursor: onNavigateProfile ? 'pointer' : 'default' }}
         >
           {initials}
         </div>
         <div className="li-candidate-meta">
-          <span 
+          <span
             className="li-candidate-name"
             onClick={() => onNavigateProfile?.(entry.candidate_id)}
-            style={{ 
+            style={{
               cursor: onNavigateProfile ? 'pointer' : 'default',
               textDecoration: onNavigateProfile ? 'underline' : 'none',
               color: onNavigateProfile ? 'var(--li-blue-primary)' : 'inherit'
@@ -169,12 +235,79 @@ function ShortlistCard({ entry, onNavigateProfile }: { entry: ShortlistEntry; on
           >
             {entry.candidate_name ?? `Candidate #${entry.candidate_id}`}
           </span>
-          <span className={`li-rec-badge ${recClass}`}>{entry.recommendation}</span>
+          <button
+            className={`li-rec-badge ${recClass} li-rec-badge--clickable`}
+            onClick={() => setExpanded(e => !e)}
+            title={entry.recommendation}
+          >
+            {recShort}
+            <span className="li-rec-chevron">{expanded ? '▲' : '▼'}</span>
+          </button>
         </div>
         <div className="li-score-circle" style={{ color: scoreColor, borderColor: scoreColor }}>
           {pct}%
         </div>
       </div>
+
+      {/* Score breakdown + reasoning dropdown */}
+      {expanded && (
+        <div className="li-reasoning-panel">
+          {entry.scoring_method === 'openai_llm'
+            ? <div className="li-reasoning-source">✦ AI-generated analysis</div>
+            : <div className="li-reasoning-source">Score breakdown</div>
+          }
+          {entry.recommendation && (
+            <div className="li-reasoning-summary">{entry.recommendation}</div>
+          )}
+
+          {/* Dimension scores */}
+          {[
+            { label: 'Overall',   score: entry.overall_score },
+            { label: 'Skills',    score: skillsScore },
+            { label: 'Location',  score: locationScore },
+            { label: 'Seniority', score: seniorityScore },
+            { label: 'Role Fit',  score: titleScore },
+          ].filter(d => d.score !== undefined).map(({ label, score }) => (
+            <div key={label} className="li-reasoning-row li-reasoning-score-row">
+              <span className="li-reasoning-label">{label}</span>
+              <div className="li-reasoning-score-bar-wrap">
+                <div className="li-reasoning-score-bar-track">
+                  <div
+                    className="li-reasoning-score-bar-fill"
+                    style={{
+                      width: `${Math.round((score ?? 0) * 100)}%`,
+                      background: (score ?? 0) >= 0.7 ? 'var(--success)' : (score ?? 0) >= 0.45 ? '#915907' : 'var(--error)'
+                    }}
+                  />
+                </div>
+                <span className="li-reasoning-score-pct">{Math.round((score ?? 0) * 100)}%</span>
+              </div>
+            </div>
+          ))}
+
+          {/* LLM reasoning text (only present for openai_llm scored tasks) */}
+          {reasoningLines.map(({ label, text }) => (
+            <div key={`r-${label}`} className="li-reasoning-row li-reasoning-text-row">
+              <span className="li-reasoning-label">{label}</span>
+              <span className="li-reasoning-text">{text}</span>
+            </div>
+          ))}
+
+          {/* Matched / missing skills */}
+          {matchedSkills.length > 0 && (
+            <div className="li-reasoning-row">
+              <span className="li-reasoning-label">Matched</span>
+              <span className="li-reasoning-text li-reasoning-matched">{matchedSkills.join(', ')}</span>
+            </div>
+          )}
+          {missingSkills.length > 0 && (
+            <div className="li-reasoning-row li-reasoning-missing">
+              <span className="li-reasoning-label">Missing</span>
+              <span className="li-reasoning-text">{missingSkills.join(', ')}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="li-score-bar-wrap">
         <div className="li-score-bar-track">
@@ -183,37 +316,74 @@ function ShortlistCard({ entry, onNavigateProfile }: { entry: ShortlistEntry; on
         <span className="li-score-pct" style={{ color: scoreColor }}>{pct}%</span>
       </div>
 
-      {(entry.skills_score !== undefined || entry.location_score !== undefined) && (
+      {(skillsScore !== undefined || locationScore !== undefined) && (
         <div className="li-sub-scores">
-          {entry.skills_score !== undefined && (
+          {skillsScore !== undefined && (
             <div className="li-sub-score-item">
               <span className="li-sub-label">Skills</span>
               <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.skills_score * 100)}%` }} />
+                <div className="li-sub-bar-fill" style={{ width: `${Math.round(skillsScore * 100)}%` }} />
               </div>
-              <span className="li-sub-pct">{fmtScore(entry.skills_score)}</span>
+              <span className="li-sub-pct">{fmtScore(skillsScore)}</span>
             </div>
           )}
-          {entry.location_score !== undefined && (
+          {locationScore !== undefined && (
             <div className="li-sub-score-item">
               <span className="li-sub-label">Location</span>
               <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.location_score * 100)}%` }} />
+                <div className="li-sub-bar-fill" style={{ width: `${Math.round(locationScore * 100)}%` }} />
               </div>
-              <span className="li-sub-pct">{fmtScore(entry.location_score)}</span>
+              <span className="li-sub-pct">{fmtScore(locationScore)}</span>
             </div>
           )}
-          {entry.seniority_score !== undefined && (
+          {seniorityScore !== undefined && (
             <div className="li-sub-score-item">
               <span className="li-sub-label">Seniority</span>
               <div className="li-sub-bar-track">
-                <div className="li-sub-bar-fill" style={{ width: `${Math.round(entry.seniority_score * 100)}%` }} />
+                <div className="li-sub-bar-fill" style={{ width: `${Math.round(seniorityScore * 100)}%` }} />
               </div>
-              <span className="li-sub-pct">{fmtScore(entry.seniority_score)}</span>
+              <span className="li-sub-pct">{fmtScore(seniorityScore)}</span>
+            </div>
+          )}
+          {titleScore !== undefined && (
+            <div className="li-sub-score-item">
+              <span className="li-sub-label">Role Fit</span>
+              <div className="li-sub-bar-track">
+                <div className="li-sub-bar-fill" style={{ width: `${Math.round(titleScore * 100)}%` }} />
+              </div>
+              <span className="li-sub-pct">{fmtScore(titleScore)}</span>
             </div>
           )}
         </div>
       )}
+
+      {/* Pipeline action buttons */}
+      <div className="li-pipeline-actions">
+        <button
+          className={`li-pipeline-btn interview${decision === 'interview' ? ' active' : ''}`}
+          onClick={() => handleDecision('interview')}
+          disabled={deciding}
+          title="Move to interview stage"
+        >
+          {decision === 'interview' ? '✓ Interview' : 'Interview'}
+        </button>
+        <button
+          className={`li-pipeline-btn selected${decision === 'selected' ? ' active' : ''}`}
+          onClick={() => handleDecision('selected')}
+          disabled={deciding}
+          title="Mark as selected / offer"
+        >
+          {decision === 'selected' ? '✓ Selected' : 'Select'}
+        </button>
+        <button
+          className={`li-pipeline-btn rejected${decision === 'rejected' ? ' active' : ''}`}
+          onClick={() => handleDecision('rejected')}
+          disabled={deciding}
+          title="Reject this candidate"
+        >
+          {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -811,7 +981,7 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
                     </p>
                     <div className="candidate-grid">
                       {result.shortlist.map((entry, i) => (
-                        <ShortlistCard key={i} entry={entry} onNavigateProfile={onNavigateProfile} />
+                        <ShortlistCard key={i} entry={entry} jobId={result.job?.job_id} onNavigateProfile={onNavigateProfile} />
                       ))}
                     </div>
                   </div>

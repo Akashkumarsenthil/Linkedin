@@ -14,8 +14,6 @@ import random
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
-import csv
 from faker import Faker
 from tqdm import tqdm
 from sqlalchemy import text
@@ -232,38 +230,12 @@ def seed_members(db, profile: SeedProfile):
     existing = {row[0] for row in db.execute(text("SELECT email FROM members")).fetchall()}
     used_emails = set(existing)
 
-    # Optional: Load Kaggle resumes
-    resume_csv_path = Path("../datasets/archive (2)/Resume/Resume.csv")
-    kaggle_resumes = []
-    if resume_csv_path.exists():
-        try:
-            with open(resume_csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-                reader = csv.DictReader(f)
-                kaggle_resumes = list(reader)
-            print(f"   ✓ Loaded {len(kaggle_resumes)} real resumes from {resume_csv_path.name}")
-        except Exception as e:
-            print(f"   ⚠️ Could not parse resume CSV: {e}")
-
     for i in tqdm(range(count)):
         city, state, country = random.choice(CITIES)
         skills = random.sample(TECH_SKILLS, random.randint(3, 10))
         title = random.choice(JOB_TITLES)
         years = random.randint(0, 15)
         company = random.choice(COMPANIES)
-        
-        resume_text = generate_resume_text(title, skills, years)
-        
-        # Override with Kaggle data if available
-        if i < len(kaggle_resumes):
-            row = kaggle_resumes[i]
-            # Handle common Kaggle column names for resumes
-            real_text = row.get("Resume_str", row.get("Resume", row.get("resume_text", "")))
-            if real_text:
-                resume_text = real_text
-            # Handle categories/titles
-            real_category = row.get("Category", row.get("Category_str", ""))
-            if real_category:
-                title = real_category.title()
 
         # Generate unique email (checked against DB + current batch)
         email = f"{fake.first_name().lower()}.{fake.last_name().lower()}{random.randint(1, 9999)}@{fake.free_email_domain()}"
@@ -299,7 +271,7 @@ def seed_members(db, profile: SeedProfile):
                 }
             ]),
             skills=json.dumps(skills),
-            resume_text=resume_text,
+            resume_text=generate_resume_text(title, skills, years),
             connections_count=random.randint(0, 500),
             profile_views=random.randint(0, 1000),
         )
@@ -358,40 +330,16 @@ def seed_jobs(db, profile: SeedProfile):
     jobs = []
     n_rec = max(1, profile.recruiters)
 
-    # Optional: Load Kaggle jobs
-    jobs_csv_path = Path("../datasets/archive/job_postings.csv")
-    kaggle_jobs = []
-    if jobs_csv_path.exists():
-        try:
-            with open(jobs_csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-                reader = csv.DictReader(f)
-                kaggle_jobs = list(reader)
-            print(f"   ✓ Loaded {len(kaggle_jobs)} real jobs from {jobs_csv_path.name}")
-        except Exception as e:
-            print(f"   ⚠️ Could not parse jobs CSV: {e}")
-
     for i in tqdm(range(count)):
         city, state, country = random.choice(CITIES)
         skills = random.sample(TECH_SKILLS, random.randint(3, 8))
         location = f"{city}, {state}" if city != "Remote" else "Remote"
-        
-        job_title = random.choice(JOB_TITLES)
-        job_description = fake.paragraph(nb_sentences=6)
-        
-        # Override with Kaggle data if available
-        if i < len(kaggle_jobs):
-            row = kaggle_jobs[i]
-            job_title = row.get("title", row.get("job_title", job_title))
-            job_description = row.get("description", row.get("job_description", job_description))
-            loc = row.get("location", row.get("Location", ""))
-            if loc:
-                location = loc
 
         job = JobPosting(
             company_id=random.randint(1, 50),
             recruiter_id=random.randint(1, n_rec),
-            title=job_title,
-            description=job_description,
+            title=random.choice(JOB_TITLES),
+            description=fake.paragraph(nb_sentences=6),
             seniority_level=random.choice(SENIORITY),
             employment_type=random.choice(EMPLOYMENT_TYPES),
             location=location,
@@ -427,35 +375,24 @@ def seed_applications(db, profile: SeedProfile):
     so cached responses save many DB round-trips.
     """
     count = profile.applications
+    n_mem = max(1, profile.members)
+    n_job = max(1, profile.jobs)
     print(f"\n📋 Seeding {count} applications (Pareto distribution)...")
-    
-    mem_rows = db.execute(text("SELECT member_id FROM members")).fetchall()
-    valid_members = [row[0] for row in mem_rows]
-    if not valid_members:
-        print("   ⚠️ No members found, skipping applications.")
-        return
-        
-    job_rows = db.execute(text("SELECT job_id FROM job_postings")).fetchall()
-    valid_jobs = [row[0] for row in job_rows]
-    if not valid_jobs:
-        print("   ⚠️ No jobs found, skipping applications.")
-        return
-
     apps = []
     used_combos = set()
 
-    n_job = len(valid_jobs)
+    # Designate the first HOT_JOB_COUNT_FRACTION of jobs as "hot"
     hot_count = max(1, int(n_job * HOT_JOB_COUNT_FRACTION))
-    hot_jobs = valid_jobs[:hot_count]
+    hot_jobs = list(range(1, hot_count + 1))
 
     for i in tqdm(range(count)):
-        member_id = random.choice(valid_members)
+        member_id = random.randint(1, n_mem)
 
         # 40% of apps go to hot jobs, 60% distributed across all jobs
         if random.random() < HOT_JOB_APP_FRACTION:
             job_id = random.choice(hot_jobs)
         else:
-            job_id = random.choice(valid_jobs)
+            job_id = random.randint(1, n_job)
 
         combo = (member_id, job_id)
         if combo in used_combos:

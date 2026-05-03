@@ -105,3 +105,16 @@ export async function apiPostForm<T>(path: string, body: Record<string, string>)
   })
   return handleResponse<T>(res)
 }
+
+/** Multipart upload (e.g. resume). Do not set Content-Type — browser sets boundary. */
+export async function apiUploadFile<T>(path: string, file: File, fieldName = 'file'): Promise<T> {
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`
+  const fd = new FormData()
+  fd.append(fieldName, file)
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+  return handleResponse<T>(res)
+}

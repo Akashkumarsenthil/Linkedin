@@ -8,12 +8,12 @@ x-backend-common: &backend-common
   env_file: .env
   environment:
     # Remote AWS databases
-    MYSQL_HOST: 3.226.209.85
+    MYSQL_HOST: 3.80.47.57
     MYSQL_PORT: 3306
     MYSQL_USER: teamuser
     MYSQL_PASSWORD: ChangeThisMySQLPass123!
     MYSQL_DATABASE: team_mysql_db
-    MONGO_HOST: 3.226.209.85
+    MONGO_HOST: 3.80.47.57
     MONGO_PORT: 27017
     MONGO_USER: teammongo
     MONGO_PASSWORD: ChangeThisMongoUserPass123!
