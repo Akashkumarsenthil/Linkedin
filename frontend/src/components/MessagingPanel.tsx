@@ -351,11 +351,14 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
   // Not logged in
   if (!identity) {
     return (
-      <section className="panel">
-        <div className="panel-header">
-          <h2 className="panel-title">Messaging</h2>
-        </div>
-        <div className="auth-prompt-card">
+      <section className="messaging-page premium-panel">
+        <header className="premium-header">
+          <div>
+            <h2 className="premium-title">Messages</h2>
+            <p className="premium-subtitle">Manage your conversations and networking outreach.</p>
+          </div>
+        </header>
+        <div className="auth-prompt-card" style={{ margin: '2rem' }}>
           <p className="auth-prompt-title">Sign in to access your messages</p>
           <p className="auth-prompt-sub">
             Connect with recruiters and professionals via private threads.
@@ -366,15 +369,17 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
   }
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">Messaging</h2>
-        <p className="panel-subtitle">
-          Signed in as <strong>{identity.email}</strong> ({identity.user_type})
-        </p>
-      </div>
+    <section className="messaging-page premium-panel">
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">Messages</h2>
+          <p className="premium-subtitle">
+            Signed in as <strong>{identity.email}</strong> ({identity.user_type})
+          </p>
+        </div>
+      </header>
 
-      <div className="msg-layout" style={{ borderTop: '4px solid var(--ln-blue, #0a66c2)', height: '650px' }}>
+      <div className="msg-layout" style={{ height: '650px' }}>
         {/* ── Thread list ──────────────────────────────── */}
         <div className="msg-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div className="msg-sidebar-header">
