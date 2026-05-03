@@ -114,6 +114,7 @@ CREATE TABLE thread_participants (
     thread_id INT NOT NULL,
     user_id INT NOT NULL,
     user_type ENUM('member', 'recruiter') NOT NULL,
+    last_read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (thread_id) REFERENCES threads(thread_id) ON DELETE CASCADE,
     UNIQUE KEY unique_participant (thread_id, user_id, user_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
