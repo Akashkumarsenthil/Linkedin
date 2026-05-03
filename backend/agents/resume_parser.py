@@ -33,16 +33,19 @@ async def parse_resume_with_llm(resume_text: str) -> Dict[str, Any]:
 {{
     "name": "full name",
     "email": "email if found",
-    "phone": "phone if found",
-    "skills": ["list of technical skills"],
+    "phone": "phone number if found",
+    "location_city": "city if found",
+    "location_state": "full state name if found (e.g. California not CA)",
+    "location_country": "country if found (e.g. USA)",
+    "skills": ["list of technical and professional skills"],
     "years_of_experience": estimated total years as number,
-    "education": [{{"degree": "degree name", "school": "school name", "year": "graduation year"}}],
-    "experience": [{{"title": "job title", "company": "company name", "duration": "duration"}}],
+    "education": [{{"degree": "degree name", "field": "field of study", "school": "school name", "year": "graduation year"}}],
+    "experience": [{{"title": "job title", "company": "company name", "duration": "duration e.g. Jan 2025 - Jun 2025", "description": "2-3 sentence summary of key responsibilities and achievements"}}],
     "summary": "2-3 sentence professional summary"
 }}
 
 Resume text:
-{resume_text[:3000]}"""
+{resume_text[:8000]}"""
 
     try:
         client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)

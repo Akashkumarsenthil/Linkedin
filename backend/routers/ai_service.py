@@ -229,7 +229,7 @@ async def parse_resume_pdf(
         )
 
     result = await parse_resume_with_llm(resume_text)
-    result["extracted_text_preview"] = resume_text[:600]
+    result["extracted_text_preview"] = resume_text
     return AIResponse(
         success=result["success"],
         message=f"Resume parsed from PDF using {result['method']}",

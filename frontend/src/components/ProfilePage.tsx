@@ -1177,12 +1177,6 @@ function MemberProfileView({ state }: { state: MemberState }) {
         </section>
       )}
 
-      {state.resume_text && (
-        <section className="profile-section">
-          <h2 className="profile-section-title">Resume</h2>
-          <p className="pv-about">{state.resume_text}</p>
-        </section>
-      )}
     </div>
   )
 }
@@ -1210,6 +1204,111 @@ function MemberProfileForm({
   onResumeFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onDeleteResume: () => void
 }) {
+  const [parseLoading, setParseLoading] = useState(false)
+  const [parseMsg, setParseMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Parser returns { success, method, data: { actual fields } } — unwrap one level
+  const applyParsedData = (rawResult: any, current: MemberState, overwrite = false): MemberState => {
+    const d = rawResult?.data ?? rawResult
+    const updates: Partial<MemberState> = {}
+    // Name
+    if (d.name && typeof d.name === 'string') {
+      const parts = d.name.trim().split(/\s+/)
+      if (overwrite || !current.first_name.trim()) updates.first_name = parts[0] ?? ''
+      if (overwrite || !current.last_name.trim()) updates.last_name = parts.slice(1).join(' ') || ''
+    }
+    // Phone
+    if (d.phone && (overwrite || !current.phone.trim())) updates.phone = String(d.phone)
+    // Location
+    if (d.location_city && (overwrite || !current.location_city.trim())) updates.location_city = String(d.location_city)
+    if (d.location_state && (overwrite || !current.location_state.trim())) updates.location_state = String(d.location_state)
+    if (d.location_country && (overwrite || !current.location_country.trim())) updates.location_country = String(d.location_country)
+    // Skills — always overwrite
+    if (Array.isArray(d.skills) && d.skills.length > 0) updates.skills = d.skills.join(', ')
+    // About/summary
+    if (d.summary && (overwrite || !current.about.trim())) updates.about = d.summary
+    // Headline from most recent experience
+    if (Array.isArray(d.experience) && d.experience.length > 0 && (overwrite || !current.headline.trim())) {
+      const latest = d.experience[0]
+      if (latest.title && latest.company) updates.headline = `${latest.title} at ${latest.company}`
+      else if (latest.title) updates.headline = latest.title
+    }
+    // Experience — handle OpenAI returning 'duration' string instead of 'years' number
+    if (Array.isArray(d.experience) && d.experience.length > 0)
+      updates.experience = d.experience.map((e: any) => {
+        let years: number | string = ''
+        if (e.years != null) years = e.years
+        else if (e.duration) {
+          const m = String(e.duration).match(/(\d+)/)
+          years = m ? parseInt(m[1]) : e.duration
+        }
+        return {
+          title: String(e.title ?? ''),
+          company: String(e.company ?? ''),
+          years,
+          description: String(e.description ?? ''),
+        }
+      })
+    // Education — 'field' is optional, fall back to empty string
+    if (Array.isArray(d.education) && d.education.length > 0)
+      updates.education = d.education.map((e: any) => ({
+        degree: String(e.degree ?? ''),
+        field: String(e.field ?? ''),
+        school: String(e.school ?? e.institution ?? ''),
+        year: e.year != null ? e.year : '',
+        description: String(e.description ?? ''),
+      }))
+    return { ...current, ...updates }
+  }
+
+  const handleAutoFill = async () => {
+    if (!state.resume_text.trim()) return
+    setParseLoading(true)
+    setParseMsg(null)
+    try {
+      const r = await apiPost<{ success: boolean; message: string; data: any }>(
+        '/ai/parse-resume', { resume_text: state.resume_text },
+      )
+      if (!r.success) throw new Error(r.message)
+      onChange(applyParsedData(r.data, state))
+      setParseMsg({ ok: true, text: `Auto-filled using ${r.data.method ?? 'AI'} — review and save.` })
+
+    } catch (e) {
+      setParseMsg({ ok: false, text: e instanceof Error ? e.message : 'Parse failed' })
+    } finally {
+      setParseLoading(false)
+    }
+  }
+
+  const handleImportPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setParseLoading(true)
+    setParseMsg(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch('/api/ai/parse-resume-pdf', {
+        method: 'POST',
+        body: formData,
+      })
+      const r = await res.json()
+      if (!r.success) throw new Error(r.message)
+      const d = r.data
+      // Also store extracted text in resume_text field
+      const withText = d.extracted_text_preview
+        ? { ...state, resume_text: d.extracted_text_preview }
+        : state
+      // overwrite=true: import from PDF should replace all fields
+      onChange(applyParsedData(d, withText, true))
+      setParseMsg({ ok: true, text: `Imported and auto-filled using ${d.method ?? 'AI'} — review and save.` })
+    } catch (e) {
+      setParseMsg({ ok: false, text: e instanceof Error ? e.message : 'Import failed' })
+    } finally {
+      setParseLoading(false)
+    }
+  }
+
   const bind = <K extends keyof MemberState>(key: K) => ({
     value: state[key] ?? '',
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -1218,6 +1317,88 @@ function MemberProfileForm({
 
   return (
     <div className="profile-sections">
+      <section className="profile-section">
+        <h2 className="profile-section-title">Import from resume</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={{ cursor: parseLoading ? 'not-allowed' : 'pointer' }}>
+              <input
+                type="file"
+                accept=".pdf"
+                style={{ display: 'none' }}
+                onChange={handleImportPdf}
+                disabled={parseLoading || saving}
+              />
+              <span
+                className="ghost-btn"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, pointerEvents: parseLoading ? 'none' : 'auto', opacity: parseLoading ? 0.6 : 1 }}
+              >
+                📄 Import from PDF
+              </span>
+            </label>
+            {state.resume_text.trim() && (
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={handleAutoFill}
+                disabled={parseLoading || saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                {parseLoading ? 'Parsing…' : '✨ Auto-fill from resume text'}
+              </button>
+            )}
+          </div>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            Import from PDF fills your name, headline, location, skills, experience, and education in one click.
+          </p>
+          {parseLoading && <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Parsing resume…</p>}
+          {parseMsg && (
+            <p style={{ margin: 0, fontSize: '0.82rem', color: parseMsg.ok ? 'var(--success)' : 'var(--error)' }}>
+              {parseMsg.text}
+            </p>
+          )}
+
+          {/* Resume PDF upload */}
+          <div style={{ marginTop: 4 }}>
+            <div className="resume-upload-row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input
+                type="file"
+                ref={resumeFileInputRef}
+                style={{ display: 'none' }}
+                accept=".pdf"
+                onChange={onResumeFileChange}
+              />
+              {state.resume_pdf_url ? (
+                <>
+                  <div className="resume-status" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: '#f3f6f8', borderRadius: '4px', border: '1px solid var(--border-light)', flex: 1 }}>
+                    <Icon name="attachment" size={16} />
+                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {state.resume_filename || 'Resume uploaded'}
+                    </span>
+                  </div>
+                  <button type="button" className="card-action-btn-outline" onClick={onPickResume} disabled={uploading}>Replace</button>
+                  <button type="button" className="card-action-btn-outline" style={{ color: '#d32f2f' }} onClick={onDeleteResume} disabled={uploading}>Delete</button>
+                </>
+              ) : (
+                <button type="button" className="card-action-btn-outline" style={{ width: '100%', padding: '12px', borderStyle: 'dashed' }} onClick={onPickResume} disabled={uploading}>
+                  {uploading ? 'Processing...' : '+ Upload Resume PDF'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Resume text */}
+          <label className="form-label form-full" style={{ margin: 0 }}>
+            Resume text <span className="profile-label-hint">(or paste manually)</span>
+            <textarea
+              {...bind('resume_text')}
+              placeholder="Paste your resume text here, then click Auto-fill from resume text above..."
+              rows={8}
+            />
+          </label>
+        </div>
+      </section>
+
       <section className="profile-section">
         <h2 className="profile-section-title">Basic info</h2>
         <div className="form-grid">
@@ -1281,54 +1462,11 @@ function MemberProfileForm({
       </section>
 
       <section className="profile-section">
-        <h2 className="profile-section-title">Skills & resume</h2>
+        <h2 className="profile-section-title">Skills</h2>
         <div className="form-grid">
           <label className="form-label form-full">
             Skills <span className="profile-label-hint">(comma-separated)</span>
             <input {...bind('skills')} placeholder="Python, Kafka, React" />
-          </label>
-          
-          <div className="form-label form-full" style={{ marginBottom: '20px' }}>
-            Resume PDF
-            <div className="resume-upload-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-              <input 
-                type="file" 
-                ref={resumeFileInputRef} 
-                style={{ display: 'none' }} 
-                accept=".pdf" 
-                onChange={onResumeFileChange} 
-              />
-              
-              {state.resume_pdf_url ? (
-                <>
-                  <div className="resume-status" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: '#f3f6f8', borderRadius: '4px', border: '1px solid var(--border-light)', flex: 1 }}>
-                    <Icon name="attachment" size={16} />
-                    <span style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {state.resume_filename || 'Resume uploaded'}
-                    </span>
-                  </div>
-                  <button type="button" className="card-action-btn-outline" onClick={onPickResume} disabled={uploading}>
-                    Replace
-                  </button>
-                  <button type="button" className="card-action-btn-outline" style={{ color: '#d32f2f' }} onClick={onDeleteResume} disabled={uploading}>
-                    Delete
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="card-action-btn-outline" style={{ width: '100%', padding: '12px', borderStyle: 'dashed' }} onClick={onPickResume} disabled={uploading}>
-                  {uploading ? 'Processing...' : '+ Upload Resume PDF'}
-                </button>
-              )}
-            </div>
-          </div>
-
-          <label className="form-label form-full">
-            Resume text
-            <textarea
-              {...bind('resume_text')}
-              placeholder="Paste your resume or a professional summary..."
-              rows={6}
-            />
           </label>
         </div>
       </section>
