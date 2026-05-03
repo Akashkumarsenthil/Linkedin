@@ -60,7 +60,6 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
           job.skills_required.forEach((skill: string) => allSkills.add(`#${skill.replace(/\s+/g, '')}`))
         }
       })
-      // Add some defaults if empty
       if (allSkills.size === 0) {
         ['#SoftwareEngineering', '#React', '#MachineLearning', '#ProductManagement'].forEach(s => allSkills.add(s))
       }
@@ -83,25 +82,104 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
     setIsPrefModalOpen(true)
     fetchJobTags()
   }
+
   return (
-    <div className="news-page page-fade">
+    <div className="news-page page-fade premium-panel">
       <style>{`
         .daily-item {
           cursor: pointer;
           transition: background 0.2s;
+          display: flex;
+          align-items: center;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--li-border, #e0e0e0);
+        }
+        .daily-item:last-child {
+          border-bottom: none;
         }
         .daily-item:hover {
           background: rgba(0,0,0,0.04);
         }
+        .daily-dot {
+          width: 8px;
+          height: 8px;
+          background: #0a66c2;
+          border-radius: 50%;
+          margin-right: 12px;
+        }
+        .daily-content {
+          flex: 1;
+        }
+        .daily-title {
+          font-size: 14px;
+          font-weight: 600;
+          margin: 0 0 4px;
+          color: rgba(0,0,0,0.9);
+        }
+        .daily-meta {
+          font-size: 12px;
+          color: var(--text-muted, #666);
+          margin: 0;
+        }
+        .picks-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
         .picks-list li {
           cursor: pointer;
-          padding: 8px 12px;
-          border-radius: 4px;
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--li-border, #e0e0e0);
+          font-size: 14px;
+          color: #0a66c2;
+          font-weight: 500;
           transition: background 0.2s;
         }
+        .picks-list li:last-child {
+          border-bottom: none;
+        }
         .picks-list li:hover {
-          background: rgba(10, 102, 194, 0.1);
+          background: rgba(10, 102, 194, 0.05);
           text-decoration: underline;
+        }
+        .newsletter-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+          gap: 16px;
+          padding: 16px;
+        }
+        .newsletter-card {
+          border: 1px solid var(--li-border, #e0e0e0);
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .newsletter-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .nl-img {
+          width: 100%;
+          height: 120px;
+          object-fit: crop;
+        }
+        .nl-info {
+          padding: 12px;
+        }
+        .nl-info h4 {
+          margin: 0 0 4px;
+          font-size: 15px;
+        }
+        .nl-author {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin: 0 0 4px;
+        }
+        .nl-subs {
+          font-size: 12px;
+          color: var(--text-muted);
+          margin: 0 0 12px;
         }
         .modal-overlay {
           position: fixed;
@@ -121,6 +199,7 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
           border-radius: 12px;
           box-shadow: 0 12px 48px rgba(0,0,0,0.3);
           animation: modalSlideUp 0.3s ease-out;
+          width: 100%;
         }
         @keyframes modalSlideUp {
           from { transform: translateY(20px); opacity: 0; }
@@ -145,21 +224,18 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
         }
       `}</style>
 
-      <header className="page-header">
-        <div className="header-left">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h1>LinkedIn News</h1>
-            <span style={{ background: '#e7f3ff', color: '#0073b1', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>v2.0 Interactive</span>
-          </div>
-          <p>Stay updated with the latest professional trends and newsletters</p>
+      <header className="news-header premium-header">
+        <div>
+          <h2 className="premium-title">LinkedIn News</h2>
+          <p className="premium-subtitle">Stay updated with professional trends and newsletters</p>
         </div>
       </header>
 
-      <div className="news-layout">
+      <div className="news-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px', padding: '20px' }}>
         <div className="news-main">
-          <section className="news-section li-card">
-            <div className="section-hdr">
-              <h3>Top Newsletters</h3>
+          <section className="news-section premium-panel">
+            <div className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="premium-title" style={{ fontSize: 15 }}>Top Newsletters</span>
               <button className="stat-link" onClick={() => showNotify('Discovery feature coming soon!')}>Discover more</button>
             </div>
             <div className="newsletter-grid">
@@ -172,6 +248,7 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
                     <p className="nl-subs">{n.subscribers} subscribers</p>
                     <button 
                       className={subscribed.includes(n.id) ? "primary btn-sm" : "secondary-btn btn-sm"}
+                      style={{ width: '100%' }}
                       onClick={() => toggleSub(n.id)}
                     >
                       {subscribed.includes(n.id) ? '✓ Subscribed' : 'Subscribe'}
@@ -182,10 +259,10 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
             </div>
           </section>
 
-          <section className="news-section li-card" style={{ marginTop: '16px' }}>
-            <div className="section-hdr">
-              <h3>Professional Daily</h3>
-              <span style={{ fontSize: '12px', color: 'var(--li-text-sec)' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' })}</span>
+          <section className="news-section premium-panel" style={{ marginTop: '16px' }}>
+            <div className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="premium-title" style={{ fontSize: 15 }}>Professional Daily</span>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' })}</span>
             </div>
             <div className="daily-list">
               {trendingNews.map(news => (
@@ -195,7 +272,7 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
                     <h4 className="daily-title">{news.title}</h4>
                     <p className="daily-meta">{news.time} • {news.viewers} readers</p>
                   </div>
-                  <Icon name="arrow-right" size={16} />
+                  <Icon name="arrow-right" size={16} color="#666" />
                 </div>
               ))}
             </div>
@@ -203,19 +280,25 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
         </div>
 
         <aside className="news-sidebar">
-          <div className="sidebar-card li-card">
-            <h3>News Settings</h3>
-            <p>Customize your news feed and newsletter preferences.</p>
-            <div className="pref-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
-              {myPrefs.map(p => (
-                <span key={p} style={{ background: '#f3f6f8', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', color: '#0a66c2', fontWeight: 600 }}>{p}</span>
-              ))}
+          <div className="sidebar-card premium-panel">
+            <div className="premium-header">
+              <span className="premium-title" style={{ fontSize: 14 }}>News Settings</span>
             </div>
-            <button className="primary w-full" onClick={openPrefModal}>Edit Preferences</button>
+            <div style={{ padding: '16px' }}>
+              <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>Customize your feed and preferences.</p>
+              <div className="pref-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+                {myPrefs.map(p => (
+                  <span key={p} style={{ background: '#f3f6f8', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', color: '#0a66c2', fontWeight: 600 }}>{p}</span>
+                ))}
+              </div>
+              <button className="primary w-full" onClick={openPrefModal}>Edit Preferences</button>
+            </div>
           </div>
           
-          <div className="sidebar-card li-card" style={{ marginTop: '16px' }}>
-            <h3>Editors' Picks</h3>
+          <div className="sidebar-card premium-panel" style={{ marginTop: '16px' }}>
+            <div className="premium-header">
+              <span className="premium-title" style={{ fontSize: 14 }}>Editors' Picks</span>
+            </div>
             <ul className="picks-list">
               <li onClick={() => showNotify('Opening Editor Pick...')}>How to negotiate your salary in 2026</li>
               <li onClick={() => showNotify('Opening Editor Pick...')}>The rise of agentic AI in the workplace</li>
@@ -230,20 +313,12 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
         <div className="modal-overlay" onClick={() => setSelectedArticle(null)}>
           <div className="modal-content" style={{ maxWidth: '600px', padding: '24px', position: 'relative' }} onClick={e => e.stopPropagation()}>
             <header className="modal-header" style={{ border: 'none', padding: '0 0 16px', display: 'flex', justifyContent: 'space-between' }}>
-              <h2 style={{ fontSize: '20px', margin: 0, paddingRight: '24px' }}>{selectedArticle.title}</h2>
-              <button 
-                className="modal-close" 
-                onClick={() => setSelectedArticle(null)}
-                style={{ background: 'none', border: 'none', fontSize: '28px', cursor: 'pointer', color: '#666' }}
-              >×</button>
+              <h2 style={{ fontSize: '20px', margin: 0 }}>{selectedArticle.title}</h2>
+              <button className="modal-close" onClick={() => setSelectedArticle(null)} style={{ background: 'none', border: 'none', fontSize: '28px', cursor: 'pointer', color: '#666' }}>×</button>
             </header>
             <div className="modal-body" style={{ padding: 0 }}>
-              <p style={{ color: 'var(--li-text-sec)', fontSize: '14px', marginBottom: '16px' }}>
-                {selectedArticle.time} • {selectedArticle.viewers} readers
-              </p>
-              <div style={{ lineHeight: 1.8, fontSize: '16px', color: 'rgba(0,0,0,0.8)' }}>
-                {selectedArticle.content}
-              </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginBottom: '16px' }}>{selectedArticle.time} • {selectedArticle.viewers} readers</p>
+              <div style={{ lineHeight: 1.8, fontSize: '16px', color: 'rgba(0,0,0,0.8)' }}>{selectedArticle.content}</div>
             </div>
             <footer className="modal-footer" style={{ border: 'none', padding: '24px 0 0', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="primary" onClick={() => setSelectedArticle(null)}>Done Reading</button>
@@ -262,7 +337,6 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
             </header>
             <div className="modal-body">
               <p style={{ fontSize: '14px', color: '#666', marginBottom: '16px' }}>Select hashtags from our job database to personalize your professional feed.</p>
-              
               {loadingTags ? (
                 <div style={{ textAlign: 'center', padding: '20px' }}>Loading job tags...</div>
               ) : (
@@ -296,7 +370,6 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
         </div>
       )}
 
-      {/* Toast Notification */}
       {notification && <div className="toast-notify">{notification}</div>}
     </div>
   )
