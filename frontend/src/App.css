@@ -5567,15 +5567,117 @@ button { cursor: pointer; outline-offset: 2px; }
 }
 
 .li-rec-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--r-pill);
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
 }
+.li-rec-badge--clickable:hover { filter: brightness(.9); }
+.li-rec-chevron { font-size: 9px; opacity: .7; }
 .li-rec-strong { background: rgba(5,118,66,.1); color: var(--success); }
 .li-rec-good   { background: var(--accent-light); color: var(--accent); }
 .li-rec-weak   { background: rgba(0,0,0,.05); color: var(--text-sec); }
+
+/* ── AI reasoning panel ─────────────────────────── */
+.li-reasoning-panel {
+  margin: 6px 0 4px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,.03);
+  border-left: 3px solid var(--li-blue-primary);
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  animation: li-fade-in .15s ease;
+}
+@keyframes li-fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.li-reasoning-source {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--li-blue-primary);
+  letter-spacing: .3px;
+  text-transform: uppercase;
+}
+.li-reasoning-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.li-reasoning-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-sec);
+  width: 62px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+.li-reasoning-text {
+  font-size: 12px;
+  color: var(--text-main);
+  line-height: 1.45;
+}
+.li-reasoning-missing .li-reasoning-label { color: var(--error); }
+.li-reasoning-missing .li-reasoning-text  { color: var(--error); }
+.li-reasoning-matched { color: var(--success); }
+
+/* score mini-bars inside the panel */
+.li-reasoning-score-row { align-items: center; }
+.li-reasoning-score-bar-wrap { display: flex; align-items: center; gap: 6px; flex: 1; }
+.li-reasoning-score-bar-track { flex: 1; height: 5px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.li-reasoning-score-bar-fill  { height: 100%; border-radius: 99px; transition: width .3s; }
+.li-reasoning-score-pct { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; color: var(--text-sec); }
+.li-reasoning-text-row { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--border); }
+.li-reasoning-summary {
+  font-size: 12px;
+  color: var(--text-main);
+  font-style: italic;
+  line-height: 1.45;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+
+/* ── Pipeline action buttons ────────────────────────────────── */
+.li-pipeline-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.li-pipeline-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-sec);
+  cursor: pointer;
+  transition: all .15s;
+}
+.li-pipeline-btn:hover:not(:disabled) { filter: brightness(.95); }
+.li-pipeline-btn:disabled { opacity: .5; cursor: default; }
+
+.li-pipeline-btn.interview.active { background: #e0f0ff; border-color: var(--li-blue-primary); color: var(--li-blue-primary); }
+.li-pipeline-btn.interview:hover:not(:disabled):not(.active) { background: #f0f7ff; border-color: var(--li-blue-primary); color: var(--li-blue-primary); }
+
+.li-pipeline-btn.selected.active  { background: #dcfce7; border-color: var(--success); color: var(--success); }
+.li-pipeline-btn.selected:hover:not(:disabled):not(.active)  { background: #f0fdf4; border-color: var(--success); color: var(--success); }
+
+.li-pipeline-btn.rejected.active  { background: #fee2e2; border-color: var(--error); color: var(--error); }
+.li-pipeline-btn.rejected:hover:not(:disabled):not(.active)  { background: #fff5f5; border-color: var(--error); color: var(--error); }
 
 .li-score-circle {
   flex-shrink: 0;
