@@ -627,6 +627,7 @@ export function HomeFeed({
                 ))}
               </ul>
             )}
+            </div>
           </div>
         )}
         
@@ -650,6 +651,7 @@ export function HomeFeed({
               </li>
             ))}
           </ul>
+          </div>
           
           <div className="feed-puzzles-section" style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
             <p className="feed-news-sub" style={{ marginBottom: 12 }}>Today's puzzles</p>
@@ -670,26 +672,50 @@ export function HomeFeed({
           </div>
         </div>
 
-        <div className="feed-jobs-card li-card">
-          <div className="section-heading" style={{ padding: '12px 16px' }}>Jobs that match</div>
-          <ul className="feed-news-list" style={{ padding: '0 16px 16px' }}>
-            {JOBS_MATCH.map((job, i) => (
-              <li key={i} className="feed-news-item" style={{ marginBottom: 12 }}>
-                <div>
-                   <p className="feed-news-headline" style={{ color: 'var(--ln-blue, #0a66c2)', cursor: 'pointer' }}>{job.title}</p>
-                   <p className="feed-news-meta">{job.company} · {job.location}</p>
+        {me.user_type === 'recruiter' ? (
+          <div className="feed-jobs-match-card premium-panel" style={{ marginTop: 12, borderTop: '4px solid #0a66c2' }}>
+            <div className="premium-header" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="premium-title" style={{ fontSize: 13 }}>Your job postings</span>
+              <button className="stat-link" style={{ fontWeight: 600, color: 'var(--li-link)' }} onClick={() => onNavigateTab?.('jobs')}>Manage</button>
+            </div>
+            <div style={{ padding: '8px 0' }}>
+              {recruiterJobsLoading ? (
+                <p style={{ padding: '16px', fontSize: 12, color: '#666' }}>Loading your postings...</p>
+              ) : recruiterJobs.length === 0 ? (
+                <div style={{ padding: '16px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>No active postings found.</p>
+                  <button className="secondary-btn btn-sm" onClick={() => onNavigateTab?.('jobs')}>Post a job</button>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="feed-promo-card li-card">
-          <span className="feed-promo-tag">Promoted</span>
-          <p className="feed-promo-headline">{name.split(' ')[0]}, explore relevant opportunities</p>
-          <p className="feed-promo-sub">Get the latest jobs and industry news tailored for you.</p>
-          <button type="button" className="secondary-btn feed-promo-btn">Follow</button>
-        </div>
+              ) : (
+                <ul className="feed-news-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {recruiterJobs.map((job) => (
+                    <li key={job.job_id} className="feed-news-item" onClick={() => onNavigateTab?.('jobs')} style={{ cursor: 'pointer', padding: '10px 16px' }}>
+                      <span className="feed-news-bullet" />
+                      <div>
+                        <p className="feed-news-headline" style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-main)' }}>{job.title}</p>
+                        <p className="feed-news-meta" style={{ fontSize: 11 }}>{job.location} · {job.applicants_count || 0} applicants</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="feed-jobs-match-card premium-panel" style={{ marginTop: 12, borderTop: '4px solid #0a66c2' }}>
+            <div className="premium-header" style={{ padding: '12px 16px' }}>
+              <span className="premium-title" style={{ fontSize: 13 }}>Jobs that match</span>
+            </div>
+            <div style={{ padding: '0 16px 12px' }}>
+              {JOBS_MATCH.map((job, idx) => (
+                <div key={idx} className="job-match-item" style={{ marginBottom: 12, cursor: 'pointer' }} onClick={() => onNavigateTab?.('jobs')}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0a66c2' }}>{job.title}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>{job.company} · {job.location}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </aside>
 
       {showGame && (
