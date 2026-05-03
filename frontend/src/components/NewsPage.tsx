@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Icon } from './Icon'
+import { apiPost } from '../api'
 
 interface Article {
   id: number;
@@ -7,18 +8,23 @@ interface Article {
   viewers: string;
   time: string;
   content: string;
+  url: string;
 }
 
-export function NewsPage() {
+export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
   const [subscribed, setSubscribed] = useState<number[]>([])
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null)
   const [notification, setNotification] = useState<string | null>(null)
-
+  const [isPrefModalOpen, setIsPrefModalOpen] = useState(false)
+  const [availableTags, setAvailableTags] = useState<string[]>([])
+  const [myPrefs, setMyPrefs] = useState<string[]>(JSON.parse(localStorage.getItem('ln-news-prefs') || '["#AI", "#FutureOfWork"]'))
+  const [loadingTags, setLoadingTags] = useState(false)
+  
   const trendingNews: Article[] = [
-    { id: 1, title: 'The future of Generative AI in software engineering', viewers: '45,201', time: '4h ago', content: 'As we look toward 2026, the landscape of software engineering is being fundamentally reshaped by Agentic AI. Developers are moving from writing code to orchestrating complex AI agents that handle entire modules of functionality...' },
-    { id: 2, title: 'Remote work trends: Why hybrid is winning', viewers: '32,110', time: '6h ago', content: 'The debate between full remote and return-to-office has reached a consensus: Hybrid models provide the flexibility employees crave with the face-to-face collaboration that drives innovation.' },
-    { id: 3, title: 'Top 10 skills for Data Scientists in 2026', viewers: '28,500', time: '1d ago', content: 'Data science is no longer just about cleaning data. The new top skills include LLM orchestration, vector database management, and prompt engineering for enterprise-scale AI systems.' },
-    { id: 4, title: 'Silicon Valley outlook: New venture capital surges', viewers: '15,400', time: '2h ago', content: 'A massive wave of new VC funding is hitting the valley, specifically targeting agentic infrastructure startups. Investors are looking for the next layer of the AI stack.' },
+    { id: 1, title: 'The future of Generative AI in software engineering', viewers: '45,201', time: '4h ago', content: 'As we look toward 2026, the landscape of software engineering is being fundamentally reshaped by Agentic AI. Developers are moving from writing code to orchestrating complex AI agents that handle entire modules of functionality...', url: 'https://www.technologyreview.com/2024/01/04/1086037/generative-ai-software-engineering/' },
+    { id: 2, title: 'Remote work trends: Why hybrid is winning', viewers: '32,110', time: '6h ago', content: 'The debate between full remote and return-to-office has reached a consensus: Hybrid models provide the flexibility employees crave with the face-to-face collaboration that drives innovation.', url: 'https://www.forbes.com/sites/bryanrobinson/2024/02/05/hybrid-work-is-here-to-stay-and-winning-over-remote-and-office-work/' },
+    { id: 3, title: 'Top 10 skills for Data Scientists in 2026', viewers: '28,500', time: '1d ago', content: 'Data science is no longer just about cleaning data. The new top skills include LLM orchestration, vector database management, and prompt engineering for enterprise-scale AI systems.', url: 'https://www.datasciencecentral.com/top-10-skills-for-data-scientists-in-2024/' },
+    { id: 4, title: 'Silicon Valley outlook: New venture capital surges', viewers: '15,400', time: '2h ago', content: 'A massive wave of new VC funding is hitting the valley, specifically targeting agentic infrastructure startups. Investors are looking for the next layer of the AI stack.', url: 'https://news.crunchbase.com/venture/silicon-valley-funding-trends-2024/' },
   ]
 
   const newsletters = [
@@ -37,7 +43,46 @@ export function NewsPage() {
     setSubscribed((prev: number[]) => isSub ? prev.filter((x: number) => x !== id) : [...prev, id])
     showNotify(isSub ? 'Unsubscribed successfully' : 'Subscribed successfully!')
   }
+  useEffect(() => {
+    if (initialNewsId) {
+      const found = trendingNews.find(a => a.id === initialNewsId)
+      if (found) setSelectedArticle(found)
+    }
+  }, [initialNewsId])
 
+  const fetchJobTags = async () => {
+    setLoadingTags(true)
+    try {
+      const res = await apiPost<{ data: any[] }>('/jobs/search', { keyword: '', page_size: 50 })
+      const allSkills = new Set<string>()
+      res.data?.forEach(job => {
+        if (Array.isArray(job.skills_required)) {
+          job.skills_required.forEach((skill: string) => allSkills.add(`#${skill.replace(/\s+/g, '')}`))
+        }
+      })
+      // Add some defaults if empty
+      if (allSkills.size === 0) {
+        ['#SoftwareEngineering', '#React', '#MachineLearning', '#ProductManagement'].forEach(s => allSkills.add(s))
+      }
+      setAvailableTags(Array.from(allSkills).slice(0, 20))
+    } catch (e) {
+      console.error('Failed to fetch job tags', e)
+      setAvailableTags(['#AI', '#Cloud', '#Career', '#Innovation'])
+    } finally {
+      setLoadingTags(false)
+    }
+  }
+
+  const togglePref = (tag: string) => {
+    const next = myPrefs.includes(tag) ? myPrefs.filter(p => p !== tag) : [...myPrefs, tag]
+    setMyPrefs(next)
+    localStorage.setItem('ln-news-prefs', JSON.stringify(next))
+  }
+
+  const openPrefModal = () => {
+    setIsPrefModalOpen(true)
+    fetchJobTags()
+  }
   return (
     <div className="news-page page-fade">
       <style>{`
@@ -140,11 +185,11 @@ export function NewsPage() {
           <section className="news-section li-card" style={{ marginTop: '16px' }}>
             <div className="section-hdr">
               <h3>Professional Daily</h3>
-              <span style={{ fontSize: '12px', color: 'var(--li-text-sec)' }}>Tuesday, April 28</span>
+              <span style={{ fontSize: '12px', color: 'var(--li-text-sec)' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/Los_Angeles' })}</span>
             </div>
             <div className="daily-list">
               {trendingNews.map(news => (
-                <div key={news.id} className="daily-item" onClick={() => setSelectedArticle(news)}>
+                <div key={news.id} className="daily-item" onClick={() => { setSelectedArticle(news); if (news.url) window.open(news.url, '_blank'); }}>
                   <div className="daily-dot" />
                   <div className="daily-content">
                     <h4 className="daily-title">{news.title}</h4>
@@ -161,7 +206,12 @@ export function NewsPage() {
           <div className="sidebar-card li-card">
             <h3>News Settings</h3>
             <p>Customize your news feed and newsletter preferences.</p>
-            <button className="primary w-full" onClick={() => showNotify('Preferences updated!')}>Edit Preferences</button>
+            <div className="pref-chips" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
+              {myPrefs.map(p => (
+                <span key={p} style={{ background: '#f3f6f8', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', color: '#0a66c2', fontWeight: 600 }}>{p}</span>
+              ))}
+            </div>
+            <button className="primary w-full" onClick={openPrefModal}>Edit Preferences</button>
           </div>
           
           <div className="sidebar-card li-card" style={{ marginTop: '16px' }}>
@@ -197,6 +247,50 @@ export function NewsPage() {
             </div>
             <footer className="modal-footer" style={{ border: 'none', padding: '24px 0 0', display: 'flex', justifyContent: 'flex-end' }}>
               <button className="primary" onClick={() => setSelectedArticle(null)}>Done Reading</button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {/* Preferences Modal */}
+      {isPrefModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsPrefModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '500px', padding: '24px', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <header className="modal-header" style={{ border: 'none', padding: '0 0 16px', display: 'flex', justifyContent: 'space-between' }}>
+              <h2 style={{ fontSize: '18px', margin: 0 }}>News Feed Preferences</h2>
+              <button className="modal-close" onClick={() => setIsPrefModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}>×</button>
+            </header>
+            <div className="modal-body">
+              <p style={{ fontSize: '14px', color: '#666', marginBottom: '16px' }}>Select hashtags from our job database to personalize your professional feed.</p>
+              
+              {loadingTags ? (
+                <div style={{ textAlign: 'center', padding: '20px' }}>Loading job tags...</div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', maxHeight: '300px', overflowY: 'auto', padding: '4px' }}>
+                  {availableTags.map(tag => (
+                    <button
+                      key={tag}
+                      onClick={() => togglePref(tag)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '20px',
+                        border: '1px solid #0a66c2',
+                        background: myPrefs.includes(tag) ? '#0a66c2' : 'white',
+                        color: myPrefs.includes(tag) ? 'white' : '#0a66c2',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <footer style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="primary" onClick={() => setIsPrefModalOpen(false)}>Save & Close</button>
             </footer>
           </div>
         </div>
