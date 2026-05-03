@@ -70,8 +70,15 @@ export function CareerCoach() {
   const pct = coachResult ? Math.round(coachResult.overall_score * 100) : 0
 
   return (
-    <section className="panel">
-      <h2 className="panel-heading">Career Coach</h2>
+    <section className="career-coach page-fade premium-panel">
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">Career Coach</h2>
+          <p className="premium-subtitle">Optimize your professional profile with AI-powered resume analysis</p>
+        </div>
+      </header>
+
+      <div style={{ padding: '24px' }}>
 
       <div className="cc-form-card">
         <p className="cc-form-desc">
@@ -225,6 +232,7 @@ export function CareerCoach() {
           )}
         </div>
       )}
+      </div>
     </section>
   )
 }
