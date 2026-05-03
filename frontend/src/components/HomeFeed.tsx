@@ -630,11 +630,12 @@ export function HomeFeed({
           </div>
         )}
         
-        <div className="feed-news-card li-card">
-          <div className="feed-news-header">
-            <h3 className="feed-news-title">LinkedIn News</h3>
-          </div>
-          <p className="feed-news-sub">Top stories</p>
+        <div className="feed-news-card premium-panel" style={{ borderTop: '4px solid #0a66c2' }}>
+          <header className="premium-header" style={{ padding: '12px 16px' }}>
+            <span className="premium-title" style={{ fontSize: 13 }}>LinkedIn News</span>
+          </header>
+          <div style={{ padding: '0 16px 12px' }}>
+            <p className="feed-news-sub" style={{ fontSize: 11, color: 'var(--text-sec)', margin: '8px 0' }}>Top stories</p>
           <ul className="feed-news-list">
             {NEWS_ITEMS.slice(0, 5).map((item, idx) => (
               <li key={idx} className="feed-news-item" onClick={() => {
