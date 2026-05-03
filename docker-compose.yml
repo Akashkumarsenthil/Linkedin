@@ -21,6 +21,7 @@ x-backend-common: &backend-common
     MONGO_AUTH_SOURCE: team_mongo_db
     REDIS_HOST: redis
     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    TZ: America/Los_Angeles
   depends_on:
     mysql:
       condition: service_healthy
@@ -202,6 +203,8 @@ services:
     restart: unless-stopped
     ports:
       - "5173:5173"
+    environment:
+      - TZ=America/Los_Angeles
     depends_on:
       - gateway
 
