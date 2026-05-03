@@ -100,17 +100,21 @@ export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
   }
 
   return (
-    <div className="jobs-page">
-      <div className="jobs-page__search-bar" style={{ padding: '16px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-light)', display: 'flex', gap: '8px' }}>
+    <div className="jobs-page premium-panel">
+      <div className="jobs-page__search-bar premium-header" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ flex: 1 }}>
+          <h2 className="premium-title">Job Search</h2>
+          <p className="premium-subtitle">Find your next opportunity</p>
+        </div>
         <form onSubmit={handleSearch} style={{ display: 'flex', flex: 1, gap: '8px' }}>
           <input 
             type="text" 
             placeholder="Search jobs by title or keyword..." 
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--border-light)' }}
+            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--li-border)', background: '#f9fafb' }}
           />
-          <button type="submit" style={{ padding: '8px 16px', background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}>
+          <button type="submit" style={{ padding: '8px 20px', background: 'var(--li-link)', color: 'white', border: 'none', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
             Search
           </button>
         </form>
