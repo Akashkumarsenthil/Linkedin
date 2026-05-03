@@ -9,9 +9,10 @@ interface Event {
   description?: string
 }
 
-export function EventsPage() {
+export function EventsPage({ userId }: { userId?: number }) {
   const [events, setEvents] = useState<Event[]>(() => {
-    const saved = localStorage.getItem('ln-events-data')
+    const key = userId ? `ln-events-data-${userId}` : 'ln-events-data'
+    const saved = localStorage.getItem(key)
     return saved ? JSON.parse(saved) : []
   })
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -19,11 +20,14 @@ export function EventsPage() {
   const [newEvent, setNewEvent] = useState<Partial<Event>>({ title: '', date: '', time: '', description: '' })
 
   useEffect(() => {
-    localStorage.setItem('ln-events-data', JSON.stringify(events))
+    const dataKey = userId ? `ln-events-data-${userId}` : 'ln-events-data'
+    const simsonKey = userId ? `ln-events-${userId}` : 'ln-events'
+    
+    localStorage.setItem(dataKey, JSON.stringify(events))
     // Also sync with ln-events for SIMSON
     const simsonEvents = events.map(e => `${e.date} ${e.time}: ${e.title}`).join('. ')
-    localStorage.setItem('ln-events', simsonEvents)
-  }, [events])
+    localStorage.setItem(simsonKey, simsonEvents)
+  }, [events, userId])
 
   const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate()
   const firstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay()
@@ -81,21 +85,15 @@ export function EventsPage() {
   }
 
   return (
-    <div className="events-page page-fade">
-      <header className="page-header">
-        <div className="header-left">
-          <h1>Events Calendar</h1>
-          <p>Schedule and manage your professional activities</p>
+    <div className="events-page premium-panel">
+      <header className="events-header premium-header">
+        <div>
+          <h2 className="premium-title">Events</h2>
+          <p className="premium-subtitle">Plan and schedule your professional gatherings</p>
         </div>
-        <div className="header-actions">
-          <button className="primary" onClick={() => setShowAddModal(true)}>
-            <Icon name="add" size={18} />
-            Create Event
-          </button>
-        </div>
+        <button className="primary" onClick={() => setShowAddModal(true)}>+ Create Event</button>
       </header>
 
-      <div className="calendar-container li-card">
         <div className="calendar-nav">
           <div className="nav-info">
             <h2>{monthName} {year}</h2>
@@ -113,7 +111,6 @@ export function EventsPage() {
         <div className="calendar-grid">
           {renderCalendar()}
         </div>
-      </div>
 
       {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
