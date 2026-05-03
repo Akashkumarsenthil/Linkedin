@@ -2128,6 +2128,35 @@ button { cursor: pointer; outline-offset: 2px; }
 
 /* ── 20. AI Dashboard ────────────────────────────────────────────── */
 
+.ai-metrics-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+}
+.ai-metric-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  min-width: 110px;
+  flex: 1;
+}
+.ai-metric-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ai-metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .ai-toolbar {
   display: flex;
   align-items: center;

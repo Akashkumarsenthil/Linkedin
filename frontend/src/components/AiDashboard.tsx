@@ -472,6 +472,20 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
 
   const [activeTool, setActiveTool] = useState<'dashboard' | 'resume'>('dashboard')
 
+  // ── AI metrics ───────────────────────────────────────────────────
+  const [metrics, setMetrics] = useState<{
+    total_tasks: number
+    human_in_the_loop: { total_reviewed: number; approval_rate: number | null; approval_rate_pct: string }
+    match_quality: { candidates_scored: number; avg_match_score: number | null; avg_match_score_pct: string }
+    status_breakdown: Record<string, number>
+  } | null>(null)
+
+  useEffect(() => {
+    apiGet<{ success: boolean; data: unknown }>('/ai/metrics')
+      .then((r) => { if (r.success && r.data) setMetrics(r.data as typeof metrics) })
+      .catch(() => {})
+  }, [])
+
   // ── load task list ───────────────────────────────────────────────
   const loadTasks = useCallback(async () => {
     setTasksLoading(true)
@@ -628,6 +642,35 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
           </button>
           {resumeErr && <p className="error mt-sm">{resumeErr}</p>}
           {resumeResult && <ResumeView data={resumeResult} />}
+        </div>
+      )}
+
+      {activeTool === 'dashboard' && metrics && (
+        <div className="ai-metrics-bar">
+          <div className="ai-metric-chip">
+            <span className="ai-metric-label">Total workflows</span>
+            <span className="ai-metric-value">{metrics.total_tasks}</span>
+          </div>
+          <div className="ai-metric-chip">
+            <span className="ai-metric-label">Reviewed</span>
+            <span className="ai-metric-value">{metrics.human_in_the_loop.total_reviewed}</span>
+          </div>
+          <div className="ai-metric-chip">
+            <span className="ai-metric-label">Approval rate</span>
+            <span className="ai-metric-value" style={{ color: 'var(--success)' }}>
+              {metrics.human_in_the_loop.approval_rate_pct}
+            </span>
+          </div>
+          <div className="ai-metric-chip">
+            <span className="ai-metric-label">Candidates scored</span>
+            <span className="ai-metric-value">{metrics.match_quality.candidates_scored}</span>
+          </div>
+          <div className="ai-metric-chip">
+            <span className="ai-metric-label">Avg match score</span>
+            <span className="ai-metric-value" style={{ color: 'var(--li-blue-primary)' }}>
+              {metrics.match_quality.avg_match_score_pct}
+            </span>
+          </div>
         </div>
       )}
 
