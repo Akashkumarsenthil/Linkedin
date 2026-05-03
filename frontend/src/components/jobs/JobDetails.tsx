@@ -1,57 +1,29 @@
 import { useState } from 'react'
 import type { JobPosting } from './JobsPage'
 import { apiPost, parseStoredUser } from '../../api'
-import { EasyApplyModal } from './EasyApplyModal'
-
-export type JobDetailsApplicationSummary = {
-  statusLabel: string
-  appliedAtLabel: string
-  variant: 'good' | 'bad' | 'neutral'
-}
 
 interface JobDetailsProps {
   job: JobPosting | null
   isApplied: boolean
-  onApplySuccess: (payload?: { applicationId?: number }) => void
+  onApplySuccess: () => void
   readOnly?: boolean
   onNavigateAi?: (jobId: number) => void
-  applicationId?: number | null
-  isSaved?: boolean
-  applicationSummary?: JobDetailsApplicationSummary
-  onWithdrawSuccess?: () => void
-  onSaveChange?: (jobId: number, shouldSave: boolean) => void
 }
 
-export function JobDetails({
-  job,
-  isApplied,
-  onApplySuccess,
-  readOnly = false,
-  onNavigateAi,
-  applicationId = null,
-  isSaved: isSavedProp,
-  applicationSummary,
-  onWithdrawSuccess,
-  onSaveChange,
-}: JobDetailsProps) {
+export function JobDetails({ job, isApplied, onApplySuccess, readOnly = false, onNavigateAi }: JobDetailsProps) {
   const user = parseStoredUser()
   const isRecruiter = user?.user_type === 'recruiter'
-  const [easyApplyOpen, setEasyApplyOpen] = useState(false)
-  const [withdrawing, setWithdrawing] = useState(false)
-  const [savedLocal, setSavedLocal] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [saved, setSaved] = useState(false)
   const [showToast, setShowToast] = useState(false)
   const [showSignInModal, setShowSignInModal] = useState(false)
 
-  const controlledSave = isSavedProp !== undefined
-  const savedDisplay = controlledSave ? Boolean(isSavedProp) : savedLocal
-
+  // Reset state when job changes
   const [prevJobId, setPrevJobId] = useState<number | null>(null)
   if (job && job.job_id !== prevJobId) {
     setPrevJobId(job.job_id)
-    if (!controlledSave) setSavedLocal(false)
+    setSaved(false)
     setShowToast(false)
-    setWithdrawing(false)
-    setEasyApplyOpen(false)
   }
 
   if (!job) {
@@ -71,92 +43,69 @@ export function JobDetails({
     )
   }
 
-  const openEasyApply = () => {
-    const currentUser = parseStoredUser()
-    if (!currentUser) {
+  const handleApply = async () => {
+    const user = parseStoredUser()
+    if (!user) {
       setShowSignInModal(true)
       return
     }
-    setEasyApplyOpen(true)
-  }
-
-  const finishApplySuccess = (payload?: { applicationId?: number }) => {
-    setEasyApplyOpen(false)
-    setShowToast(true)
-    onApplySuccess(payload)
-    setTimeout(() => setShowToast(false), 3000)
-  }
-
-  const handleWithdraw = async () => {
-    if (applicationId == null || applicationId <= 0) return
-    if (!window.confirm('Withdraw this application? You can apply again later.')) return
-    setWithdrawing(true)
+    
+    setApplying(true)
     try {
-      const r = await apiPost<{ success?: boolean; message?: string }>('/applications/withdraw', {
-        application_id: applicationId,
+      await apiPost('/applications/submit', {
+        job_id: job.job_id,
+        member_id: user.user_id,
+        resume_url: 'https://example.com/resume.pdf',
+        resume_text: 'My frontend engineer resume',
+        answers: {}
       })
-      if (r.success === false) {
-        throw new Error(r.message || 'Could not withdraw application')
-      }
-      onWithdrawSuccess?.()
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Withdraw failed')
+      setShowToast(true)
+      onApplySuccess()
+      setTimeout(() => setShowToast(false), 3000)
+    } catch (e: any) {
+      alert(`Failed to apply: ${e.message}`)
     } finally {
-      setWithdrawing(false)
+      setApplying(false)
     }
   }
 
   const handleSave = async () => {
-    const currentUser = parseStoredUser()
-    if (!currentUser) return alert('Please log in to save jobs.')
-    if (savedDisplay) {
-      try {
-        await apiPost('/jobs/unsave', {
-          job_id: job.job_id,
-          member_id: currentUser.user_id,
-        })
-        onSaveChange?.(job.job_id, false)
-        if (!controlledSave) setSavedLocal(false)
-      } catch (e: unknown) {
-        alert(`Failed to remove save: ${e instanceof Error ? e.message : 'Unknown error'}`)
-      }
-      return
+    if (saved) {
+       setSaved(false)
+       return
     }
+    const user = parseStoredUser()
+    if (!user) return alert('Please log in to save jobs.')
     try {
       await apiPost('/jobs/save', {
         job_id: job.job_id,
-        member_id: currentUser.user_id,
+        member_id: user.user_id
       })
-      onSaveChange?.(job.job_id, true)
-      if (!controlledSave) setSavedLocal(true)
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : ''
-      if (msg.includes('already saved')) {
-        if (!controlledSave) setSavedLocal(true)
-        onSaveChange?.(job.job_id, true)
-      } else alert(`Failed to save: ${msg}`)
+      setSaved(true)
+    } catch (e: any) {
+      if (e.message.includes('already saved')) setSaved(true)
+      else alert(`Failed to save: ${e.message}`)
     }
   }
 
   const companyName = job.company_name || `Company #${job.company_id || 'Unknown'}`
   const companyLogo = companyName.charAt(0)
   const dateStr = new Date(job.posted_datetime).toLocaleDateString()
-
+  
   let skillsList: string[] = []
   if (Array.isArray(job.skills_required)) {
     skillsList = job.skills_required
   } else if (typeof job.skills_required === 'string') {
     try {
       skillsList = JSON.parse(job.skills_required)
-    } catch {
-      skillsList = [job.skills_required as unknown as string]
+    } catch (e) {
+      skillsList = [(job as any).skills_required]
     }
   }
 
-  const canWithdraw = !isRecruiter && applicationId != null && applicationId > 0
-
   return (
     <div className="jobs-detail-panel">
+      {/* Toast notification */}
       {showToast && (
         <div className="jobs-detail-toast">
           <span className="jobs-detail-toast__icon">✓</span>
@@ -172,6 +121,7 @@ export function JobDetails({
         </div>
       )}
 
+      {/* Sticky header */}
       <div className="jobs-detail__header">
         <div className="jobs-detail__company-row">
           <div className="jobs-detail__logo">
@@ -206,15 +156,6 @@ export function JobDetails({
           )}
         </div>
 
-        {applicationSummary && (
-          <div className={`jobs-detail__app-summary jobs-detail__app-summary--${applicationSummary.variant}`}>
-            <span className="jobs-detail__app-summary-status">{applicationSummary.statusLabel}</span>
-            {applicationSummary.appliedAtLabel ? (
-              <span className="jobs-detail__app-summary-when">Applied {applicationSummary.appliedAtLabel}</span>
-            ) : null}
-          </div>
-        )}
-
         {!readOnly && (
           <div className="jobs-detail__actions">
             {!isRecruiter && (
@@ -222,8 +163,8 @@ export function JobDetails({
                 <button
                   type="button"
                   className={`jobs-detail__apply-btn${isApplied ? ' jobs-detail__apply-btn--applied' : ''}`}
-                  onClick={openEasyApply}
-                  disabled={isApplied}
+                  onClick={handleApply}
+                  disabled={isApplied || applying}
                 >
                   {isApplied ? (
                     <>
@@ -232,6 +173,8 @@ export function JobDetails({
                       </svg>
                       Applied
                     </>
+                  ) : applying ? (
+                    'Applying...'
                   ) : (
                     <>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -242,25 +185,15 @@ export function JobDetails({
                     </>
                   )}
                 </button>
-                {canWithdraw && (
-                  <button
-                    type="button"
-                    className="jobs-detail__withdraw-btn"
-                    onClick={() => void handleWithdraw()}
-                    disabled={withdrawing}
-                  >
-                    {withdrawing ? 'Withdrawing…' : 'Withdraw application'}
-                  </button>
-                )}
                 <button
                   type="button"
-                  className={`jobs-detail__save-btn${savedDisplay ? ' jobs-detail__save-btn--saved' : ''}`}
-                  onClick={() => void handleSave()}
+                  className={`jobs-detail__save-btn${saved ? ' jobs-detail__save-btn--saved' : ''}`}
+                  onClick={handleSave}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill={savedDisplay ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill={saved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
                   </svg>
-                  {savedDisplay ? 'Saved' : 'Save'}
+                  {saved ? 'Saved' : 'Save'}
                 </button>
               </>
             )}
@@ -278,12 +211,15 @@ export function JobDetails({
         )}
       </div>
 
+      {/* Scrollable body */}
       <div className="jobs-detail__body">
+        {/* About the job */}
         <section className="jobs-detail__section">
           <h3 className="jobs-detail__section-title">About the job</h3>
           <div className="jobs-detail__text" style={{ whiteSpace: 'pre-wrap' }}>{job.description}</div>
         </section>
 
+        {/* Required skills */}
         {skillsList.length > 0 && (
           <section className="jobs-detail__section">
             <h3 className="jobs-detail__section-title">Required skills</h3>
@@ -295,6 +231,7 @@ export function JobDetails({
           </section>
         )}
 
+        {/* About the company */}
         <section className="jobs-detail__section">
           <h3 className="jobs-detail__section-title">About the company</h3>
           <div className="jobs-detail__company-info">
@@ -308,20 +245,10 @@ export function JobDetails({
           </div>
         </section>
       </div>
-      {easyApplyOpen && user?.user_type === 'member' && (
-        <EasyApplyModal
-          jobId={job.job_id}
-          jobTitle={job.title}
-          companyName={companyName}
-          memberId={user.user_id}
-          onClose={() => setEasyApplyOpen(false)}
-          onSuccess={finishApplySuccess}
-        />
-      )}
-
+      {/* Sign In Required Modal */}
       {showSignInModal && (
         <div className="modal-overlay" onClick={() => setShowSignInModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 380, padding: 24, textAlign: 'center' }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 380, padding: 24, textAlign: 'center' }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
             <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 600 }}>Sign In Required</h3>
             <p style={{ margin: '0 0 20px', color: 'var(--text-sec)', fontSize: 14, lineHeight: 1.5 }}>

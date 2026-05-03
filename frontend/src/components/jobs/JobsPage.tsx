@@ -32,7 +32,6 @@ export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
   const [jobs, setJobs] = useState<JobPosting[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [appliedJobIds, setAppliedJobIds] = useState<Set<number>>(new Set())
-  const [appliedByJobId, setAppliedByJobId] = useState<Map<number, number>>(new Map())
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -71,13 +70,12 @@ export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
     const user = parseStoredUser()
     if (!user || user.user_type !== 'member') return
     try {
-      const res = await apiPost<{ data: { job_id: number; application_id: number }[] }>('/applications/byMember', {
+      const res = await apiPost<{ data: { job_id: number }[] }>('/applications/byMember', {
         member_id: user.user_id,
         page_size: 100
       })
-      const rows = res.data || []
-      setAppliedJobIds(new Set(rows.map((a) => a.job_id)))
-      setAppliedByJobId(new Map(rows.map((a) => [a.job_id, a.application_id])))
+      const ids = new Set(res.data?.map((a) => a.job_id) || [])
+      setAppliedJobIds(ids)
     } catch (e) {
       console.error(e)
     }
@@ -137,35 +135,10 @@ export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
           <JobDetails
             job={selectedJob}
             isApplied={selectedJob ? appliedJobIds.has(selectedJob.job_id) : false}
-            applicationId={selectedJob ? appliedByJobId.get(selectedJob.job_id) ?? null : null}
-            onApplySuccess={(payload) => {
+            onApplySuccess={() => {
               if (selectedJob) {
-                setAppliedJobIds((prev) => new Set(prev).add(selectedJob.job_id))
-                if (payload?.applicationId != null) {
-                  setAppliedByJobId((prev) => new Map(prev).set(selectedJob.job_id, payload.applicationId))
-                }
+                setAppliedJobIds(new Set(appliedJobIds).add(selectedJob.job_id))
               }
-            }}
-            onWithdrawSuccess={() => {
-              if (!selectedJob) return
-              const jid = selectedJob.job_id
-              setAppliedJobIds((prev) => {
-                const next = new Set(prev)
-                next.delete(jid)
-                return next
-              })
-              setAppliedByJobId((prev) => {
-                const next = new Map(prev)
-                next.delete(jid)
-                return next
-              })
-              setJobs((prev) =>
-                prev.map((j) =>
-                  j.job_id === jid
-                    ? { ...j, applicants_count: Math.max(0, (j.applicants_count ?? 0) - 1) }
-                    : j,
-                ),
-              )
             }}
             readOnly={readOnly}
             onNavigateAi={onNavigateAi}

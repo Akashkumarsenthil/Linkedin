@@ -3,7 +3,7 @@ flowchart TD
 
     %% ─────────────────────────────────────────────────────────────────────────
     %%  LINKEDIN AGENTIC AI – FULL SYSTEM ARCHITECTURE
-    %%  Deployment: Docker Compose on AWS EC2  (ip: 3.80.47.57)
+    %%  Deployment: Docker Compose on AWS EC2  (ip: 3.226.209.85)
     %%  CI/CD: GitHub Actions → SSH → docker-compose up --build -d
     %%
     %%  Paste into https://mermaid.live to render
@@ -19,9 +19,9 @@ flowchart TD
     Browser["🌐 Browser\nGuest / Member / Recruiter / Admin"]
 
     %% ═══════════════════════════════════════════════════════════════════════════
-    %%  AWS EC2  (3.80.47.57)  —  everything below runs on this single host
+    %%  AWS EC2  (3.226.209.85)  —  everything below runs on this single host
     %% ═══════════════════════════════════════════════════════════════════════════
-    subgraph AWS["☁️  AWS EC2  (3.80.47.57) — Docker Compose"]
+    subgraph AWS["☁️  AWS EC2  (3.226.209.85) — Docker Compose"]
 
         %% ── Frontend ──────────────────────────────────────────────────────────
         subgraph FRONTEND["linkedin-frontend  :5173"]

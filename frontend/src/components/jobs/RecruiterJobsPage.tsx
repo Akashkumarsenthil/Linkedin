@@ -12,9 +12,6 @@ type ApplicationRecord = {
   status: 'submitted' | 'reviewing' | 'rejected' | 'interview' | 'offer'
   application_datetime: string
   answers?: Record<string, unknown> | null
-  resume_text?: string | null
-  resume_url?: string | null
-  cover_letter?: string | null
 }
 
 type MemberProfile = {
@@ -25,9 +22,6 @@ type MemberProfile = {
   location_city?: string
   location_state?: string
   skills?: string[]
-  resume_text?: string | null
-  resume_pdf_url?: string | null
-  resume_filename?: string | null
 }
 
 type ApplicantView = ApplicationRecord & {
@@ -36,17 +30,6 @@ type ApplicantView = ApplicationRecord & {
   headline: string
   location: string
   skills: string[]
-  /** Latest profile PDF (data URL or empty) — complements application snapshot */
-  resume_pdf_url?: string | null
-  resume_filename?: string | null
-}
-
-function applicantHasResumeContent(a: ApplicantView): boolean {
-  const text = (a.resume_text ?? '').trim()
-  const letter = (a.cover_letter ?? '').trim()
-  const url = (a.resume_url ?? '').trim()
-  const pdf = (a.resume_pdf_url ?? '').trim()
-  return Boolean(text || letter || url || pdf)
 }
 
 type JobFunnel = {
@@ -109,7 +92,6 @@ export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavig
   const [funnel, setFunnel] = useState<JobFunnel | null>(null)
   const [loadingAnalytics, setLoadingAnalytics] = useState(false)
   const [showPostModal, setShowPostModal] = useState(false)
-  const [resumeViewer, setResumeViewer] = useState<ApplicantView | null>(null)
   const [posting, setPosting] = useState(false)
   const [postError, setPostError] = useState<string | null>(null)
   const [recruiterCompanyName, setRecruiterCompanyName] = useState<string>('')
@@ -221,16 +203,8 @@ export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavig
         const member = memberMap.get(a.member_id)
         const memberName = member ? `${member.first_name || ''} ${member.last_name || ''}`.trim() : `Member #${a.member_id}`
         const location = member ? [member.location_city, member.location_state].filter(Boolean).join(', ') : 'Unknown'
-        const appResumeText = typeof a.resume_text === 'string' ? a.resume_text : null
-        const memberResumeText = member?.resume_text != null ? String(member.resume_text) : null
-        const mergedResumeText = (appResumeText ?? '').trim() || (memberResumeText ?? '').trim() || null
         return {
           ...a,
-          resume_text: mergedResumeText,
-          resume_url: a.resume_url ?? null,
-          cover_letter: a.cover_letter ?? null,
-          resume_pdf_url: member?.resume_pdf_url ?? null,
-          resume_filename: member?.resume_filename ?? null,
           displayStatus: mapStatusToDisplay(a.status),
           memberName: memberName || `Member #${a.member_id}`,
           headline: member?.headline || 'Professional',
@@ -539,19 +513,6 @@ export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavig
                             {app.skills.length ? app.skills.map((s) => <span key={s}>{s}</span>) : <span>No skills listed</span>}
                           </div>
                           <div className="rj-applicant-card__actions">
-                            <button
-                              type="button"
-                              className="rj-applicant-card__btn--primary"
-                              onClick={() => setResumeViewer(app)}
-                              disabled={!applicantHasResumeContent(app)}
-                              title={
-                                applicantHasResumeContent(app)
-                                  ? 'View resume and cover letter'
-                                  : 'No resume, PDF, or cover letter on file'
-                              }
-                            >
-                              View resume
-                            </button>
                             <button type="button" onClick={() => onNavigateProfile?.(app.member_id)}>View Profile</button>
                             <button type="button" onClick={() => handleApplicantStatus(app, 'shortlisted')}>Shortlist</button>
                             <button type="button" onClick={() => handleApplicantStatus(app, 'rejected')}>Reject</button>
@@ -603,71 +564,6 @@ export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavig
           )}
         </section>
       </div>
-
-      {resumeViewer && (
-        <div className="modal-overlay rj-resume-overlay" onClick={() => setResumeViewer(null)}>
-          <div
-            className="modal-content rj-resume-modal"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-labelledby="rj-resume-modal-title"
-            aria-modal="true"
-          >
-            <button type="button" className="modal-close" onClick={() => setResumeViewer(null)} aria-label="Close">
-              ×
-            </button>
-            <h3 id="rj-resume-modal-title" className="rj-resume-modal__title">
-              Resume — {resumeViewer.memberName}
-            </h3>
-            <p className="rj-resume-modal__meta">
-              Applied {new Date(resumeViewer.application_datetime).toLocaleString()}
-              {' · '}
-              Status: {resumeViewer.status}
-            </p>
-
-            <div className="rj-resume-modal__links">
-              {resumeViewer.resume_pdf_url?.startsWith('data:application/pdf') ? (
-                <a
-                  className="rj-resume-modal__link"
-                  href={resumeViewer.resume_pdf_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open PDF ({resumeViewer.resume_filename || 'resume.pdf'})
-                </a>
-              ) : null}
-              {resumeViewer.resume_url &&
-              resumeViewer.resume_url.startsWith('http') &&
-              !resumeViewer.resume_url.startsWith('data:') ? (
-                <a
-                  className="rj-resume-modal__link"
-                  href={resumeViewer.resume_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open resume link
-                </a>
-              ) : null}
-            </div>
-
-            {resumeViewer.cover_letter?.trim() ? (
-              <section className="rj-resume-section">
-                <h4 className="rj-resume-section__label">Cover letter</h4>
-                <div className="rj-resume-section__body">{resumeViewer.cover_letter.trim()}</div>
-              </section>
-            ) : null}
-
-            <section className="rj-resume-section">
-              <h4 className="rj-resume-section__label">Resume text</h4>
-              {resumeViewer.resume_text?.trim() ? (
-                <pre className="rj-resume-pre">{resumeViewer.resume_text.trim()}</pre>
-              ) : (
-                <p className="rj-resume-empty">No extracted resume text on file. Use “Open PDF” above if available.</p>
-              )}
-            </section>
-          </div>
-        </div>
-      )}
 
       {showPostModal && (
         <div className="modal-overlay" onClick={closePostModal}>

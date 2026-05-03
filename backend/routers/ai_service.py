@@ -17,7 +17,6 @@ from agents.resume_parser import parse_resume_with_llm
 from agents.job_matcher import match_candidate_to_job
 from database import get_db
 from models.job import JobPosting
-from models.application import Application
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["AI Agent Service"])
@@ -92,12 +91,6 @@ class AIResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
-
-
-class CandidateDecisionRequest(BaseModel):
-    candidate_id: int = Field(..., description="Member ID of the candidate")
-    job_id: int = Field(..., description="Job posting ID")
-    decision: str = Field(..., description="interview | selected | rejected")
 
 
 # ─── Endpoints ──────────────────────────────────────────────────
@@ -533,48 +526,3 @@ async def get_metrics():
 
     return AIResponse(success=True, message="Metrics computed", data=metrics)
 
-
-# ─── Candidate Decision ─────────────────────────────────────────
-
-@router.post("/candidate-decision", response_model=AIResponse, summary="Move candidate to interview / selected / rejected")
-async def candidate_decision(
-    req: CandidateDecisionRequest,
-    db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(require_recruiter),
-):
-    """
-    Update the hiring pipeline stage for a shortlisted candidate.
-    Looks up the application by member_id + job_id and updates its status.
-
-    Decision mapping:
-      interview -> application status: interview
-      selected  -> application status: offer
-      rejected  -> application status: rejected
-    """
-    DECISION_MAP = {"interview": "interview", "selected": "offer", "rejected": "rejected"}
-    status = DECISION_MAP.get(req.decision)
-    if not status:
-        return AIResponse(success=False, message=f"Invalid decision '{req.decision}'. Use: interview, selected, rejected")
-
-    app = db.query(Application).filter(
-        Application.member_id == req.candidate_id,
-        Application.job_id == req.job_id,
-    ).first()
-
-    if not app:
-        return AIResponse(
-            success=True,
-            message=f"No application on file for candidate {req.candidate_id} / job {req.job_id}. Decision noted.",
-            data={"candidate_id": req.candidate_id, "job_id": req.job_id, "decision": req.decision, "persisted": False},
-        )
-
-    old_status = app.status
-    app.status = status
-    db.commit()
-    db.refresh(app)
-
-    return AIResponse(
-        success=True,
-        message=f"Candidate {req.candidate_id} moved to '{req.decision}' (app {app.application_id}: {old_status} -> {status})",
-        data={"application_id": app.application_id, "candidate_id": req.candidate_id, "decision": req.decision, "new_status": status, "persisted": True},
-    )

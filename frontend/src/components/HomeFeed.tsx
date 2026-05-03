@@ -15,34 +15,7 @@ interface HomeFeedProps {
   onNavigateProfile: (id?: number) => void
   onNavigateTab?: (tab: string) => void
   onOpenSavedJobs?: () => void
-  /** Opens full My jobs tab */
   onOpenMyJobs?: () => void
-  /** Opens job search (e.g. empty “My jobs” CTA) */
-  onOpenJobSearch?: () => void
-}
-
-type HomeApplicationRow = {
-  application_id: number
-  job_id: number
-  status: string
-  application_datetime: string | null
-}
-
-type HomeMyJobPreview = {
-  app: HomeApplicationRow
-  title: string
-  company: string
-}
-
-function memberStatusShort(status: string): string {
-  const m: Record<string, string> = {
-    submitted: 'Submitted',
-    reviewing: 'In review',
-    interview: 'Interview',
-    offer: 'Shortlisted',
-    rejected: 'Not selected',
-  }
-  return m[status] || status
 }
 
 const NEWS_ITEMS = [
@@ -314,22 +287,12 @@ User Name: ${userName}`
   )
 }
 
-export function HomeFeed({
-  me,
-  onNavigateProfile,
-  onNavigateTab,
-  onOpenMyJobs,
-  onOpenJobSearch,
-}: HomeFeedProps) {
+export function HomeFeed({ me, onNavigateProfile, onNavigateTab }: HomeFeedProps) {
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showGame, setShowGame] = useState(false)
   const [dailyQuote, setDailyQuote] = useState(() => QUOTES[Math.floor(Math.random() * QUOTES.length)])
-
-  const [myJobsPreview, setMyJobsPreview] = useState<HomeMyJobPreview[]>([])
-  const [myJobsLoading, setMyJobsLoading] = useState(false)
-  const [myJobsError, setMyJobsError] = useState<string | null>(null)
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -362,72 +325,6 @@ export function HomeFeed({
   }, [])
 
   useEffect(() => { void loadFeed() }, [loadFeed])
-
-  const memberId = me?.user_type === 'member' ? me.user_id : null
-
-  const loadMyJobsPreview = useCallback(async () => {
-    if (memberId == null) {
-      setMyJobsPreview([])
-      return
-    }
-    setMyJobsLoading(true)
-    setMyJobsError(null)
-    try {
-      const appsRes = await apiPost<{ success?: boolean; message?: string; data?: HomeApplicationRow[] }>(
-        '/applications/byMember',
-        { member_id: memberId, page: 1, page_size: 25 },
-      )
-      if (appsRes.success === false) {
-        throw new Error(appsRes.message || 'Could not load your applications.')
-      }
-      const apps = (appsRes.data || []).slice().sort((a, b) => {
-        const ta = a.application_datetime ? new Date(a.application_datetime).getTime() : 0
-        const tb = b.application_datetime ? new Date(b.application_datetime).getTime() : 0
-        return tb - ta
-      })
-      const top = apps.slice(0, 5)
-      const jobMap = new Map<number, { title: string; company: string }>()
-      const chunk = 8
-      for (let i = 0; i < top.length; i += chunk) {
-        const slice = top.slice(i, i + chunk)
-        await Promise.all(
-          slice.map(async (a) => {
-            try {
-              const jr = await apiPost<{ success?: boolean; data?: Record<string, unknown> }>('/jobs/get', {
-                job_id: a.job_id,
-                member_id: memberId,
-              })
-              if (jr.success !== false && jr.data) {
-                const d = jr.data
-                jobMap.set(a.job_id, {
-                  title: String(d.title ?? `Job #${a.job_id}`),
-                  company: typeof d.company_name === 'string' ? d.company_name : `Company #${d.company_id ?? '?'}`,
-                })
-              }
-            } catch {
-              /* posting may be gone */
-            }
-          }),
-        )
-      }
-      setMyJobsPreview(
-        top.map((a) => ({
-          app: a,
-          title: jobMap.get(a.job_id)?.title ?? `Job #${a.job_id}`,
-          company: jobMap.get(a.job_id)?.company ?? '—',
-        })),
-      )
-    } catch (e) {
-      setMyJobsError(e instanceof Error ? e.message : 'Failed to load applications')
-      setMyJobsPreview([])
-    } finally {
-      setMyJobsLoading(false)
-    }
-  }, [memberId])
-
-  useEffect(() => {
-    void loadMyJobsPreview()
-  }, [loadMyJobsPreview])
 
   if (!me) return null
 
@@ -540,50 +437,6 @@ export function HomeFeed({
 
       <aside className="feed-right-rail">
         <SimsonAgent userName={name} />
-
-        {me.user_type === 'member' && (
-          <div className="feed-my-jobs-card li-card">
-            <div className="feed-my-jobs-header">
-              <h3 className="feed-my-jobs-title">My jobs</h3>
-              {myJobsPreview.length > 0 && (
-                <button type="button" className="feed-my-jobs-see-all" onClick={() => onOpenMyJobs?.()}>
-                  See all
-                </button>
-              )}
-            </div>
-            <p className="feed-my-jobs-sub">Roles you applied to</p>
-            {myJobsLoading && myJobsPreview.length === 0 ? (
-              <p className="feed-my-jobs-empty">Loading your applications…</p>
-            ) : myJobsError ? (
-              <p className="feed-my-jobs-empty">{myJobsError}</p>
-            ) : myJobsPreview.length === 0 ? (
-              <div className="feed-my-jobs-empty-block">
-                <p>No applications yet. Apply from Job Search and they will show up here.</p>
-                <button type="button" className="feed-my-jobs-cta" onClick={() => onOpenJobSearch?.()}>
-                  Browse jobs
-                </button>
-              </div>
-            ) : (
-              <ul className="feed-my-jobs-list">
-                {myJobsPreview.map(({ app, title, company }) => (
-                  <li key={app.application_id}>
-                    <button
-                      type="button"
-                      className="feed-my-jobs-row"
-                      onClick={() => onOpenMyJobs?.()}
-                    >
-                      <span className="feed-my-jobs-row-title">{title}</span>
-                      <span className="feed-my-jobs-row-meta">{company}</span>
-                      <span className={`feed-my-jobs-status feed-my-jobs-status--${app.status === 'rejected' ? 'bad' : app.status === 'offer' ? 'good' : 'neutral'}`}>
-                        {memberStatusShort(app.status)}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
         
         <div className="feed-news-card li-card">
           <div className="feed-news-header">

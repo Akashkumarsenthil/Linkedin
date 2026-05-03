@@ -258,14 +258,6 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             return
 
         applications = db.query(Application).filter(Application.job_id == job_id).all()
-        # Prefer resume text captured on the application (Easy Apply / submit snapshot);
-        # fall back to the member profile so the parser always sees what the applicant sent.
-        app_resume_by_member: Dict[int, str] = {}
-        for app in applications:
-            t = (app.resume_text or "").strip()
-            if t and app.member_id not in app_resume_by_member:
-                app_resume_by_member[app.member_id] = t
-
         if not applications:
             members = db.query(Member).limit(50).all()
         else:
@@ -286,20 +278,14 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             progress=20,
         )
 
-        # ── Step 2: Parse resumes (concurrent, rate-limited) ────────
+        # ── Step 2: Parse resumes (concurrent) ──────────────────────
         await update_task_status(task_id, "running", "parse_resumes", progress=30)
 
-        # Semaphore caps simultaneous OpenAI calls across both parse + match steps
-        _sem = asyncio.Semaphore(10)
-
-        async def _parse_one(member: Member):
-            resume_text = (app_resume_by_member.get(member.member_id) or "").strip()
-            if not resume_text:
-                resume_text = (member.resume_text or member.about or "").strip()
+        async def _parse_one(member):
+            resume_text = member.resume_text or member.about or ""
             if not resume_text:
                 return member.member_id, None
-            async with _sem:
-                parsed = await parse_resume_with_llm(resume_text)
+            parsed = await parse_resume_with_llm(resume_text)
             return member.member_id, parsed
 
         results = await asyncio.gather(*[_parse_one(m) for m in members])
@@ -324,14 +310,16 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             progress=50,
         )
 
-        # ── Step 3: Match candidates (concurrent, rate-limited) ─────
+        # ── Step 3: Match candidates ────────────────────────────────
         await update_task_status(task_id, "running", "match_candidates", progress=60)
 
-        async def _match_one(member: Member):
+        match_results = []
+        for member in members:
             candidate_data = member.to_dict()
             parsed = parsed_resumes.get(member.member_id)
-            async with _sem:
-                match = await match_candidate_to_job(job_data, candidate_data, parsed)
+            match = await match_candidate_to_job(job_data, candidate_data, parsed)
+            match_results.append(match)
+
             await mongo_db.agent_traces.insert_one({
                 "task_id": task_id,
                 "step": "job_matcher",
@@ -339,9 +327,6 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
                 "match_score": match["overall_score"],
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            return match
-
-        match_results = list(await asyncio.gather(*[_match_one(m) for m in members]))
 
         match_results.sort(key=lambda x: x["overall_score"], reverse=True)
         shortlist = match_results[:top_n]
@@ -359,20 +344,18 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
         # ── Step 4: Generate outreach drafts ─────────────────────────
         await update_task_status(task_id, "running", "generate_outreach", progress=85)
 
-        async def _outreach_one(match: dict):
+        outreach_drafts = []
+        for match in shortlist:
             candidate_id = match["candidate_id"]
             member = db.query(Member).filter(Member.member_id == candidate_id).first()
-            if not member:
-                return None
-            async with _sem:
-                outreach = await generate_outreach_with_llm(job_data, member.to_dict(), match)
-            outreach["match_score"]    = match["overall_score"]
-            outreach["recommendation"] = match["recommendation"]
-            outreach["candidate_id"]   = match["candidate_id"]
-            return outreach
-
-        outreach_results = await asyncio.gather(*[_outreach_one(m) for m in shortlist])
-        outreach_drafts = [o for o in outreach_results if o is not None]
+            if member:
+                outreach = await generate_outreach_with_llm(
+                    job_data, member.to_dict(), match
+                )
+                outreach["match_score"] = match["overall_score"]
+                outreach["recommendation"] = match["recommendation"]
+                outreach["candidate_id"] = match["candidate_id"]
+                outreach_drafts.append(outreach)
 
         await update_task_status(
             task_id, "running", "generate_outreach",

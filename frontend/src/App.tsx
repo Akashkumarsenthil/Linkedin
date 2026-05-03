@@ -521,7 +521,6 @@ function App() {
                 onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
                 onOpenSavedJobs={() => setTab('saved-jobs')}
                 onOpenMyJobs={() => setTab('my-jobs')}
-                onOpenJobSearch={() => setTab('jobs')}
               />
             ) : (
               <OverviewPanel onNavigate={setTab} />
