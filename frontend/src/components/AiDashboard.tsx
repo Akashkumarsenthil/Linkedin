@@ -766,9 +766,12 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
 
   // ── render ────────────────────────────────────────────────────────
   return (
-    <section className="panel">
-      <div className="ai-toolbar">
-        <h2 className="panel-heading">AI Recruiter Dashboard</h2>
+    <section className="panel premium-panel">
+      <div className="ai-toolbar premium-header">
+        <div>
+          <h2 className="premium-title">AI Recruiter Dashboard</h2>
+          <p className="premium-subtitle">Automate candidate screening and streamline your hiring pipeline with AI-powered insights.</p>
+        </div>
         <div className="ai-tool-tabs">
           <button
             type="button"
