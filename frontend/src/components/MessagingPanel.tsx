@@ -32,10 +32,12 @@ type UserType = 'member' | 'recruiter'
 
 /** Normalize bare MySQL timestamps (no timezone) to UTC */
 function toUTC(iso: string): string {
-  // "2026-05-02 13:26:08" → "2026-05-02T13:26:08Z"
+  if (!iso) return ''
   let s = iso.trim()
   if (!s.includes('T')) s = s.replace(' ', 'T')
-  // If no timezone indicator exists, assume UTC
+  // If no timezone indicator exists, and we know our server is now in PST or we want to treat it as UTC
+  // Given we set TZ=America/Los_Angeles in docker, bare strings might be PST.
+  // But standard practice is to send UTC. We'll assume UTC if no offset.
   if (!s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s)) {
     s += 'Z'
   }
@@ -44,7 +46,8 @@ function toUTC(iso: string): string {
 
 function fmtTime(iso: string): string {
   try {
-    return new Date(toUTC(iso)).toLocaleTimeString('en-US', {
+    const d = new Date(toUTC(iso))
+    return d.toLocaleTimeString('en-US', {
       hour: '2-digit', minute: '2-digit',
       timeZone: 'America/Los_Angeles'
     })
@@ -498,7 +501,14 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
                   </div>
                   {t.last_message && (
                     <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
-                      {t.last_message.message_text.slice(0, 45)}{t.last_message.message_text.length > 45 ? '…' : ''}
+                      {(() => {
+                        const shared = tryParseSharedPost(t.last_message.message_text);
+                        if (shared) {
+                          const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
+                          return isMe ? "You shared a post" : `${t.other_participant?.name || 'Someone'} shared a post`;
+                        }
+                        return t.last_message.message_text.slice(0, 45) + (t.last_message.message_text.length > 45 ? '…' : '');
+                      })()}
                     </span>
                   )}
                 </div>
