@@ -53,11 +53,11 @@ export function NotificationsPanel({
   onNavigatePost,
 }: NotificationsPanelProps) {
   return (
-    <section className="panel notif-panel">
-      <header className="notif-header">
+    <section className="panel premium-panel">
+      <header className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 className="panel-title">Notifications</h2>
-          <p className="panel-subtitle">
+          <h2 className="premium-title">Notifications</h2>
+          <p className="premium-subtitle">
             {unreadCount > 0
               ? `You have ${unreadCount} action${unreadCount === 1 ? '' : 's'} pending.`
               : 'You’re all caught up.'}
