@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import { apiPost, apiGet } from '../api'
+import { apiPost, apiGet, parseStoredUser } from '../api'
 import { Icon } from './Icon'
 
 interface Comment {
@@ -66,15 +66,28 @@ interface ReactionUser {
 
 function formatRelativeTime(iso?: string | null): string {
   if (!iso) return ''
-  const normalized = iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z'
+  // Handle bare MySQL timestamps by converting to ISO format. 
+  // We'll assume the input is UTC if no timezone is specified.
+  let normalized = iso.trim()
+  if (!normalized.includes('T')) normalized = normalized.replace(' ', 'T')
+  if (!normalized.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    normalized += 'Z'
+  }
+  
   const d = new Date(normalized)
   if (isNaN(d.getTime())) return ''
-  const diff = (Date.now() - d.getTime()) / 1000
+  
+  const now = Date.now()
+  const diff = (now - d.getTime()) / 1000
+  
+  // If the server time is slightly ahead of client time (clock skew), just say 'just now'
+  if (diff < 0) return 'just now'
   if (diff < 60) return 'just now'
   if (diff < 3600) return `${Math.floor(diff / 60)}m`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d`
-  return d.toLocaleDateString()
+  
+  return d.toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' })
 }
 
 export function PostCard({ 
@@ -581,22 +594,38 @@ export function PostCard({
                       </div>
                       <button 
                         className="share-send-btn"
-                        onClick={() => {
-                          apiPost('/messages/direct', {
-                            sender_id: currentUserId,
-                            recipient_id: c.member_id,
-                            recipient_type: c.user_type,
-                            message_text: JSON.stringify({
-                              type: 'shared_post',
-                              post_id: post.post_id,
-                              author_name: post.author?.name,
-                              author_headline: post.author?.headline,
-                              author_photo_url: post.author?.photo_url,
-                              content: post.content?.slice(0, 100),
-                              image_url: post.image_url,
+                        onClick={async () => {
+                          const identity = parseStoredUser()
+                          if (!identity) { alert('Please sign in to share posts'); return }
+                          try {
+                            // Step 1: find or create a DM thread with this connection
+                            const threadRes = await apiPost<any>('/threads/open', {
+                              participant_ids: [
+                                { user_id: identity.user_id, user_type: identity.user_type },
+                                { user_id: c.member_id, user_type: c.user_type || 'member' },
+                              ]
                             })
-                          })
-                          alert(`Sent to ${c.name}!`)
+                            if (!threadRes.success) throw new Error(threadRes.message)
+                            const threadId = threadRes.data.thread_id
+                            // Step 2: send the shared post into that thread
+                            await apiPost('/messages/send', {
+                              thread_id: threadId,
+                              sender_id: identity.user_id,
+                              sender_type: identity.user_type,
+                              message_text: JSON.stringify({
+                                type: 'shared_post',
+                                post_id: post.post_id,
+                                author_name: post.author?.name,
+                                author_headline: post.author?.headline,
+                                author_photo_url: post.author?.photo_url,
+                                content: post.content?.slice(0, 100),
+                                image_url: post.image_url,
+                              })
+                            })
+                            alert(`Sent to ${c.name}!`)
+                          } catch (err: any) {
+                            alert(`Failed to send: ${err?.message || 'Unknown error'}`)
+                          }
                           setShowShareModal(false)
                         }}
                       >
