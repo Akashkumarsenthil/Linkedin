@@ -554,9 +554,7 @@ export function HomeFeed({
           />
         ) : (
           <>
-            <div className="premium-panel" style={{ marginBottom: 12 }}>
-              <PostComposer authorName={name} authorHeadline={headline} authorPhoto={photo} onPosted={loadFeed} />
-            </div>
+            <PostComposer authorName={name} authorHeadline={headline} authorPhoto={photo} onPosted={loadFeed} />
             {error && <div className="feed-error-msg">{error}</div>}
             {loading && posts.length === 0 ? <div className="feed-empty">Loading posts…</div> : (
               <div className="feed-posts">
