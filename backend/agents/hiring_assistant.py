@@ -258,6 +258,14 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
             return
 
         applications = db.query(Application).filter(Application.job_id == job_id).all()
+        # Prefer resume text captured on the application (Easy Apply / submit snapshot);
+        # fall back to the member profile so the parser always sees what the applicant sent.
+        app_resume_by_member: Dict[int, str] = {}
+        for app in applications:
+            t = (app.resume_text or "").strip()
+            if t and app.member_id not in app_resume_by_member:
+                app_resume_by_member[app.member_id] = t
+
         if not applications:
             members = db.query(Member).limit(50).all()
         else:
@@ -281,8 +289,10 @@ async def run_hiring_workflow(task_id: str, job_id: int, top_n: int = 5):
         # ── Step 2: Parse resumes (concurrent) ──────────────────────
         await update_task_status(task_id, "running", "parse_resumes", progress=30)
 
-        async def _parse_one(member):
-            resume_text = member.resume_text or member.about or ""
+        async def _parse_one(member: Member):
+            resume_text = (app_resume_by_member.get(member.member_id) or "").strip()
+            if not resume_text:
+                resume_text = (member.resume_text or member.about or "").strip()
             if not resume_text:
                 return member.member_id, None
             parsed = await parse_resume_with_llm(resume_text)
