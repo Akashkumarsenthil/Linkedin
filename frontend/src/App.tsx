@@ -76,17 +76,17 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   settings:      ['member', 'recruiter', 'admin'],
   events:        ['member', 'recruiter'],                   // admin-irrelevant
   saved:         ['member', 'recruiter'],                   // admin-irrelevant
-  news:          ['member', 'recruiter'],                   // admin-irrelevant
+  news:          ['guest', 'member', 'recruiter'],          // admin-irrelevant
 }
 
 const ALL_NAV: [Tab, string, string][] = [
   ['overview',      'Home',          'home'],
   ['members',       'My Network',    'network'],
   ['jobs',          'Jobs',          'jobs'],
-  ['messages',      'Messaging',     'messaging'],
+  ['messages',      'Messages',      'messaging'],
   ['connections',   'Connections',   'connections'],
   ['career',        'Career Coach',  'ai'],
-  ['analytics',     'Analytics',     'analytics'],
+  ['analytics',     'Dashboard',     'analytics'],
   ['ai',            'AI Recruiter',  'ai'],
   ['perf',          'Dashboard',     'analytics'],
   ['auth',          'Sign In',       'user'],
@@ -516,7 +516,7 @@ function App() {
       <main className="main" key={tab}>
         <div className="page-fade">
           {tab === 'overview' &&
-            (authUser && me ? (
+            (authUser ? (
               <HomeFeed
                 me={me}
                 onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
@@ -582,7 +582,7 @@ function App() {
             />
           )}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
-          {tab === 'events'      && <EventsPage />}
+          {tab === 'events'      && <EventsPage userId={me?.user_id} />}
           {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
           {tab === 'news'        && <NewsPage initialNewsId={selectedNewsId} />}
         </div>
@@ -912,11 +912,13 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
   useEffect(() => { void doSearch(null) }, [])
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">Network</h2>
-        <p className="panel-subtitle">Find and connect with professionals</p>
-      </div>
+    <section className="members-page premium-panel">
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">My Network</h2>
+          <p className="premium-subtitle">Find and connect with professionals</p>
+        </div>
+      </header>
 
       <div className="search-toolbar">
         <div className="search-input-wrap">
@@ -1069,13 +1071,15 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
 
 function AnalyticsPanel() {
   return (
-    <section className="panel analytics-dashboard">
-      <div className="premium-header">
-        <h2 className="premium-title">Recruiter Analytics</h2>
-        <p className="premium-subtitle">
-          Real-time performance metrics, applicant funnel analysis, and geographic trends for your active job listings.
-        </p>
-      </div>
+    <section className="panel analytics-dashboard premium-panel">
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">AI Analytics Dashboard</h2>
+          <p className="premium-subtitle">
+            Real-time performance metrics, applicant funnel analysis, and geographic trends for your active job listings.
+          </p>
+        </div>
+      </header>
 
       <div className="ad-kpi-row">
         <div className="ad-kpi">
