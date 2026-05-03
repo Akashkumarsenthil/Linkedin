@@ -3,6 +3,7 @@ Messaging SQLAlchemy Models — Thread, ThreadParticipant, Message
 """
 
 from sqlalchemy import Column, Integer, String, Text, TIMESTAMP, Enum, Boolean
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.sql import func
 from database import Base
 
@@ -41,7 +42,7 @@ class Message(Base):
     thread_id = Column(Integer, nullable=False)
     sender_id = Column(Integer, nullable=False)
     sender_type = Column(Enum("member", "recruiter"), nullable=False)
-    message_text = Column(Text, nullable=False)
+    message_text = Column(MEDIUMTEXT, nullable=False)
     timestamp = Column(TIMESTAMP, server_default=func.now())
     is_read = Column(Boolean, default=False)
 

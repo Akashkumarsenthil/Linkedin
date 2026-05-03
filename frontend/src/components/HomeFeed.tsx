@@ -3,6 +3,7 @@ import { apiPost } from '../api'
 import { Icon } from './Icon'
 import { PostComposer } from './PostComposer'
 import { PostCard, type FeedPost } from './PostCard'
+import { SinglePostPage } from './SinglePostPage'
 import { TechMemoryGame } from './TechMemoryGame'
 
 interface HomeFeedProps {
@@ -19,6 +20,9 @@ interface HomeFeedProps {
   onOpenMyJobs?: () => void
   /** Opens job search (e.g. empty “My jobs” CTA) */
   onOpenJobSearch?: () => void
+  viewPostId?: number | null
+  onBackPost?: () => void
+  onSelectNews?: (id: number) => void
 }
 
 type HomeApplicationRow = {
@@ -46,11 +50,10 @@ function memberStatusShort(status: string): string {
 }
 
 const NEWS_ITEMS = [
-  { headline: 'Mendoza goes first in NFL draft',              age: '57m ago', readers: '65,438 readers' },
-  { headline: 'OpenAI launches GPT-5.5 as next step',        age: '1h ago',  readers: '17,694 readers' },
-  { headline: 'Meta is laying off 8K staffers',              age: '1h ago',  readers: '11,954 readers' },
-  { headline: 'US reclassifies some marijuana',              age: '1h ago',  readers: '6,212 readers' },
-  { headline: 'Intel shares spike amid signs of turnaround', age: '1h ago',  readers: '4,038 readers' },
+  { id: 1, headline: 'The future of Generative AI in software engineering', age: '4h ago', readers: '45,201 readers', url: 'https://www.technologyreview.com/2024/01/04/1086037/generative-ai-software-engineering/' },
+  { id: 2, headline: 'Remote work trends: Why hybrid is winning', age: '6h ago', readers: '32,110 readers', url: 'https://www.forbes.com/sites/bryanrobinson/2024/02/05/hybrid-work-is-here-to-stay-and-winning-over-remote-and-office-work/' },
+  { id: 3, headline: 'Top 10 skills for Data Scientists in 2026', age: '1d ago', readers: '28,500 readers', url: 'https://www.datasciencecentral.com/top-10-skills-for-data-scientists-in-2024/' },
+  { id: 4, headline: 'Silicon Valley outlook: VC surges', age: '2h ago', readers: '15,400 readers', url: 'https://news.crunchbase.com/venture/silicon-valley-funding-trends-2024/' },
 ]
 
 const JOBS_MATCH = [
@@ -320,6 +323,9 @@ export function HomeFeed({
   onNavigateTab,
   onOpenMyJobs,
   onOpenJobSearch,
+  onSelectNews,
+  viewPostId,
+  onBackPost,
 }: HomeFeedProps) {
   const [posts, setPosts] = useState<FeedPost[]>([])
   const [loading, setLoading] = useState(true)
@@ -347,6 +353,12 @@ export function HomeFeed({
   useEffect(() => {
     localStorage.setItem('ln-saved-posts', JSON.stringify(savedPostIds))
   }, [savedPostIds])
+
+  const [notes, setNotes] = useState(() => localStorage.getItem('ln-notes') || '')
+
+  useEffect(() => {
+    localStorage.setItem('ln-notes', notes)
+  }, [notes])
 
   const loadFeed = useCallback(async () => {
     setLoading(true)
@@ -460,7 +472,7 @@ export function HomeFeed({
                 </div>
                 <span className="feed-stat-value">{Number(profile.profile_views || 0).toLocaleString()}</span>
               </button>
-              <button type="button" className="feed-stat-row" onClick={() => onNavigateProfile(me.user_id)}>
+              <button type="button" className="feed-stat-row" onClick={() => onNavigateTab?.('connections')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="connections" size={16} style={{ color: 'var(--text-muted)' }} />
                   <span className="feed-stat-label">Connections</span>
@@ -506,35 +518,65 @@ export function HomeFeed({
         </div>
 
         <div className="feed-notes-card li-card" style={{ marginTop: 12 }}>
-          <div className="section-heading" style={{ padding: '12px 16px', borderBottom: '1px solid var(--li-border)' }}>My Activity</div>
-          <div style={{ padding: '12px 16px', fontSize: '13px', color: 'var(--text-sec)' }}>
-            Track your professional schedule and saved insights across the platform.
+          <div className="section-heading" style={{ padding: '12px 16px', borderBottom: '1px solid var(--li-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>My Activity</span>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 400 }}>Auto-saves</span>
+          </div>
+          <div style={{ padding: '12px' }}>
+            <textarea 
+              className="feed-activity-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Jot down professional notes, reminders, or insights... Simson will read these during your briefing."
+              style={{
+                width: '100%',
+                minHeight: '120px',
+                border: 'none',
+                resize: 'none',
+                fontSize: '13px',
+                color: 'var(--text-main)',
+                background: 'transparent',
+                outline: 'none',
+                lineHeight: '1.6',
+                fontFamily: 'inherit'
+              }}
+            />
           </div>
         </div>
       </aside>
 
       <section className="feed-center">
-        <PostComposer authorName={name} authorHeadline={headline} authorPhoto={photo} onPosted={loadFeed} />
-        {error && <div className="feed-error-msg">{error}</div>}
-        {loading && posts.length === 0 ? <div className="feed-empty">Loading posts…</div> : (
-          <div className="feed-posts">
-            {posts
-              .filter(p => view === 'all' || savedPostIds.includes(p.post_id))
-              .map((p) => (
-                <PostCard 
-                  key={p.post_id} 
-                  post={p} 
-                  currentUserId={me.user_id} 
-                  currentUserType={me.user_type} 
-                  currentUserPhoto={photo} 
-                  currentUserName={name} 
-                  isSaved={savedPostIds.includes(p.post_id)}
-                  onToggleSave={(id) => setSavedPostIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
-                  onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} 
-                  onNavigateProfile={onNavigateProfile} 
-                />
-              ))}
-          </div>
+        {viewPostId ? (
+          <SinglePostPage 
+            postId={viewPostId} 
+            onNavigateProfile={onNavigateProfile} 
+            onBack={onBackPost || (() => {})} 
+          />
+        ) : (
+          <>
+            <PostComposer authorName={name} authorHeadline={headline} authorPhoto={photo} onPosted={loadFeed} />
+            {error && <div className="feed-error-msg">{error}</div>}
+            {loading && posts.length === 0 ? <div className="feed-empty">Loading posts…</div> : (
+              <div className="feed-posts">
+                {posts
+                  .filter(p => view === 'all' || savedPostIds.includes(p.post_id))
+                  .map((p) => (
+                    <PostCard 
+                      key={p.post_id} 
+                      post={p} 
+                      currentUserId={me.user_id} 
+                      currentUserType={me.user_type} 
+                      currentUserPhoto={photo} 
+                      currentUserName={name} 
+                      isSaved={savedPostIds.includes(p.post_id)}
+                      onToggleSave={(id) => setSavedPostIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])}
+                      onDeleted={(id) => setPosts((prev) => prev.filter((x) => x.post_id !== id))} 
+                      onNavigateProfile={onNavigateProfile} 
+                    />
+                  ))}
+              </div>
+            )}
+          </>
         )}
       </section>
 
@@ -587,15 +629,18 @@ export function HomeFeed({
         
         <div className="feed-news-card li-card">
           <div className="feed-news-header">
-            <h3 className="feed-news-title">Newsletters</h3>
+            <h3 className="feed-news-title">LinkedIn News</h3>
           </div>
           <p className="feed-news-sub">Top stories</p>
           <ul className="feed-news-list">
             {NEWS_ITEMS.slice(0, 5).map((item, idx) => (
-              <li key={idx} className="feed-news-item">
+              <li key={idx} className="feed-news-item" onClick={() => {
+                onSelectNews?.(item.id)
+                if (item.url) window.open(item.url, '_blank')
+              }} style={{ cursor: 'pointer' }}>
                 <span className="feed-news-bullet" />
                 <div>
-                  <p className="feed-news-headline">{item.headline}</p>
+                  <p className="feed-news-headline" style={{ fontWeight: 600 }}>{item.headline}</p>
                   <p className="feed-news-meta">{item.age} · {item.readers}</p>
                 </div>
               </li>

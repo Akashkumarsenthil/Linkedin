@@ -8,7 +8,6 @@ import { MemberDashboard } from './components/MemberDashboard'
 import { MessagingPanel } from './components/MessagingPanel'
 import { ConnectionsPanel } from './components/ConnectionsPanel'
 import { AuthPanel } from './components/AuthPanel'
-import { SinglePostPage } from './components/SinglePostPage'
 import { ProfilePage } from './components/ProfilePage'
 import { HomeFeed } from './components/HomeFeed'
 import { NotificationsPanel } from './components/NotificationsPanel'
@@ -161,6 +160,8 @@ function App() {
   const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [viewProfileId, setViewProfileId] = useState<number | null>(null)
   const [viewPostId, setViewPostId] = useState<number | null>(null)
+  const [postSource, setPostSource] = useState<Tab>('notifications')
+  const [selectedNewsId, setSelectedNewsId] = useState<number | null>(null)
   const [initialAiJobId, setInitialAiJobId] = useState<number | null>(null)
   const [unreadMsgCount, setUnreadMsgCount] = useState<number>(0)
   const [targetMessagingId, setTargetMessagingId] = useState<number | null>(null)
@@ -519,9 +520,11 @@ function App() {
               <HomeFeed
                 me={me}
                 onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
+                onNavigateTab={setTab}
                 onOpenSavedJobs={() => setTab('saved-jobs')}
                 onOpenMyJobs={() => setTab('my-jobs')}
                 onOpenJobSearch={() => setTab('jobs')}
+                onSelectNews={(id) => { setSelectedNewsId(id); setTab('news') }}
               />
             ) : (
               <OverviewPanel onNavigate={setTab} />
@@ -534,7 +537,8 @@ function App() {
           {tab === 'analytics' && <AnalyticsPanel />}
           {tab === 'messages' && (
             <MessagingPanel 
-              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} 
+              onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
+              onNavigatePost={(id) => { setViewPostId(id); setPostSource('messages'); setTab('post') }}
               targetUserId={targetMessagingId}
               onClearTarget={() => setTargetMessagingId(null)}
             />
@@ -547,7 +551,7 @@ function App() {
               onRefresh={loadNotifications}
               onOpenConnections={() => setTab('connections')}
               onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
-              onNavigatePost={(id) => { setViewPostId(id); setTab('post') }}
+              onNavigatePost={(id) => { setViewPostId(id); setPostSource('notifications'); setTab('post') }}
             />
           )}
           {tab === 'ai'          && <AiDashboard initialJobId={initialAiJobId} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
@@ -564,17 +568,23 @@ function App() {
               onNavigateMessaging={(id) => { setTargetMessagingId(id); setTab('messages') }}
             />
           )}
-          {tab === 'post'        && viewPostId && (
-            <SinglePostPage 
-              postId={viewPostId} 
-              onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} 
-              onBack={() => setTab('notifications')}
+          {tab === 'post' && authUser && me && viewPostId && (
+            <HomeFeed
+              me={me}
+              viewPostId={viewPostId}
+              onBackPost={() => setTab(postSource)}
+              onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }}
+              onNavigateTab={setTab}
+              onOpenSavedJobs={() => setTab('saved-jobs')}
+              onOpenMyJobs={() => setTab('my-jobs')}
+              onOpenJobSearch={() => setTab('jobs')}
+              onSelectNews={(id) => { setSelectedNewsId(id); setTab('news') }}
             />
           )}
           {tab === 'settings'    && <SettingsPage onAuthChange={handleAuthChange} />}
           {tab === 'events'      && <EventsPage />}
           {tab === 'saved'       && me && <SavedItemsPage me={me} onNavigateProfile={(id) => { setViewProfileId(id ?? null); setTab('profile') }} />}
-          {tab === 'news'        && <NewsPage />}
+          {tab === 'news'        && <NewsPage initialNewsId={selectedNewsId} />}
         </div>
       </main>
 
