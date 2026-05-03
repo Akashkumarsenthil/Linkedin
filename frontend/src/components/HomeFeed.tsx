@@ -586,16 +586,17 @@ export function HomeFeed({
         <SimsonAgent userName={name} userId={me.user_id} />
 
         {me.user_type === 'member' && (
-          <div className="feed-my-jobs-card li-card">
-            <div className="feed-my-jobs-header">
-              <h3 className="feed-my-jobs-title">My jobs</h3>
+          <div className="feed-my-jobs-card premium-panel" style={{ borderTop: '4px solid #0a66c2' }}>
+            <header className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px' }}>
+              <span className="premium-title" style={{ fontSize: 13 }}>My jobs</span>
               {myJobsPreview.length > 0 && (
-                <button type="button" className="feed-my-jobs-see-all" onClick={() => onOpenMyJobs?.()}>
+                <button type="button" className="feed-my-jobs-see-all" onClick={() => onOpenMyJobs?.()} style={{ fontSize: 12, fontWeight: 600, color: 'var(--li-link)', background: 'none', border: 'none', cursor: 'pointer' }}>
                   See all
                 </button>
               )}
-            </div>
-            <p className="feed-my-jobs-sub">Roles you applied to</p>
+            </header>
+            <div style={{ padding: '0 16px 12px' }}>
+              <p className="feed-my-jobs-sub" style={{ fontSize: 11, color: 'var(--text-sec)', marginBottom: 8 }}>Roles you applied to</p>
             {myJobsLoading && myJobsPreview.length === 0 ? (
               <p className="feed-my-jobs-empty">Loading your applications…</p>
             ) : myJobsError ? (
