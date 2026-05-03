@@ -393,16 +393,16 @@ export function RecruiterJobsPage({ onNavigateProfile, onNavigateAi }: { onNavig
   }
 
   return (
-    <div className="jobs-page recruiter-jobs-page">
-      <div className="rj-toolbar">
-        <div className="rj-toolbar__left">
-          <h2>Manage Jobs</h2>
-          <p>Track postings, applicants, and job performance in one place.</p>
+    <div className="jobs-page recruiter-jobs-page premium-panel">
+      <header className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h2 className="premium-title">Manage Jobs</h2>
+          <p className="premium-subtitle">Track postings, applicants, and job performance in one place.</p>
         </div>
-        <button type="button" className="rj-post-btn" onClick={openPostModal}>
+        <button type="button" className="rj-post-btn" onClick={openPostModal} style={{ background: 'var(--li-link)', color: 'white', borderRadius: '16px', padding: '8px 24px', border: 'none', fontWeight: 600, cursor: 'pointer' }}>
           Post a Job
         </button>
-      </div>
+      </header>
 
       <div className="jobs-page__layout">
         <aside className="jobs-page__left rj-left">
