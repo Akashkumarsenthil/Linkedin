@@ -581,7 +581,7 @@ export function HomeFeed({
       </section>
 
       <aside className="feed-right-rail">
-        <SimsonAgent userName={name} />
+        <SimsonAgent userName={name} userId={me.user_id} />
 
         {me.user_type === 'member' && (
           <div className="feed-my-jobs-card li-card">
