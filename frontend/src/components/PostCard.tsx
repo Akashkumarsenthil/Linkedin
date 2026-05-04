@@ -7,6 +7,7 @@ interface Comment {
   author_id: number
   author_name: string
   author_photo_url?: string | null
+  author_headline?: string | null
   content: string
   created_at?: string | null
 }
@@ -680,9 +681,16 @@ export function PostCard({
                 </div>
                 <div className="comment-bubble">
                   <div className="comment-header">
-                    <button type="button" className="comment-author-name" onClick={() => onNavigateProfile?.(c.author_id)}>
-                      {c.author_name}
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <button type="button" className="comment-author-name" onClick={() => onNavigateProfile?.(c.author_id)}>
+                        {c.author_name}
+                      </button>
+                      {c.author_headline && (
+                        <span className="comment-author-headline" style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>
+                          {c.author_headline}
+                        </span>
+                      )}
+                    </div>
                     <span className="comment-time">{formatRelativeTime(c.created_at)}</span>
                   </div>
                   <p className="comment-content" style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>{c.content}</p>
