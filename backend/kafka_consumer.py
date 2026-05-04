@@ -348,7 +348,7 @@ async def handle_message_sent(event: dict):
 
 async def handle_profile_viewed(event: dict):
     """
-    Track profile views for analytics.
+    Track profile views for analytics and generate notifications.
 
     Uses an atomic upsert pattern for the daily view count to prevent
     read-modify-write races under concurrent load.
@@ -358,14 +358,15 @@ async def handle_profile_viewed(event: dict):
     from sqlalchemy import update
 
     from database import SessionLocal
-    from models.member import ProfileViewDaily
+    from models.member import Member, ProfileViewDaily
+    from models.recruiter import Recruiter
 
     member_id = int(event["entity"]["entity_id"])
     today = date.today()
 
     db = SessionLocal()
     try:
-        # Try atomic increment first
+        # 1. Track daily views for analytics
         rows_updated = db.execute(
             update(ProfileViewDaily)
             .where(
@@ -395,10 +396,48 @@ async def handle_profile_viewed(event: dict):
                 db.commit()
         else:
             db.commit()
+
+        # 2. Log to MongoDB event_logs
+        await mongo_db.event_logs.insert_one(event)
+
+        # 3. Add to member_notifications for the "bell" feed
+        actor_id_str = event.get("actor_id")
+        if actor_id_str and actor_id_str != "system":
+            actor_id = int(actor_id_str)
+            if actor_id != member_id:
+                # Determine actor details from MySQL
+                actor_name = "Someone"
+                actor_photo = None
+                payload = event.get("payload") or {}
+                actor_type = payload.get("actor_type", "member")
+
+                if actor_type == "recruiter":
+                    db_recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == actor_id).first()
+                    if db_recruiter:
+                        actor_name = f"{db_recruiter.first_name} {db_recruiter.last_name}".strip()
+                        actor_photo = db_recruiter.profile_photo_url
+                else:
+                    db_member = db.query(Member).filter(Member.member_id == actor_id).first()
+                    if db_member:
+                        actor_name = f"{db_member.first_name} {db_member.last_name}".strip()
+                        actor_photo = db_member.profile_photo_url
+
+                await mongo_db.member_notifications.insert_one({
+                    "member_id": member_id,
+                    "type": "profile_view",
+                    "title": f"{actor_name} viewed your profile",
+                    "subtitle": "Check out who's interested in your background.",
+                    "actor_id": actor_id,
+                    "actor_type": actor_type,
+                    "actor_photo_url": actor_photo,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "unread": True
+                })
+
+    except Exception as e:
+        logger.error(f"Error in handle_profile_viewed ({member_id}): {e}")
     finally:
         db.close()
-
-    await mongo_db.event_logs.insert_one(event)
 
 
 async def handle_job_saved(event: dict):
