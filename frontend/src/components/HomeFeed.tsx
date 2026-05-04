@@ -483,7 +483,12 @@ export function HomeFeed({
           </div>
           {me.user_type === 'member' && (
             <div className="feed-profile-stats">
-              <button type="button" className="feed-stat-row" onClick={() => onNavigateProfile(me.user_id)}>
+              <button type="button" className="feed-stat-row" onClick={() => {
+                const url = new URL(window.location.href)
+                url.searchParams.set('section', 'profile-views')
+                window.history.pushState({}, '', url)
+                if (onNavigateTab) onNavigateTab('notifications')
+              }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="eye" size={16} style={{ color: 'var(--text-muted)' }} />
                   <span className="feed-stat-label">Profile viewers</span>
