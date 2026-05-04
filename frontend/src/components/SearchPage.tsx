@@ -208,9 +208,31 @@ export function SearchPage({ query, onNavigateProfile }: SearchPageProps) {
                                 Message
                               </button>
                             ) : pendingConnections.includes(m.member_id) ? (
-                              <button type="button" className="btn-pending" style={{ cursor: 'default' }}>
-                                Pending
-                              </button>
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button type="button" className="btn-pending" style={{ cursor: 'default' }}>
+                                  Pending
+                                </button>
+                                 <button 
+                                  type="button" 
+                                  className="btn-cancel-red" 
+                                  onClick={() => {
+                                    const user = parseStoredUser()
+                                    if (!user) return
+                                    apiPost<any>('/connections/remove', { 
+                                      user_id: user.user_id, 
+                                      other_id: m.member_id 
+                                    }).then(res => {
+                                      if (res.success) {
+                                        setPendingConnections(prev => prev.filter(id => id !== m.member_id))
+                                      } else {
+                                        alert(res.message)
+                                      }
+                                    })
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
                             ) : (
                               <button 
                                 type="button"

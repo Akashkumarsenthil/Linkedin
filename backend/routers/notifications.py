@@ -227,29 +227,85 @@ async def list_notifications(
 
             for doc in app_docs:
                 oid = doc.get("_id")
-                nid = f"app-status-{oid}" if oid is not None else f"app-status-{doc.get('application_id')}"
-                job_title = doc.get("job_title") or f"Job #{doc.get('job_id')}"
-                recruiter_label = doc.get("recruiter_label") or "A recruiter"
-                new_status = doc.get("new_status") or ""
+                notif_type = doc.get("type", "application_status")
+                nid = f"mongo-{oid}"
                 
-                r = recruiters.get(doc.get("recruiter_id"))
-                r_photo = getattr(r, "profile_photo_url", None) if r else None
-                
+                # Default actor info
+                actor_id = doc.get("recruiter_id") or doc.get("actor_id")
+                actor_type = doc.get("actor_type") or ("recruiter" if doc.get("recruiter_id") else "member")
+                actor_photo = doc.get("actor_photo_url")
+
+                # If it's a recruiter and we have cached data, use it
+                if actor_type == "recruiter" and not actor_photo:
+                    r = recruiters.get(actor_id)
+                    actor_photo = getattr(r, "profile_photo_url", None) if r else None
+
                 notifications.append({
                     "id": nid,
-                    "type": "application_status",
-                    "title": f"{recruiter_label} updated your application: {job_title}",
-                    "subtitle": _application_status_subtitle(new_status),
-                    "actor_id": doc.get("recruiter_id"),
-                    "actor_type": "recruiter",
-                    "actor_photo_url": r_photo,
+                    "type": notif_type,
+                    "title": doc.get("title", "New Notification"),
+                    "subtitle": doc.get("subtitle") or (
+                        _application_status_subtitle(doc.get("new_status")) if notif_type == "application_status" else None
+                    ),
+                    "actor_id": actor_id,
+                    "actor_type": actor_type,
+                    "actor_photo_url": actor_photo,
                     "job_id": doc.get("job_id"),
                     "application_id": doc.get("application_id"),
                     "created_at": _iso(doc.get("created_at")),
-                    "unread": False,
+                    "unread": doc.get("unread", False),
                 })
         except Exception as e:
             logger.warning(f"member_notifications query failed: {e}")
+
+
+        # ── 6. New Messages ───────────────────────────────────────────────────
+        try:
+            from models.message import Message, ThreadParticipant
+            recent_msgs = (
+                db.query(Message)
+                .join(ThreadParticipant, ThreadParticipant.thread_id == Message.thread_id)
+                .filter(
+                    ThreadParticipant.user_id == user_id,
+                    ThreadParticipant.user_type == "member",
+                    Message.sender_id != user_id
+                )
+                .order_by(desc(Message.timestamp))
+                .limit(5)
+                .all()
+            )
+            
+            msg_sender_ids = [m.sender_id for m in recent_msgs if m.sender_type == "member"]
+            msg_senders = {}
+            if msg_sender_ids:
+                for m in db.query(Member).filter(Member.member_id.in_(msg_sender_ids)).all():
+                    msg_senders[m.member_id] = m
+                    
+            rec_sender_ids = [m.sender_id for m in recent_msgs if m.sender_type == "recruiter"]
+            if rec_sender_ids:
+                from models.recruiter import Recruiter
+                for r in db.query(Recruiter).filter(Recruiter.recruiter_id.in_(rec_sender_ids)).all():
+                    msg_senders[r.recruiter_id] = r
+
+            for msg in recent_msgs:
+                sender = msg_senders.get(msg.sender_id)
+                sender_name = f"{sender.first_name} {sender.last_name}".strip() if sender else "Someone"
+                preview = (msg.message_text or "").strip().replace("\n", " ")
+                if len(preview) > 60:
+                    preview = preview[:60] + "…"
+                    
+                notifications.append({
+                    "id": f"msg-{msg.message_id}",
+                    "type": "new_message",
+                    "title": f"New message from {sender_name}",
+                    "subtitle": preview,
+                    "actor_id": msg.sender_id,
+                    "actor_photo_url": getattr(sender, "profile_photo_url", None) if sender else None,
+                    "created_at": _iso(msg.timestamp),
+                    "unread": True,
+                })
+        except Exception as e:
+            logger.warning(f"recent messages query failed: {e}")
 
     # Sort newest first, cap at 30 items
     notifications.sort(key=lambda n: (n.get("created_at") or ""), reverse=True)

@@ -144,6 +144,8 @@ function App() {
 
   const [tab, setTab] = useState<Tab>(() => {
     const p = window.location.pathname
+    const search = window.location.search
+    if (search.includes('section=profile-views') && p === '/notifications') return 'notifications'
     return PATH_TO_TAB[p] ?? (parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
   })
   const [authUser, setAuthUser] = useState<AuthUser>(() => parseStoredUser())
@@ -177,6 +179,11 @@ function App() {
   useEffect(() => {
     const handlePopState = (e: PopStateEvent) => {
       const p = window.location.pathname
+      const search = window.location.search
+      if (search.includes('section=profile-views') && p === '/notifications') {
+        setTab('notifications')
+        return
+      }
       const t = PATH_TO_TAB[p]
       if (t) setTab(t)
       else setTab(parseStoredUser()?.user_type === 'admin' ? 'perf' : 'overview')
@@ -463,7 +470,9 @@ function App() {
                     initials
                   )}
                 </button>
-                <span className="nav-label">Me</span>
+                <span className="nav-label" style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  Me <Icon name="chevron-down" size={12} />
+                </span>
                 {showAvatarMenu && (
                   <>
                     <div className="avatar-menu-overlay" onClick={() => setShowAvatarMenu(false)} />
@@ -563,6 +572,7 @@ function App() {
               onAuthChange={handleAuthChange} 
               onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} 
               onNavigateMessaging={(id) => { setTargetMessagingId(id); setTab('messages') }}
+              onNavigateTab={setTab}
             />
           )}
           {tab === 'post' && authUser && me && viewPostId && (
@@ -949,7 +959,7 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
           <option value="connections">Most connected</option>
           <option value="recent">Newest</option>
         </select>
-        <button type="button" className="primary" onClick={search} disabled={loading}>
+        <button type="button" className="btn-green" onClick={search} disabled={loading}>
           {loading && !nextCursor ? 'Searching...' : 'Search'}
         </button>
       </div>
@@ -1024,8 +1034,8 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
                           </button>
                           <button 
                             type="button" 
-                            className="ghost-btn" 
-                            style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', fontSize: '14px', color: '#d11124', fontWeight: 600 }}
+                            className="btn-cancel-red" 
+                            style={{ flex: 1, justifyContent: 'center' }}
                             onClick={() => {
                                 const user = parseStoredUser()
                                 if (!user || user.user_type !== 'member') return

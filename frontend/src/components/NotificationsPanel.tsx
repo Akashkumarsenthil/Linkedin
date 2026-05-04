@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Icon } from './Icon'
 
 interface NotificationItem {
@@ -27,6 +28,8 @@ function iconForType(type: string): string {
     case 'connection_request': return 'connections'
     case 'post_like':           return 'thumb'
     case 'connection_post':     return 'article'
+    case 'profile_view':        return 'eye'
+    case 'new_message':         return 'messaging'
     default:                    return 'bell'
   }
 }
@@ -52,9 +55,17 @@ export function NotificationsPanel({
   onNavigateProfile,
   onNavigatePost,
 }: NotificationsPanelProps) {
+  const params = new URLSearchParams(window.location.search)
+  const initialFilter = params.get('section') === 'profile-views' ? 'views' : 'all'
+  const [filter, setFilter] = useState<'all' | 'views'>(initialFilter)
+
+  const filteredNotifications = filter === 'views' 
+    ? notifications.filter(n => n.type === 'profile_view')
+    : notifications
+
   return (
     <section className="panel premium-panel" style={{ marginTop: 16 }}>
-      <header className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className="premium-header" style={{ padding: '24px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h2 className="premium-title">Notifications</h2>
           <p className="premium-subtitle">
@@ -63,24 +74,44 @@ export function NotificationsPanel({
               : 'You’re all caught up.'}
           </p>
         </div>
-        <button type="button" className="ghost-btn" onClick={onRefresh}>
+        <button type="button" className="ghost-btn" style={{ marginTop: 4 }} onClick={onRefresh}>
           Refresh
         </button>
       </header>
 
       <div style={{ padding: '0 24px 24px' }}>
-        {notifications.length === 0 ? (
+        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+          <button 
+            type="button" 
+            className={`pill-btn ${filter === 'all' ? 'active' : ''}`}
+            onClick={() => setFilter('all')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="bell" size={16} />
+            All notifications
+          </button>
+          <button 
+            type="button" 
+            className={`pill-btn ${filter === 'views' ? 'active' : ''}`}
+            onClick={() => setFilter('views')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="eye" size={16} />
+            Profile views
+          </button>
+        </div>
+
+        {filteredNotifications.length === 0 ? (
           <div className="notif-empty">
             <Icon name="bell" size={28} className="notif-empty-icon" />
-            <p><strong>No notifications yet.</strong></p>
+            <p><strong>No {filter === 'views' ? 'profile views' : 'notifications'} yet.</strong></p>
             <p className="muted">
-              When someone sends you a connection request, likes your post,
-              or shares something new, you’ll see it here.
+              {filter === 'views' ? "When someone views your profile, it will appear here." : "When someone sends you a connection request, likes your post, or shares something new, you’ll see it here."}
             </p>
           </div>
         ) : (
           <ul className="notif-list">
-            {notifications.map((n) => {
+            {filteredNotifications.map((n) => {
               const isAction = n.type === 'connection_request'
               const initials =
                 (n.title || 'U')
@@ -128,13 +159,13 @@ export function NotificationsPanel({
                         }
                       }}
                     >{n.title}</p>
-                    {n.subtitle && <p className="notif-subtitle">{n.subtitle}</p>}
+                    {n.subtitle && n.type !== 'profile_view' && <p className="notif-subtitle">{n.subtitle}</p>}
                     <p className="notif-time">{formatRelative(n.created_at)}</p>
                   </div>
                   {isAction && (
                     <button
                       type="button"
-                      className="primary notif-action"
+                      className="primary"
                       onClick={onOpenConnections}
                     >
                       Review

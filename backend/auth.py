@@ -124,3 +124,7 @@ def require_recruiter(
             detail="Recruiter account required for this action",
         )
     return current_user
+
+
+# Alias for backward compatibility (used in profile service)
+get_optional_user = optional_current_user

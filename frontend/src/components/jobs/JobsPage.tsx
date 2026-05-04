@@ -112,9 +112,10 @@ export function JobsPage({ onNavigateProfile, onNavigateAi }: JobsPageProps) {
             placeholder="Search jobs by title or keyword..." 
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px', border: '1px solid var(--li-border)', background: '#f9fafb' }}
+            className="search-bar-green"
+            style={{ flex: 1, padding: '8px 12px', borderRadius: '4px' }}
           />
-          <button type="submit" style={{ padding: '8px 20px', background: 'var(--li-link)', color: 'white', border: 'none', borderRadius: '16px', cursor: 'pointer', fontWeight: 600 }}>
+          <button type="submit" className="btn-green" style={{ padding: '8px 20px', borderRadius: '16px' }}>
             Search
           </button>
         </form>

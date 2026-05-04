@@ -291,7 +291,7 @@ export function NewsPage({ initialNewsId }: { initialNewsId?: number | null }) {
                   <span key={p} style={{ background: '#f3f6f8', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', color: '#0a66c2', fontWeight: 600 }}>{p}</span>
                 ))}
               </div>
-              <button className="primary w-full" onClick={openPrefModal}>Edit Preferences</button>
+              <button className="btn-green" style={{ width: '100%' }} onClick={openPrefModal}>Edit Preferences</button>
             </div>
           </div>
           

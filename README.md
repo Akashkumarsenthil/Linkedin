@@ -44,6 +44,7 @@ This is a LinkedIn-style professional networking platform built as a distributed
 **What the system can do:**
 
 - Full member and recruiter profile management with search
+- Premium modernized UI with dark mode, flex layouts, and dynamic styling
 - Job postings with application workflow and status tracking
 - Threaded messaging between members and recruiters
 - LinkedIn-style connection requests, acceptance, and mutual-connection lookup

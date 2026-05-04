@@ -29,6 +29,7 @@ interface ProfilePageProps {
   onAuthChange?: () => void
   onNavigateProfile?: (id: number) => void
   onNavigateMessaging?: (id: number) => void
+  onNavigateTab?: (tab: string) => void
 }
 
 // ── Client-side image resize → JPEG data URL ──────────────────────────────────
@@ -231,7 +232,7 @@ function recruiterFromProfile(p: Record<string, unknown>): RecruiterState {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile, onNavigateMessaging }: ProfilePageProps) {
+export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile, onNavigateMessaging, onNavigateTab }: ProfilePageProps) {
   const storedUser = parseStoredUser()
 
   const [loading, setLoading] = useState(true)
@@ -797,10 +798,20 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile,
 
             <div className="profile-hero-right">
               {isOwnProfile && userType === 'member' && (
-                <div className="profile-view-stat">
-                  <div className="profile-view-count">{profileViews ?? member.profile_views}</div>
-                  <div className="profile-view-label">profile views</div>
-                </div>
+                <button 
+                  type="button" 
+                  className="profile-view-box" 
+                  onClick={() => {
+                    const url = new URL(window.location.href)
+                    url.searchParams.set('section', 'profile-views')
+                    window.history.pushState({}, '', url)
+                    if (onNavigateTab) onNavigateTab('notifications')
+                  }}
+                  title="View your profile visitors"
+                >
+                  <Icon name="eye" size={18} />
+                  <span className="profile-view-box-number">{profileViews ?? member.profile_views}</span>
+                </button>
               )}
               {!editing && isOwnProfile && (
                 <button type="button" className="profile-edit-btn" onClick={() => setEditing(true)}>
@@ -808,7 +819,7 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile,
                 </button>
               )}
               {editing && (
-                <button type="button" className="ghost-btn" onClick={() => setEditing(false)}>
+                <button type="button" className="btn-cancel-red" onClick={() => setEditing(false)}>
                   Cancel
                 </button>
               )}
@@ -851,7 +862,7 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile,
               <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
                 {connections.includes(viewMemberId) ? (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="btn-message" onClick={() => viewMemberId && onNavigateMessaging?.(viewMemberId)}>
+                    <button type="button" className="primary" onClick={() => viewMemberId && onNavigateMessaging?.(viewMemberId)}>
                       Message
                     </button>
                     <button 
@@ -865,13 +876,35 @@ export function ProfilePage({ me, viewMemberId, onAuthChange, onNavigateProfile,
                     </button>
                   </div>
                 ) : pendingConnections.includes(viewMemberId) ? (
-                  <button type="button" className="btn-pending" style={{ cursor: 'default' }}>
-                    Pending
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="button" className="btn-pending" style={{ cursor: 'default' }}>
+                      Pending
+                    </button>
+                    <button 
+                      type="button" 
+                      className="ghost-btn" 
+                      style={{ border: '1px solid #d11124', color: '#d11124', fontWeight: 600, padding: '6px 16px', borderRadius: '24px' }}
+                      onClick={() => {
+                        if (!storedUser) return;
+                        apiPost<any>('/connections/remove', { 
+                          user_id: storedUser.user_id, 
+                          other_id: viewMemberId 
+                        }).then(res => {
+                          if (res.success) {
+                            setPendingConnections(prev => prev.filter(id => id !== viewMemberId))
+                          } else {
+                            alert(res.message)
+                          }
+                        })
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 ) : (
                   <button 
                     type="button" 
-                    className="btn-connect"
+                    className="primary"
                     onClick={() => {
                       apiPost<any>('/connections/request', { 
                         requester_id: storedUser.user_id, 

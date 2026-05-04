@@ -123,7 +123,9 @@ We structured the backend as a FastAPI monolith with clean domain boundaries. Ea
 | Profile | `/members` | `routers/members.py` |
 | Recruiter | `/recruiters` | `routers/recruiters.py` |
 | Jobs | `/jobs` | `routers/jobs.py` |
-| Applications | `/applications` | `routers/applications.py` |
+| Application Status | `application_status` | Status update on a job application |
+| Message | `new_message` | New message received in a thread |
+| Profile View | `profile_view` | Someone viewed your profile |
 | Messaging | `/threads`, `/messages` | `routers/messages.py` |
 | Connections | `/connections` | `routers/connections.py` |
 | Analytics | `/analytics`, `/events` | `routers/analytics.py` |
