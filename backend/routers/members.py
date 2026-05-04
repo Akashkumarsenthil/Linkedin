@@ -16,6 +16,7 @@ from database import get_db
 from models.member import Member
 from models.user_credentials import UserCredentials
 from auth import require_member, TokenPayload
+import auth
 from schemas.member import (
     MemberGet, MemberUpdate, MemberDelete, MemberSearch,
     MemberResponse, MemberListResponse,
@@ -48,7 +49,11 @@ def _decode_cursor(cursor: str) -> dict:
 
 
 @router.post("/get", response_model=MemberResponse, summary="Get member profile by ID")
-async def get_member(req: MemberGet, db: Session = Depends(get_db)):
+async def get_member(
+    req: MemberGet,
+    db: Session = Depends(get_db),
+    current_user: TokenPayload | None = Depends(auth.get_optional_user)
+):
     """
     Retrieve a member's full profile by member_id.
     Uses Redis caching for frequently accessed profiles.
@@ -64,26 +69,30 @@ async def get_member(req: MemberGet, db: Session = Depends(get_db)):
     if not member:
         return MemberResponse(success=False, message=f"Member {req.member_id} not found")
 
-    # Increment view count directly in DB for real-time updates
-    member.profile_views += 1
-    db.commit()
-    db.refresh(member)
+    actor_id = str(current_user.user_id) if current_user else "system"
+    actor_type = current_user.user_type if current_user else "system"
+
+    if not current_user or current_user.user_id != req.member_id:
+        # Increment view count directly in DB for real-time updates
+        member.profile_views += 1
+        db.commit()
+        db.refresh(member)
+
+        # Publish profile view event (mirrors job.viewed pattern in routers/jobs.py)
+        try:
+            await kafka_producer.publish(
+                topic="profile.viewed",
+                event_type="profile.viewed",
+                actor_id=actor_id,
+                entity_type="member",
+                entity_id=str(req.member_id),
+                payload={"actor_type": actor_type},
+            )
+        except Exception:
+            pass
 
     data = member.to_dict()
     cache.set(cache_key, data, ttl=300)
-
-    # Publish profile view event (mirrors job.viewed pattern in routers/jobs.py)
-    try:
-        await kafka_producer.publish(
-            topic="profile.viewed",
-            event_type="profile.viewed",
-            actor_id="system",
-            entity_type="member",
-            entity_id=str(req.member_id),
-            payload={},
-        )
-    except Exception:
-        pass
 
     return MemberResponse(success=True, message="Member retrieved successfully", data=data)
 
