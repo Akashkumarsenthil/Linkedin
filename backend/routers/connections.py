@@ -39,6 +39,7 @@ def _get_user_name(db: Session, user_id: int) -> dict | None:
             "member_id": member.member_id,
             "name": f"{member.first_name} {member.last_name}",
             "headline": member.headline,
+            "photo_url": member.profile_photo_url,
             "user_type": "member",
         }
     recruiter = db.query(Recruiter).filter(Recruiter.recruiter_id == user_id).first()
@@ -47,6 +48,7 @@ def _get_user_name(db: Session, user_id: int) -> dict | None:
             "member_id": recruiter.recruiter_id,
             "name": f"{recruiter.first_name} {recruiter.last_name}",
             "headline": recruiter.company_name or recruiter.role or "Recruiter",
+            "photo_url": getattr(recruiter, "profile_photo_url", None),
             "user_type": "recruiter",
         }
     return None
@@ -254,6 +256,36 @@ async def pending_connections(req: ConnectionList, db: Session = Depends(get_db)
         data=result,
         total=total,
     )
+
+
+@router.post("/sent", response_model=ConnectionListResponse, summary="List sent connection requests")
+async def sent_connections(req: ConnectionList, db: Session = Depends(get_db)):
+    """List all pending connection requests sent by the user."""
+    query = db.query(Connection).filter(
+        Connection.requester_id == req.user_id,
+        Connection.status == "pending",
+    )
+
+    total = query.count()
+    offset = (req.page - 1) * req.page_size
+    connections = query.offset(offset).limit(req.page_size).all()
+
+    # Enrich with user names (member or recruiter) of the receiver
+    result = []
+    for conn in connections:
+        data = conn.to_dict()
+        user_info = _get_user_name(db, conn.receiver_id)
+        if user_info:
+            data["connected_member"] = user_info
+        result.append(data)
+
+    return ConnectionListResponse(
+        success=True,
+        message=f"Found {total} sent requests",
+        data=result,
+        total=total,
+    )
+
 
 
 @router.post("/mutual", response_model=ConnectionListResponse, summary="Find mutual connections")
