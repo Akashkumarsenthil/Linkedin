@@ -2,8 +2,9 @@
  * MessagingPanel — LinkedIn-style 2-column messaging UI.
  * Uses the stored JWT token for sender identity.
  */
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { apiGet, apiPost, parseStoredUser } from '../api'
+import { Icon } from './Icon'
 
 interface MsgData {
   message_id: number
@@ -30,121 +31,42 @@ interface ThreadData {
 
 type UserType = 'member' | 'recruiter'
 
-/** Normalize bare MySQL timestamps (no timezone) to UTC */
-function toUTC(iso: string): string {
-  if (!iso) return ''
-  let s = iso.trim()
-  if (!s.includes('T')) s = s.replace(' ', 'T')
-  // If no timezone indicator exists, and we know our server is now in PST or we want to treat it as UTC
-  // Given we set TZ=America/Los_Angeles in docker, bare strings might be PST.
-  // But standard practice is to send UTC. We'll assume UTC if no offset.
-  if (!s.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(s)) {
-    s += 'Z'
+function fmtDate(d: string) {
+  const dt = new Date(d)
+  const now = new Date()
+  if (dt.toDateString() === now.toDateString()) return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function fmtTime(d: string) {
+  return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function tryParseSharedPost(text: string) {
+  if (text.startsWith('{"type":"shared_post"')) {
+    try { return JSON.parse(text) } catch { return null }
   }
-  return s
-}
-
-function fmtTime(iso: string): string {
-  try {
-    const d = new Date(toUTC(iso))
-    return d.toLocaleTimeString('en-US', {
-      hour: '2-digit', minute: '2-digit',
-      timeZone: 'America/Los_Angeles'
-    })
-  } catch { return iso }
-}
-
-function fmtDate(iso: string): string {
-  try {
-    const d = new Date(toUTC(iso))
-    const today = new Date()
-    const pstOpts: Intl.DateTimeFormatOptions = { timeZone: 'America/Los_Angeles' }
-    const dStr = d.toLocaleDateString('en-US', pstOpts)
-    const tStr = today.toLocaleDateString('en-US', pstOpts)
-    if (dStr === tStr) return fmtTime(iso)
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' })
-  } catch { return iso }
-}
-
-function tryParseSharedPost(text: string): { type: string; post_id: number; author_name?: string; author_headline?: string; author_photo_url?: string; content?: string; image_url?: string; created_at?: string } | null {
-  // New JSON format
-  try {
-    const parsed = JSON.parse(text)
-    if (parsed && parsed.type === 'shared_post') return parsed
-    return null
-  } catch { /* not JSON, try old format */ }
-
-  // Old plain text format: "Check out this post: http://.../posts/123"
-  const match = text.match(/Check out this post:\s*https?:\/\/[^/]+\/posts\/(\d+)/)
-  if (match) {
-    return { type: 'shared_post', post_id: parseInt(match[1]) }
-  }
-
   return null
 }
 
-function SharedPostLoader({ 
-  sharedPost, 
-  onNavigatePost 
-}: { 
-  sharedPost: NonNullable<ReturnType<typeof tryParseSharedPost>>, 
-  onNavigatePost?: (id: number) => void 
-}) {
-  const [postData, setPostData] = useState<any>(sharedPost)
-
+function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onNavigatePost?: (postId: number) => void }) {
+  const [postData, setPostData] = useState<any>(null)
   useEffect(() => {
-    // If it doesn't have an image_url but we know we can fetch it, let's try to get full data
-    // Or just always fetch to ensure it's up to date.
-    let mounted = true
-    apiGet(`/posts/${sharedPost.post_id}`).then((res: any) => {
-      if (mounted && res?.data) {
-        setPostData({
-          ...sharedPost,
-          author_name: res.data.author?.name || sharedPost.author_name,
-          author_headline: res.data.author?.headline || sharedPost.author_headline,
-          author_photo_url: res.data.author?.photo_url || sharedPost.author_photo_url,
-          content: res.data.content || sharedPost.content,
-          image_url: res.data.image_url || sharedPost.image_url,
-        })
-      }
-    }).catch(() => {})
-    return () => { mounted = false }
-  }, [sharedPost.post_id])
+    apiPost<{ data: any }>('/posts/get', { post_id: sharedPost.postId || sharedPost.post_id }).then(r => setPostData(r.data)).catch(() => { })
+  }, [sharedPost.postId, sharedPost.post_id])
 
-  const hasFullData = !!(postData.author_name || postData.content)
-  
+  if (!postData) return <div className="hint" style={{ padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>Loading shared post...</div>
+
   return (
-    <div 
-      className="shared-post-card" 
-      onClick={() => onNavigatePost && onNavigatePost(postData.post_id)}
-      style={{ cursor: onNavigatePost ? 'pointer' : 'default' }}
+    <div
+      className="shared-post-card"
+      onClick={() => onNavigatePost?.(postData.post_id)}
+      style={{ border: '1px solid var(--li-border)', borderRadius: '8px', overflow: 'hidden', background: '#fff', cursor: 'pointer', maxWidth: '300px' }}
     >
-      <div className="shared-post-header">
-        <div className="shared-post-avatar">
-          {postData.author_photo_url ? (
-            <img src={postData.author_photo_url} alt="" />
-          ) : (
-            <span>{hasFullData ? (postData.author_name?.[0] || '?') : '📄'}</span>
-          )}
-        </div>
-        <div className="shared-post-author">
-          <span className="shared-post-name">
-            {hasFullData ? postData.author_name : 'Shared Post'}
-          </span>
-          {postData.author_headline && (
-            <span className="shared-post-headline">{postData.author_headline}</span>
-          )}
-          {!hasFullData && (
-            <span className="shared-post-headline">Post #{postData.post_id}</span>
-          )}
-          {postData.created_at && (
-            <span className="shared-post-time">{fmtDate(postData.created_at)}</span>
-          )}
-        </div>
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid #eee', fontSize: '12px', fontWeight: 600 }}>
+        {postData.author_name}
       </div>
-      {postData.content && (
-        <p className="shared-post-content">{postData.content}</p>
-      )}
+      <p style={{ padding: '8px 12px', margin: 0, fontSize: '13px' }}>{postData.content?.slice(0, 80)}...</p>
       {postData.image_url && (
         <img className="shared-post-image" src={postData.image_url} alt="Post" />
       )}
@@ -152,31 +74,42 @@ function SharedPostLoader({
   )
 }
 
-export function MessagingPanel({ 
-onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void, targetUserId?: number | null, onClearTarget?: () => void }) {
+export function MessagingPanel({
+  onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void, targetUserId?: number | null, onClearTarget?: () => void }) {
   const identity = useMemo(() => parseStoredUser(), [])
 
-  const [threads, setThreads]         = useState<ThreadData[]>([])
+  const [threads, setThreads] = useState<ThreadData[]>([])
   const [threadsLoading, setThreadsL] = useState(false)
-  const [threadsErr, setThreadsErr]   = useState<string | null>(null)
+  const [threadsErr, setThreadsErr] = useState<string | null>(null)
 
-  const [selectedId, setSelectedId]   = useState<number | null>(null)
-  const [messages, setMessages]       = useState<MsgData[]>([])
-  const [msgsLoading, setMsgsL]       = useState(false)
-  const [msgsErr, setMsgsErr]         = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [messages, setMessages] = useState<MsgData[]>([])
+  const [msgsLoading, setMsgsL] = useState(false)
+  const [msgsErr, setMsgsErr] = useState<string | null>(null)
 
-  const [msgText, setMsgText]         = useState('')
-  const [sendLoading, setSendL]       = useState(false)
-  const [sendErr, setSendErr]         = useState<string | null>(null)
+  const [msgText, setMsgText] = useState('')
+  const [sendLoading, setSendL] = useState(false)
+  const [sendErr, setSendErr] = useState<string | null>(null)
 
-  const [showNew, setShowNew]         = useState(false)
-  const [newParticipant, setNewPart]  = useState('')
-  const [newParticType, setNewPType]  = useState<UserType>('member')
-  const [newLoading, setNewL]         = useState(false)
-  const [newErr, setNewErr]           = useState<string | null>(null)
-  
+  const [threadSearch, setThreadSearch] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [newParticipant, setNewPart] = useState('')
+  const [newParticType, setNewPType] = useState<UserType>('member')
+  const [newLoading, setNewL] = useState(false)
+  const [newErr, setNewErr] = useState<string | null>(null)
+
   const [searchName, setSearchName] = useState('')
   const [searchResults, setSearchResults] = useState<{ id: number; name: string; headline: string; type: UserType }[]>([])
+
+  const filteredThreads = useMemo(() => {
+    if (!threadSearch.trim()) return threads
+    const term = threadSearch.toLowerCase()
+    return threads.filter(t =>
+      t.other_participant?.name?.toLowerCase().includes(term) ||
+      t.subject?.toLowerCase().includes(term) ||
+      t.last_message?.message_text?.toLowerCase().includes(term)
+    )
+  }, [threads, threadSearch])
 
   useEffect(() => {
     // Clear results immediately when typing starts
@@ -327,10 +260,12 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
     try {
       const r = await apiPost<{ success: boolean; message: string; data: ThreadData }>(
         '/threads/open',
-        { participant_ids: [
+        {
+          participant_ids: [
             { user_id: identity.user_id, user_type: identity.user_type },
             { user_id: otherId, user_type: newParticType },
-          ] },
+          ]
+        },
       )
       if (!r.success) throw new Error(r.message)
       setShowNew(false)
@@ -369,289 +304,300 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
   }
 
   return (
-    <section className="messaging-page premium-panel" style={{ marginTop: 16 }}>
-      <header className="premium-header">
-        <div>
-          <h2 className="premium-title">Messages</h2>
-          <p className="premium-subtitle">
-            Signed in as <strong>{identity.email}</strong> ({identity.user_type})
-          </p>
-        </div>
-      </header>
-
-      <div style={{ padding: '0 24px 24px' }}>
-        <div className="msg-layout" style={{ height: '650px' }}>
-        {/* ── Thread list ──────────────────────────────── */}
-        <div className="msg-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          <div className="msg-sidebar-header">
-            <span className="sidebar-title">Conversations</span>
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => loadThreads(identity.user_id, identity.user_type)}
-              disabled={threadsLoading}
-              title="Refresh"
-            >
-              {threadsLoading ? '…' : '↺'}
-            </button>
-          </div>
-
-          {/* New thread moved to TOP */}
-          <div className="new-thread-section" style={{ padding: '8px 14px', borderBottom: '1px solid #eee' }}>
-            <button type="button" className="ghost-btn full-width" style={{ textAlign: 'left', fontWeight: 600, color: 'var(--ln-blue)' }} onClick={() => setShowNew(v => !v)}>
-              {showNew ? '✕ Cancel' : '+ New conversation'}
-            </button>
-            {showNew && (
-              <div className="new-thread-form" style={{ marginTop: 10 }}>
-                <label className="form-label" style={{ position: 'relative' }}>
-                  Recipient
-                  <div className="search-input-wrap">
+    <section className="panel premium-panel" style={{ marginTop: 16 }}>
+      <header className="premium-header" style={{ padding: '20px 24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2 className="premium-title">Messages</h2>
+              <p className="premium-subtitle">
+                Connected as <strong>{identity.name || identity.email}</strong>
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {showNew && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ position: 'relative', width: '300px' }}>
                     <input
                       type="text"
                       value={searchName}
-                      onChange={e => { setSearchName(e.target.value); if(!e.target.value) setNewPart('') }}
-                      placeholder="Search by name..."
-                      className="search-bar-input"
-                      style={{ width: '100%', boxSizing: 'border-box' }}
+                      onChange={e => { setSearchName(e.target.value); if (!e.target.value) setNewPart('') }}
+                      placeholder="Type a name to start conversation..."
+                      style={{ background: 'var(--li-search-bg)', border: '1px solid var(--li-border)', padding: '8px 12px', borderRadius: '8px', width: '100%', fontSize: '14px' }}
                     />
                     {searchResults.length > 0 && !newParticipant && (
-                      <div className="search-dropdown panel" style={{ 
-                        zIndex: 100, 
-                        position: 'absolute', 
-                        width: '100%', 
-                        maxHeight: '400px', 
-                        overflowY: 'auto',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-                        marginTop: '4px',
-                        background: '#fff',
-                        left: 0,
-                        right: 0
+                      <div className="search-dropdown panel" style={{
+                        zIndex: 100, position: 'absolute', width: '100%', maxHeight: '300px', overflowY: 'auto',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)', marginTop: '4px', background: '#fff', left: 0, border: '1px solid var(--li-border)'
                       }}>
                         {searchResults.map(m => (
-                          <div key={`${m.type}-${m.id}`} className="search-item" style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => { 
-                            setNewPart(String(m.id))
-                            setNewPType(m.type)
-                            setSearchName(`${m.name}`) 
-                            setSearchResults([])
+                          <div key={`${m.type}-${m.id}`} className="search-item" style={{ padding: '10px 14px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }} onClick={() => {
+                            setNewPart(String(m.id)); setNewPType(m.type); setSearchName(m.name); setSearchResults([]); setNewErr(null);
                           }}>
-                            <div className="search-item-info">
-                              <div className="search-item-name" style={{ fontWeight: 600, color: '#333' }}>{m.name}</div>
-                              <div className="search-item-headline" style={{ fontSize: '12px', color: '#666' }}>{m.headline}</div>
-                            </div>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{m.name}</div>
+                            <div style={{ fontSize: 11, color: '#666' }}>{m.headline}</div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
-                </label>
-                {newErr && <p className="error" style={{ fontSize: 12, marginTop: 4 }}>{newErr}</p>}
-                <button type="button" className="primary full-width" style={{ marginTop: 10 }} onClick={openThread} disabled={newLoading || !newParticipant}>
-                  {newLoading ? 'Creating…' : 'Start conversation'}
-                </button>
-              </div>
-            )}
+                  <button type="button" className="pill-btn" style={{ background: 'var(--li-green)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '16px', fontWeight: 600, cursor: 'pointer' }} onClick={openThread} disabled={newLoading || !newParticipant}>
+                    {newLoading ? '...' : 'Start'}
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className="pill-btn"
+                style={{
+                  height: '40px', padding: '0 20px',
+                  background: showNew ? '#f3f6f8' : 'var(--li-green)',
+                  color: showNew ? 'var(--li-text-primary)' : '#fff',
+                  border: 'none', borderRadius: '20px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                  whiteSpace: 'nowrap'
+                }}
+                onClick={() => { setShowNew(v => !v); if (showNew) { setSearchName(''); setNewPart(''); setNewErr(null); } }}
+                title={showNew ? 'Cancel' : 'New Message'}
+              >
+                {showNew ? <Icon name="close" size={18} /> : <Icon name="edit" size={18} />}
+                <span>{showNew ? 'Cancel' : 'New Conversation'}</span>
+              </button>
+            </div>
+          </div>
+          {newErr && <p className="error" style={{ fontSize: 11, textAlign: 'right' }}>{newErr}</p>}
+        </div>
+      </header>
+
+      <div style={{ padding: '0 24px 24px' }}>
+        <div className="msg-layout">
+          {/* ── Sidebar ──────────────────────────────── */}
+          <div className="msg-sidebar">
+            <div className="msg-sidebar-search">
+              <input
+                type="text"
+                placeholder="Search messages..."
+                value={threadSearch}
+                onChange={e => setThreadSearch(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', background: 'var(--li-search-bg)', border: '1px solid var(--li-border)', borderRadius: '8px', fontSize: '14px' }}
+              />
+            </div>
+
+
+
+
+            <div className="thread-list" style={{ overflowY: 'auto', flex: 1 }}>
+              {filteredThreads.length === 0 && !threadsLoading && (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#999', fontSize: 13 }}>
+                  No conversations found.
+                </div>
+              )}
+              {filteredThreads.map(t => (
+                <div
+                  key={t.thread_id}
+                  className={`thread-item${selectedId === t.thread_id ? ' active' : ''}${t.unread_count > 0 ? ' unread' : ''}`}
+                  onClick={() => selectThread(t.thread_id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
+                >
+                  <div
+                    className="thread-avatar"
+                    style={{ position: 'relative', cursor: 'pointer' }}
+                    onClick={(e) => {
+                      if (t.other_participant) {
+                        e.stopPropagation()
+                        onNavigateProfile?.(t.other_participant.user_id)
+                      }
+                    }}
+                  >
+                    {t.other_participant?.photo_url ? (
+                      <img src={t.other_participant.photo_url} alt="" />
+                    ) : (
+                      <div className="avatar-placeholder">{t.other_participant?.name?.[0] || '?'}</div>
+                    )}
+                    {t.unread_count > 0 && (
+                      <div className="unread-dot" />
+                    )}
+                  </div>
+                  <div className="thread-info">
+                    <div className="thread-top">
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                        <span
+                          className="thread-subject"
+                          style={t.unread_count > 0 ? { fontWeight: 800, color: 'var(--li-blue-primary)', cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontSize: '15px' } : { cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', fontSize: '15px', color: 'var(--li-text-primary)' }}
+                          onClick={(e) => {
+                            if (t.other_participant) {
+                              e.stopPropagation()
+                              onNavigateProfile?.(t.other_participant.user_id)
+                            }
+                          }}
+                        >
+                          {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
+                        </span>
+                        {t.other_participant?.headline && (
+                          <span style={{ fontSize: '12px', color: 'var(--li-text-sec)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', marginTop: '2px' }}>
+                            {t.other_participant.headline}
+                          </span>
+                        )}
+                      </div>
+                      <span className="thread-date" style={t.unread_count > 0 ? { color: '#cc1016', fontWeight: 600, flexShrink: 0 } : { flexShrink: 0 }}>{fmtDate(t.created_at)}</span>
+                    </div>
+                    {t.last_message && (
+                      <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
+                        {(() => {
+                          const shared = tryParseSharedPost(t.last_message.message_text);
+                          if (shared) {
+                            const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
+                            return isMe ? "You shared a post" : `${t.other_participant?.name || 'Someone'} shared a post`;
+                          }
+                          return t.last_message.message_text.slice(0, 45) + (t.last_message.message_text.length > 45 ? '…' : '');
+                        })()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {threadsErr && <p className="error" style={{ padding: '8px 14px', fontSize: 12 }}>{threadsErr}</p>}
 
-          <ul className="thread-list" style={{ flex: 1, overflowY: 'auto' }}>
-            {threads.length === 0 && !threadsLoading && (
-              <li style={{ padding: '16px 14px' }}>
-                <p className="hint">No conversations yet.</p>
-              </li>
-            )}
-            {threads.map(t => (
-              <li
-                key={t.thread_id}
-                className={`thread-item${selectedId === t.thread_id ? ' active' : ''}${t.unread_count > 0 ? ' unread' : ''}`}
-                onClick={() => selectThread(t.thread_id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={e => e.key === 'Enter' && selectThread(t.thread_id)}
-                style={t.unread_count > 0 ? { borderLeft: '4px solid #cc1016', background: '#fff9f9' } : {}}
-              >
-                <div 
-                  className="thread-avatar" 
-                  style={{ position: 'relative', cursor: 'pointer' }}
-                  onClick={(e) => {
-                    if (t.other_participant) {
-                      e.stopPropagation()
-                      onNavigateProfile?.(t.other_participant.user_id)
-                    }
-                  }}
-                >
-                  {t.other_participant?.photo_url ? (
-                    <img src={t.other_participant.photo_url} alt="" />
-                  ) : (
-                    <div className="avatar-placeholder">{t.other_participant?.name?.[0] || '?'}</div>
-                  )}
-                  {t.unread_count > 0 && (
-                    <div className="unread-dot" style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, background: '#cc1016', borderRadius: '50%', border: '2px solid white' }} />
-                  )}
+
+          {/* ── Message area ─────────────────────────────── */}
+          <div className="msg-main" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            {!selectedId ? (
+              <div className="msg-empty" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--li-text-sec)', textAlign: 'center', padding: '40px' }}>
+                <Icon name="messaging" size={64} style={{ opacity: 0.2, marginBottom: '16px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <p style={{ fontSize: '18px', fontWeight: 500, margin: 0 }}>Select a conversation to read messages</p>
+                  <p style={{ fontSize: '14px', margin: 0 }}>Connect with professionals and grow your network.</p>
                 </div>
-                <div className="thread-info">
-                  <div className="thread-top">
-                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                      <span 
-                        className="thread-subject" 
-                        style={t.unread_count > 0 ? { fontWeight: 800, color: '#000', cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } : { cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}
-                        onClick={(e) => {
-                          if (t.other_participant) {
-                            e.stopPropagation()
-                            onNavigateProfile?.(t.other_participant.user_id)
-                          }
-                        }}
+              </div>
+            ) : (
+              <>
+                <div className="msg-thread-header">
+                  <div className="msg-header-info">
+                    {selectedThread?.other_participant && (
+                      <button
+                        type="button"
+                        className="msg-header-name"
+                        onClick={() => onNavigateProfile?.(selectedThread.other_participant!.user_id)}
                       >
-                        {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
-                      </span>
-                      {t.other_participant?.headline && (
-                        <span style={{ fontSize: '12px', color: 'var(--li-text-sec)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                          {t.other_participant.headline}
-                        </span>
-                      )}
-                    </div>
-                    <span className="thread-date" style={t.unread_count > 0 ? { color: '#cc1016', fontWeight: 600, flexShrink: 0 } : { flexShrink: 0 }}>{fmtDate(t.created_at)}</span>
+                        {selectedThread.other_participant.name}
+                      </button>
+                    )}
+                    {selectedThread?.other_participant?.headline && (
+                      <span className="msg-header-headline">{selectedThread.other_participant.headline}</span>
+                    )}
+                    {!selectedThread?.other_participant && (
+                      <span className="thread-subject">{selectedThread?.subject || `Thread #${selectedId}`}</span>
+                    )}
                   </div>
-                  {t.last_message && (
-                    <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
-                      {(() => {
-                        const shared = tryParseSharedPost(t.last_message.message_text);
-                        if (shared) {
-                          const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
-                          return isMe ? "You shared a post" : `${t.other_participant?.name || 'Someone'} shared a post`;
-                        }
-                        return t.last_message.message_text.slice(0, 45) + (t.last_message.message_text.length > 45 ? '…' : '');
-                      })()}
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => selectThread(selectedId)}
+                    disabled={msgsLoading}
+                    title="Refresh messages"
+                  >
+                    {msgsLoading ? '…' : '↺'}
+                  </button>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </div>
 
-        {/* ── Message area ─────────────────────────────── */}
-        <div className="msg-main" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          {!selectedId ? (
-            <div className="msg-empty">
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <p>Select a conversation to read messages</p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="msg-thread-header">
-                <div className="msg-header-info">
-                  {selectedThread?.other_participant && (
-                    <button
-                      type="button"
-                      className="msg-header-name"
-                      onClick={() => onNavigateProfile?.(selectedThread.other_participant!.user_id)}
-                    >
-                      {selectedThread.other_participant.name}
-                    </button>
-                  )}
-                  {selectedThread?.other_participant?.headline && (
-                    <span className="msg-header-headline">{selectedThread.other_participant.headline}</span>
-                  )}
-                  {!selectedThread?.other_participant && (
-                    <span className="thread-subject">{selectedThread?.subject || `Thread #${selectedId}`}</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="icon-btn"
-                  onClick={() => selectThread(selectedId)}
-                  disabled={msgsLoading}
-                  title="Refresh messages"
-                >
-                  {msgsLoading ? '…' : '↺'}
-                </button>
-              </div>
+                {msgsErr && <p className="error" style={{ padding: '8px 16px' }}>{msgsErr}</p>}
 
-              {msgsErr && <p className="error" style={{ padding: '8px 16px' }}>{msgsErr}</p>}
+                <div className="msg-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                  {messages.length === 0 && !msgsLoading && (
+                    <p className="hint" style={{ textAlign: 'center', paddingTop: 24 }}>
+                      No messages yet. Say hello!
+                    </p>
+                  )}
+                  {messages.map(m => {
+                    const isMe = m.sender_id === identity.user_id && m.sender_type === identity.user_type
+                    const sharedPost = tryParseSharedPost(m.message_text)
 
-              <div className="msg-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-                {messages.length === 0 && !msgsLoading && (
-                  <p className="hint" style={{ textAlign: 'center', paddingTop: 24 }}>
-                    No messages yet. Say hello!
-                  </p>
-                )}
-                {messages.map(m => {
-                  const isMe = m.sender_id === identity.user_id && m.sender_type === identity.user_type
-                  const sharedPost = tryParseSharedPost(m.message_text)
-                  
-                  if (sharedPost) {
+                    if (sharedPost) {
+                      return (
+                        <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <SharedPostLoader sharedPost={sharedPost} onNavigatePost={onNavigatePost} />
+                            <span className="msg-time">{fmtTime(m.timestamp)}</span>
+                          </div>
+                        </div>
+                      )
+                    }
+
                     return (
                       <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <SharedPostLoader sharedPost={sharedPost} onNavigatePost={onNavigatePost} />
+                        {!isMe && (
+                          <div className="msg-avatar" onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)} style={{ cursor: 'pointer' }}>
+                            {selectedThread?.other_participant?.photo_url ? (
+                              <img src={selectedThread.other_participant.photo_url} alt="" />
+                            ) : (
+                              <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>
+                            )}
+                          </div>
+                        )}
+                        <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
+                          {!isMe && (
+                            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 4 }}>
+                              <span className="msg-sender" style={{ cursor: 'pointer' }} onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)}>
+                                {selectedThread?.other_participant?.name || `${m.sender_type}`}
+                              </span>
+                              {selectedThread?.other_participant?.headline && (
+                                <span style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>
+                                  {selectedThread.other_participant.headline}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <span className="msg-text">{m.message_text}</span>
                           <span className="msg-time">{fmtTime(m.timestamp)}</span>
                         </div>
                       </div>
                     )
-                  }
-
-                  return (
-                    <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
-                      {!isMe && (
-                        <div className="msg-avatar" onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)} style={{ cursor: 'pointer' }}>
-                          {selectedThread?.other_participant?.photo_url ? (
-                            <img src={selectedThread.other_participant.photo_url} alt="" />
-                          ) : (
-                            <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>
-                          )}
-                        </div>
-                      )}
-                      <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
-                        {!isMe && (
-                          <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 4 }}>
-                            <span className="msg-sender" style={{ cursor: 'pointer' }} onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)}>
-                              {selectedThread?.other_participant?.name || `${m.sender_type}`}
-                            </span>
-                            {selectedThread?.other_participant?.headline && (
-                              <span style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>
-                                {selectedThread.other_participant.headline}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        <span className="msg-text">{m.message_text}</span>
-                        <span className="msg-time">{fmtTime(m.timestamp)}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-                <div ref={bottomRef} />
-              </div>
-
-              <div className="msg-compose">
-                {sendErr && <p className="error" style={{ marginBottom: 6, fontSize: 12 }}>{sendErr}</p>}
-                <div className="msg-compose-row">
-                  <input
-                    className="msg-input"
-                    value={msgText}
-                    onChange={e => setMsgText(e.target.value)}
-                    placeholder="Write a message…"
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    disabled={sendLoading}
-                  />
-                  <button
-                    type="button"
-                    className="primary"
-                    onClick={sendMessage}
-                    disabled={sendLoading || !msgText.trim()}
-                    style={{ borderRadius: '50%', width: 36, height: 36, padding: 0, flexShrink: 0 }}
-                  >
-                    {sendLoading ? '…' : '→'}
-                  </button>
+                  })}
+                  <div ref={bottomRef} />
                 </div>
-              </div>
-            </>
-          )}
+
+                <div className="msg-compose">
+                  <div className="msg-compose-row" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', background: '#fff', border: '1px solid var(--li-border)', borderRadius: '12px', padding: '12px 16px' }}>
+                    <textarea
+                      className="msg-input"
+                      placeholder="Write a message..."
+                      rows={1}
+                      style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', padding: '4px 0', fontSize: '14px', outline: 'none' }}
+                      value={msgText}
+                      onChange={e => setMsgText(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                    />
+                    <button
+                      className="circular-send-btn"
+                      style={{
+                        width: '40px', height: '40px',
+                        background: 'var(--li-blue-primary)', color: '#fff',
+                        border: 'none', borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', transition: 'all 0.2s',
+                        opacity: sendLoading || !msgText.trim() ? 0.5 : 1
+                      }}
+                      onClick={sendMessage}
+                      disabled={sendLoading || !msgText.trim()}
+                    >
+                      {sendLoading ? '...' : <Icon name="send" size={20} />}
+                    </button>
+                  </div>
+                  {sendErr && <p className="error" style={{ fontSize: 11, marginTop: 4 }}>{sendErr}</p>}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
       </div>
     </section>
   )
 }
+
+
+
