@@ -49,14 +49,14 @@ function fmtTime(d: string) {
   return parseUtcDate(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function tryParseSharedPost(text: string) {
-  if (text.startsWith('{"type":"shared_post"')) {
+function tryParseRichMessage(text: string) {
+  if (text.startsWith('{"type":')) {
     try { return JSON.parse(text) } catch { return null }
   }
   return null
 }
 
-function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onNavigatePost?: (postId: number) => void }) {
+function SharedPostLoader({ sharedPost, onNavigatePost, isMe }: { sharedPost: any, onNavigatePost?: (postId: number) => void, isMe?: boolean }) {
   const [postData, setPostData] = useState<any>(null)
   useEffect(() => {
     const id = sharedPost.postId || sharedPost.post_id;
@@ -68,11 +68,12 @@ function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onN
   if (!postData) return <div className="hint" style={{ padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>Loading shared post...</div>
 
   const authorName = postData.author?.name || postData.author_name || 'user'
+  const shareText = isMe ? `You shared a post by ${authorName}` : `Shared you a post of ${authorName}`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: '13px', color: 'var(--li-text-sec)', marginBottom: '6px' }}>
-        Shared you a post of {authorName}
+        {shareText}
       </div>
       <div
         className="shared-post-card"
@@ -92,7 +93,14 @@ function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onN
 }
 
 export function MessagingPanel({
-  onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigateProfile?: (id: number) => void, onNavigatePost?: (postId: number) => void, targetUserId?: number | null, onClearTarget?: () => void }) {
+  onNavigateProfile, onNavigatePost, targetUserId, targetUserType, onClearTarget
+}: {
+  onNavigateProfile?: (id: number) => void
+  onNavigatePost?: (postId: number) => void
+  targetUserId?: number | null
+  targetUserType?: string | null
+  onClearTarget?: () => void
+}) {
   const identity = useMemo(() => parseStoredUser(), [])
 
   const [threads, setThreads] = useState<ThreadData[]>([])
@@ -107,6 +115,15 @@ export function MessagingPanel({
   const [msgText, setMsgText] = useState('')
   const [sendLoading, setSendL] = useState(false)
   const [sendErr, setSendErr] = useState<string | null>(null)
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [stagedFile, setStagedFile] = useState<{ url: string; filename: string; mime_type: string } | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [lightboxName, setLightboxName] = useState<string>('')
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<number | null>(null)
+  const [msgReactions, setMsgReactions] = useState<Record<number, string>>({})
+
+  const MSG_EMOJIS = ['👍','❤️','😂','😮','😢','🙏','🎉','🔥']
 
   const [threadSearch, setThreadSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
@@ -157,8 +174,8 @@ export function MessagingPanel({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Track whether we've already handled a given targetUserId to prevent loops
-  const handledTargetRef = useRef<number | null>(null)
+  // Track whether we've already handled a given targetUserId+type to prevent loops
+  const handledTargetRef = useRef<string | null>(null)
 
   // Auto-load threads when component mounts
   useEffect(() => {
@@ -168,10 +185,11 @@ export function MessagingPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Run once on mount
 
-  // Handle targetUserId for direct messaging from profile
+  // Handle targetUserId for direct messaging from profile or notification
   useEffect(() => {
-    if (!targetUserId || !identity || handledTargetRef.current === targetUserId) return
-    handledTargetRef.current = targetUserId
+    const targetKey = targetUserId ? `${targetUserId}:${targetUserType || 'member'}` : null
+    if (!targetUserId || !identity || handledTargetRef.current === targetKey) return
+    handledTargetRef.current = targetKey
 
     async function handleTarget() {
       // First reload threads to get latest state
@@ -181,8 +199,18 @@ export function MessagingPanel({
       const threadList = freshThreads.data ?? []
       setThreads(threadList)
 
-      // Check if thread already exists with the target user
-      const existing = threadList.find(t => t.other_participant?.user_id === targetUserId)
+      const resolvedType = targetUserType || 'member'
+
+      // Match by both user_id AND user_type for precision
+      let existing = threadList.find(t =>
+        t.other_participant?.user_id === targetUserId &&
+        t.other_participant?.user_type === resolvedType
+      )
+      // Fallback: match by user_id only if no exact type match
+      if (!existing) {
+        existing = threadList.find(t => t.other_participant?.user_id === targetUserId)
+      }
+
       if (existing) {
         selectThread(existing.thread_id)
         onClearTarget?.()
@@ -194,11 +222,10 @@ export function MessagingPanel({
         const res = await apiPost<{ success: boolean; data: ThreadData }>('/threads/open', {
           participant_ids: [
             { user_id: identity!.user_id, user_type: identity!.user_type },
-            { user_id: targetUserId, user_type: 'member' }
+            { user_id: targetUserId, user_type: resolvedType }
           ]
         })
         if (res.success) {
-          // Reload threads to include the new one
           const updated = await apiPost<{ success: boolean; data: ThreadData[] }>(
             '/threads/byUser', { user_id: identity!.user_id, user_type: identity!.user_type, page: 1, page_size: 30 }
           )
@@ -250,22 +277,57 @@ export function MessagingPanel({
   }
 
   async function sendMessage() {
-    if (!identity || !selectedId || !msgText.trim()) return
+    if (!identity || !selectedId) return
+    if (!msgText.trim() && !stagedFile) return
     setSendL(true)
     setSendErr(null)
     try {
+      let messageText = msgText.trim()
+      if (stagedFile) {
+        // If there's also text, prepend it as a caption field in the attachment JSON
+        messageText = JSON.stringify({
+          type: 'attachment',
+          url: stagedFile.url,
+          filename: stagedFile.filename,
+          mime_type: stagedFile.mime_type,
+          caption: msgText.trim() || undefined
+        })
+      }
       const r = await apiPost<{ success: boolean; message: string; data: MsgData }>(
         '/messages/send',
-        { thread_id: selectedId, sender_id: identity.user_id, sender_type: identity.user_type, message_text: msgText.trim() },
+        { thread_id: selectedId, sender_id: identity.user_id, sender_type: identity.user_type, message_text: messageText },
       )
       if (!r.success) throw new Error(r.message)
       setMessages(prev => [...prev, r.data])
       setMsgText('')
+      setStagedFile(null)
     } catch (e) {
       setSendErr(e instanceof Error ? e.message : 'Failed to send message')
     } finally {
       setSendL(false)
     }
+  }
+
+  function handleFileChange(e: { target: HTMLInputElement }) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { setSendErr('File must be under 10 MB'); return }
+    setSendErr(null)
+    const reader = new FileReader()
+    reader.onload = () => {
+      setStagedFile({ url: reader.result as string, filename: file.name, mime_type: file.type || 'application/octet-stream' })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  function toggleReaction(msgId: number, emoji: string) {
+    setMsgReactions(prev => {
+      const cur = prev[msgId]
+      // If same emoji clicked again, remove it; otherwise set to new emoji
+      return { ...prev, [msgId]: cur === emoji ? '' : emoji }
+    })
+    setEmojiPickerMsgId(null)
   }
 
   async function openThread() {
@@ -464,11 +526,12 @@ export function MessagingPanel({
                     {t.last_message && (
                       <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
                         {(() => {
-                          const shared = tryParseSharedPost(t.last_message.message_text);
-                          if (shared) {
+                          const shared = tryParseRichMessage(t.last_message.message_text);
+                          if (shared?.type === 'shared_post') {
                             const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
                             return isMe ? "You shared a post" : `${t.other_participant?.name || 'Someone'} shared a post`;
                           }
+                          if (shared?.type === 'attachment') return `📎 ${shared.filename}`;
                           return t.last_message.message_text.slice(0, 45) + (t.last_message.message_text.length > 45 ? '…' : '');
                         })()}
                       </span>
@@ -524,7 +587,9 @@ export function MessagingPanel({
 
                 {msgsErr && <p className="error" style={{ padding: '8px 16px' }}>{msgsErr}</p>}
 
-                <div className="msg-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+                <div className="msg-body" style={{ flex: 1, overflowY: 'auto', padding: '16px' }}
+                  onClick={() => { if (emojiPickerMsgId !== null) setEmojiPickerMsgId(null) }}
+                >
                   {messages.length === 0 && !msgsLoading && (
                     <p className="hint" style={{ textAlign: 'center', paddingTop: 24 }}>
                       No messages yet. Say hello!
@@ -532,14 +597,85 @@ export function MessagingPanel({
                   )}
                   {messages.map(m => {
                     const isMe = m.sender_id === identity.user_id && m.sender_type === identity.user_type
-                    const sharedPost = tryParseSharedPost(m.message_text)
+                    const richMsg = tryParseRichMessage(m.message_text)
+                    const reactions = msgReactions[m.message_id]
 
-                    if (sharedPost) {
+                    const reactionBar = (
+                      <div style={{ position: 'relative', display: 'inline-block', marginTop: 4 }}>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEmojiPickerMsgId(emojiPickerMsgId === m.message_id ? null : m.message_id) }}
+                          style={{
+                            background: reactions ? 'rgba(0,0,0,0.08)' : 'none',
+                            border: '1px solid #ddd', borderRadius: 12, padding: '2px 8px',
+                            cursor: 'pointer', fontSize: reactions ? 16 : 12, color: '#888',
+                            lineHeight: '1.4'
+                          }}
+                          title={reactions ? 'Change reaction' : 'React'}
+                        >{reactions || '☺'}</button>
+                        {emojiPickerMsgId === m.message_id && (
+                          <div onClick={e => e.stopPropagation()} style={{
+                            position: 'absolute', bottom: '110%', [isMe ? 'right' : 'left']: 0,
+                            background: '#fff', border: '1px solid #eee', borderRadius: 12, padding: '6px 8px',
+                            display: 'flex', gap: 4, zIndex: 200, boxShadow: '0 4px 16px rgba(0,0,0,0.15)'
+                          }}>
+                            {MSG_EMOJIS.map(em => (
+                              <button key={em} onClick={() => toggleReaction(m.message_id, em)}
+                                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', opacity: reactions === em ? 1 : 0.55, transform: reactions === em ? 'scale(1.3)' : 'scale(1)', transition: 'all 0.1s' }}>
+                                {em}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+
+                    if (richMsg?.type === 'shared_post') {
                       return (
                         <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <SharedPostLoader sharedPost={sharedPost} onNavigatePost={onNavigatePost} />
+                          <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`} style={{ background: 'transparent', boxShadow: 'none', padding: 0 }}>
+                            <SharedPostLoader sharedPost={richMsg} onNavigatePost={onNavigatePost} isMe={isMe} />
+                            <span className="msg-time" style={{ textAlign: isMe ? 'right' : 'left' }}>{fmtTime(m.timestamp)}</span>
+                            {reactionBar}
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    if (richMsg?.type === 'attachment') {
+                      const isImage = richMsg.mime_type?.startsWith('image/')
+                      return (
+                        <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
+                          {!isMe && (
+                            <div className="msg-avatar" onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)} style={{ cursor: 'pointer' }}>
+                              {selectedThread?.other_participant?.photo_url
+                                ? <img src={selectedThread.other_participant.photo_url} alt="" />
+                                : <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>}
+                            </div>
+                          )}
+                          <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
+                            {isImage ? (
+                              <img
+                                src={richMsg.url} alt={richMsg.filename}
+                                style={{ maxWidth: '220px', borderRadius: 10, display: 'block', marginBottom: richMsg.caption ? 0 : 4, cursor: 'pointer' }}
+                                onClick={() => { setLightboxUrl(richMsg.url); setLightboxName(richMsg.filename) }}
+                              />
+                            ) : (
+                              <div
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(10,102,194,0.08)', padding: '10px 14px', borderRadius: 10, marginBottom: richMsg.caption ? 0 : 4, cursor: 'pointer' }}
+                                onClick={() => { setLightboxUrl(richMsg.url); setLightboxName(richMsg.filename) }}
+                              >
+                                <span style={{ fontSize: 28 }}>📄</span>
+                                <div>
+                                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--li-link)' }}>{richMsg.filename}</div>
+                                  <div style={{ fontSize: 11, color: '#888' }}>Click to preview &amp; download</div>
+                                </div>
+                              </div>
+                            )}
+                            {richMsg.caption && (
+                              <span className="msg-text" style={{ display: 'block', margin: '6px 0 4px', fontSize: 14 }}>{richMsg.caption}</span>
+                            )}
                             <span className="msg-time">{fmtTime(m.timestamp)}</span>
+                            {reactionBar}
                           </div>
                         </div>
                       )
@@ -549,28 +685,25 @@ export function MessagingPanel({
                       <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
                         {!isMe && (
                           <div className="msg-avatar" onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)} style={{ cursor: 'pointer' }}>
-                            {selectedThread?.other_participant?.photo_url ? (
-                              <img src={selectedThread.other_participant.photo_url} alt="" />
-                            ) : (
-                              <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>
-                            )}
+                            {selectedThread?.other_participant?.photo_url
+                              ? <img src={selectedThread.other_participant.photo_url} alt="" />
+                              : <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>}
                           </div>
                         )}
                         <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
                           {!isMe && (
                             <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 4 }}>
                               <span className="msg-sender" style={{ cursor: 'pointer' }} onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)}>
-                                {selectedThread?.other_participant?.name || `${m.sender_type}`}
+                                {selectedThread?.other_participant?.name || m.sender_type}
                               </span>
                               {selectedThread?.other_participant?.headline && (
-                                <span style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>
-                                  {selectedThread.other_participant.headline}
-                                </span>
+                                <span style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>{selectedThread.other_participant.headline}</span>
                               )}
                             </div>
                           )}
                           <span className="msg-text" style={{ display: 'block', marginBottom: '8px' }}>{m.message_text}</span>
                           <span className="msg-time">{fmtTime(m.timestamp)}</span>
+                          {reactionBar}
                         </div>
                       </div>
                     )
@@ -579,28 +712,36 @@ export function MessagingPanel({
                 </div>
 
                 <div className="msg-compose">
-                  <div className="msg-compose-row" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', background: '#fff', border: '1px solid var(--li-border)', borderRadius: '12px', padding: '12px 16px' }}>
+                  {stagedFile && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f7ff', border: '1px solid #cce0ff', borderRadius: '10px 10px 0 0', padding: '8px 14px' }}>
+                      {stagedFile.mime_type.startsWith('image/') ? (
+                        <img src={stagedFile.url} alt={stagedFile.filename} style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6 }} />
+                      ) : (
+                        <span style={{ fontSize: 28 }}>📄</span>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 12, color: '#0a66c2', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stagedFile.filename}</div>
+                        <div style={{ fontSize: 11, color: '#888' }}>Will be sent with your message</div>
+                      </div>
+                      <button onClick={() => setStagedFile(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888', flexShrink: 0 }}>✕</button>
+                    </div>
+                  )}
+                  <div className="msg-compose-row" style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', background: '#fff', border: '1px solid var(--li-border)', borderRadius: stagedFile ? '0 0 12px 12px' : '12px', padding: '12px 16px' }}>
+                    <button type="button" className="icon-btn" onClick={() => fileInputRef.current?.click()} disabled={sendLoading} title="Attach file or photo" style={{ marginBottom: '4px', color: stagedFile ? '#0a66c2' : undefined }}>
+                      📎
+                    </button>
+                    <input ref={fileInputRef} type="file" onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,.pdf,.doc,.docx,.txt,.csv" />
                     <textarea
-                      className="msg-input"
-                      placeholder="Write a message..."
-                      rows={3}
-                      style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', padding: '8px 16px', fontSize: '14px', outline: 'none' }}
+                      className="msg-input" placeholder={stagedFile ? 'Add a caption (optional)...' : 'Write a message...'} rows={3}
+                      style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', padding: '8px 4px', fontSize: '14px', outline: 'none' }}
                       value={msgText}
-                      onChange={e => setMsgText(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                      onChange={e => setMsgText((e.target as HTMLTextAreaElement).value)}
+                      onKeyDown={e => { if ((e as any).key === 'Enter' && !(e as any).shiftKey) { (e as any).preventDefault(); sendMessage() } }}
                     />
                     <button
                       className="circular-send-btn"
-                      style={{
-                        width: '40px', height: '40px',
-                        background: 'var(--li-blue-primary)', color: '#fff',
-                        border: 'none', borderRadius: '50%',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', transition: 'all 0.2s',
-                        opacity: sendLoading || !msgText.trim() ? 0.5 : 1
-                      }}
-                      onClick={sendMessage}
-                      disabled={sendLoading || !msgText.trim()}
+                      style={{ width: '40px', height: '40px', background: 'var(--li-blue-primary)', color: '#fff', border: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: sendLoading || (!msgText.trim() && !stagedFile) ? 0.5 : 1, marginBottom: '4px' }}
+                      onClick={sendMessage} disabled={sendLoading || (!msgText.trim() && !stagedFile)}
                     >
                       {sendLoading ? '...' : <Icon name="send" size={20} />}
                     </button>
@@ -612,6 +753,39 @@ export function MessagingPanel({
           </div>
         </div>
       </div>
+
+      {/* ── Attachment Lightbox ── */}
+      {lightboxUrl && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+            {lightboxUrl.startsWith('data:image') ? (
+              <img src={lightboxUrl} alt={lightboxName} style={{ maxWidth: '85vw', maxHeight: '75vh', borderRadius: 12, objectFit: 'contain', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }} />
+            ) : (
+              <div style={{ background: '#fff', borderRadius: 12, padding: '40px 60px', textAlign: 'center' }}>
+                <div style={{ fontSize: 64, marginBottom: 16 }}>📄</div>
+                <p style={{ fontWeight: 600, fontSize: 18, marginBottom: 8 }}>{lightboxName}</p>
+                <p style={{ color: '#888', marginBottom: 0 }}>Click Download to save to your computer</p>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <a
+                href={lightboxUrl} download={lightboxName}
+                style={{ background: 'var(--li-blue-primary)', color: '#fff', padding: '10px 28px', borderRadius: 24, fontWeight: 700, textDecoration: 'none', fontSize: 14 }}
+                onClick={e => e.stopPropagation()}
+              >
+                ⬇ Download
+              </a>
+              <button
+                onClick={() => setLightboxUrl(null)}
+                style={{ background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1px solid rgba(255,255,255,0.3)', padding: '10px 24px', borderRadius: 24, fontWeight: 600, cursor: 'pointer', fontSize: 14 }}
+              >✕ Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
