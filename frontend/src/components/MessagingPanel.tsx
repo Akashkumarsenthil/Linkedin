@@ -67,19 +67,26 @@ function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onN
 
   if (!postData) return <div className="hint" style={{ padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>Loading shared post...</div>
 
+  const authorName = postData.author?.name || postData.author_name || 'user'
+
   return (
-    <div
-      className="shared-post-card"
-      onClick={() => onNavigatePost?.(postData.post_id)}
-      style={{ border: '1px solid var(--li-border)', borderRadius: '8px', overflow: 'hidden', background: '#fff', cursor: 'pointer', maxWidth: '300px' }}
-    >
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #eee', fontSize: '12px', fontWeight: 600 }}>
-        {postData.author_name}
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ fontSize: '13px', color: 'var(--li-text-sec)', marginBottom: '6px' }}>
+        Shared you a post of {authorName}
       </div>
-      <p style={{ padding: '8px 12px', margin: 0, fontSize: '13px' }}>{postData.content?.slice(0, 80)}...</p>
-      {postData.image_url && (
-        <img className="shared-post-image" src={postData.image_url} alt="Post" />
-      )}
+      <div
+        className="shared-post-card"
+        onClick={() => onNavigatePost?.(postData.post_id)}
+        style={{ border: '1px solid var(--li-border)', borderRadius: '8px', overflow: 'hidden', background: '#fff', cursor: 'pointer', maxWidth: '300px' }}
+      >
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid #eee', fontSize: '12px', fontWeight: 600, color: 'var(--li-text-primary)' }}>
+          {authorName}
+        </div>
+        <p style={{ padding: '8px 12px', margin: 0, fontSize: '13px', color: 'var(--li-text-primary)' }}>{postData.content?.slice(0, 80)}...</p>
+        {postData.image_url && (
+          <img className="shared-post-image" src={postData.image_url} alt="Post" style={{ maxWidth: '100%', display: 'block' }} />
+        )}
+      </div>
     </div>
   )
 }
