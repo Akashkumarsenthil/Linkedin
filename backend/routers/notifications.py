@@ -210,7 +210,6 @@ async def list_notifications(
                     "unread": False,
                 })
 
-    # ── 4. Job application status updates (members only, from Mongo) ─────────
     if is_member:
         try:
             app_docs = (
@@ -219,12 +218,23 @@ async def list_notifications(
                 .limit(20)
                 .to_list(length=20)
             )
+            recruiter_ids = {doc.get("recruiter_id") for doc in app_docs if doc.get("recruiter_id")}
+            recruiters = {}
+            if recruiter_ids:
+                from models.recruiter import Recruiter
+                for r in db.query(Recruiter).filter(Recruiter.recruiter_id.in_(recruiter_ids)).all():
+                    recruiters[r.recruiter_id] = r
+
             for doc in app_docs:
                 oid = doc.get("_id")
                 nid = f"app-status-{oid}" if oid is not None else f"app-status-{doc.get('application_id')}"
                 job_title = doc.get("job_title") or f"Job #{doc.get('job_id')}"
                 recruiter_label = doc.get("recruiter_label") or "A recruiter"
                 new_status = doc.get("new_status") or ""
+                
+                r = recruiters.get(doc.get("recruiter_id"))
+                r_photo = getattr(r, "profile_photo_url", None) if r else None
+                
                 notifications.append({
                     "id": nid,
                     "type": "application_status",
@@ -232,7 +242,7 @@ async def list_notifications(
                     "subtitle": _application_status_subtitle(new_status),
                     "actor_id": doc.get("recruiter_id"),
                     "actor_type": "recruiter",
-                    "actor_photo_url": None,
+                    "actor_photo_url": r_photo,
                     "job_id": doc.get("job_id"),
                     "application_id": doc.get("application_id"),
                     "created_at": _iso(doc.get("created_at")),
