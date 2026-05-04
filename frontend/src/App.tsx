@@ -65,7 +65,6 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   analytics:     ['recruiter', 'admin'],
   career:        ['member', 'recruiter'],                   // admin-irrelevant
   messages:      ['member', 'recruiter'],                   // admin-irrelevant
-  connections:   ['member', 'recruiter'],                   // admin-irrelevant
   notifications: ['member', 'recruiter'],                   // admin-irrelevant; bell hidden separately
   ai:            ['recruiter', 'admin'],
   auth:          ['guest', 'member', 'recruiter', 'admin'],
@@ -84,7 +83,6 @@ const ALL_NAV: [Tab, string, string][] = [
   ['members',       'My Network',    'network'],
   ['jobs',          'Jobs',          'jobs'],
   ['messages',      'Messages',      'messaging'],
-  ['connections',   'Connections',   'connections'],
   ['career',        'Career Coach',  'ai'],
   ['analytics',     'Dashboard',     'analytics'],
   ['ai',            'AI Recruiter',  'ai'],
@@ -912,16 +910,19 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
   useEffect(() => { void doSearch(null) }, [])
 
   return (
-    <section className="members-page premium-panel">
-      <header className="premium-header">
-        <div>
-          <h2 className="premium-title">My Network</h2>
-          <p className="premium-subtitle">Find and connect with professionals</p>
-        </div>
-      </header>
+    <>
+      <ConnectionsPanel onNavigateProfile={onNavigateProfile} />
+      <section className="members-page premium-panel" style={{ marginTop: 16 }}>
+        <header className="premium-header">
+          <div>
+            <h2 className="premium-title">Discover Professionals</h2>
+            <p className="premium-subtitle">Find and connect with more professionals</p>
+          </div>
+        </header>
 
-      <div className="search-toolbar">
-        <div className="search-input-wrap">
+        <div style={{ padding: '0 24px 24px' }}>
+          <div className="search-toolbar">
+            <div className="search-input-wrap">
           <Icon name="search" size={16} className="search-icon-glyph" />
           <input
             className="search-input-field"
@@ -1065,7 +1066,9 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
           </div>
         </div>
       )}
-    </section>
+        </div>
+      </section>
+    </>
   )
 }
 

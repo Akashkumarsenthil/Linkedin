@@ -337,6 +337,9 @@ export function HomeFeed({
   const [myJobsLoading, setMyJobsLoading] = useState(false)
   const [myJobsError, setMyJobsError] = useState<string | null>(null)
 
+  const [recruiterJobs, setRecruiterJobs] = useState<any[]>([])
+  const [recruiterJobsLoading, setRecruiterJobsLoading] = useState(false)
+
   useEffect(() => {
     const interval = setInterval(() => {
       setDailyQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)])
@@ -374,6 +377,21 @@ export function HomeFeed({
   }, [])
 
   useEffect(() => { void loadFeed() }, [loadFeed])
+
+  const loadRecruiterJobs = useCallback(async () => {
+    if (me?.user_type !== 'recruiter') return
+    setRecruiterJobsLoading(true)
+    try {
+      const res = await apiPost<{ data: any[] }>('/jobs/recruiter', { recruiter_id: me.user_id, page: 1, page_size: 5 })
+      setRecruiterJobs(res.data || [])
+    } catch {
+      // ignore
+    } finally {
+      setRecruiterJobsLoading(false)
+    }
+  }, [me])
+
+  useEffect(() => { void loadRecruiterJobs() }, [loadRecruiterJobs])
 
   const memberId = me?.user_type === 'member' ? me.user_id : null
 
