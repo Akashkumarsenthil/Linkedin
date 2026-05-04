@@ -490,7 +490,7 @@ export function HomeFeed({
                 </div>
                 <span className="feed-stat-value">{Number(profile.profile_views || 0).toLocaleString()}</span>
               </button>
-              <button type="button" className="feed-stat-row" onClick={() => onNavigateTab?.('connections')}>
+              <button type="button" className="feed-stat-row" onClick={() => onNavigateTab?.('members')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Icon name="connections" size={16} style={{ color: 'var(--text-muted)' }} />
                   <span className="feed-stat-label">Connections</span>
