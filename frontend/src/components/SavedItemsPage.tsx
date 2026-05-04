@@ -43,11 +43,11 @@ export function SavedItemsPage({ me, onNavigateProfile }: SavedItemsPageProps) {
   }
 
   return (
-    <div className="saved-items-page page-fade">
-      <header className="page-header">
-        <div className="header-left">
-          <h1>Saved items</h1>
-          <p>Posts and articles you've saved for later</p>
+    <div className="saved-items-page premium-panel" style={{ marginTop: 16, borderTop: '4px solid #0a66c2' }}>
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">Saved items</h2>
+          <p className="premium-subtitle">Posts and articles you've saved for later</p>
         </div>
       </header>
 
