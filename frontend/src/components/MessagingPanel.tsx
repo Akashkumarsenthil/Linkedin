@@ -369,7 +369,7 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
   }
 
   return (
-    <section className="messaging-page premium-panel">
+    <section className="messaging-page premium-panel" style={{ marginTop: 16 }}>
       <header className="premium-header">
         <div>
           <h2 className="premium-title">Messages</h2>
@@ -379,7 +379,8 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
         </div>
       </header>
 
-      <div className="msg-layout" style={{ height: '650px' }}>
+      <div style={{ padding: '0 24px 24px' }}>
+        <div className="msg-layout" style={{ height: '650px' }}>
         {/* ── Thread list ──────────────────────────────── */}
         <div className="msg-sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div className="msg-sidebar-header">
@@ -490,19 +491,26 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
                 </div>
                 <div className="thread-info">
                   <div className="thread-top">
-                    <span 
-                      className="thread-subject" 
-                      style={t.unread_count > 0 ? { fontWeight: 800, color: '#000', cursor: 'pointer' } : { cursor: 'pointer' }}
-                      onClick={(e) => {
-                        if (t.other_participant) {
-                          e.stopPropagation()
-                          onNavigateProfile?.(t.other_participant.user_id)
-                        }
-                      }}
-                    >
-                      {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
-                    </span>
-                    <span className="thread-date" style={t.unread_count > 0 ? { color: '#cc1016', fontWeight: 600 } : {}}>{fmtDate(t.created_at)}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                      <span 
+                        className="thread-subject" 
+                        style={t.unread_count > 0 ? { fontWeight: 800, color: '#000', cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' } : { cursor: 'pointer', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}
+                        onClick={(e) => {
+                          if (t.other_participant) {
+                            e.stopPropagation()
+                            onNavigateProfile?.(t.other_participant.user_id)
+                          }
+                        }}
+                      >
+                        {t.other_participant?.name || t.subject || `Thread #${t.thread_id}`}
+                      </span>
+                      {t.other_participant?.headline && (
+                        <span style={{ fontSize: '12px', color: 'var(--li-text-sec)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          {t.other_participant.headline}
+                        </span>
+                      )}
+                    </div>
+                    <span className="thread-date" style={t.unread_count > 0 ? { color: '#cc1016', fontWeight: 600, flexShrink: 0 } : { flexShrink: 0 }}>{fmtDate(t.created_at)}</span>
                   </div>
                   {t.last_message && (
                     <span className="thread-preview" style={t.unread_count > 0 ? { fontWeight: 600, color: '#333' } : {}}>
@@ -586,9 +594,27 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
 
                   return (
                     <div key={m.message_id} className={`msg-bubble-row${isMe ? ' me' : ''}`}>
+                      {!isMe && (
+                        <div className="msg-avatar" onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)} style={{ cursor: 'pointer' }}>
+                          {selectedThread?.other_participant?.photo_url ? (
+                            <img src={selectedThread.other_participant.photo_url} alt="" />
+                          ) : (
+                            <div className="avatar-placeholder">{selectedThread?.other_participant?.name?.[0] || m.sender_type[0].toUpperCase()}</div>
+                          )}
+                        </div>
+                      )}
                       <div className={`msg-bubble${isMe ? ' msg-bubble-me' : ''}`}>
                         {!isMe && (
-                          <span className="msg-sender">{selectedThread?.other_participant?.name || `${m.sender_type}`}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 4 }}>
+                            <span className="msg-sender" style={{ cursor: 'pointer' }} onClick={() => selectedThread?.other_participant && onNavigateProfile?.(selectedThread.other_participant.user_id)}>
+                              {selectedThread?.other_participant?.name || `${m.sender_type}`}
+                            </span>
+                            {selectedThread?.other_participant?.headline && (
+                              <span style={{ fontSize: '11px', color: 'var(--li-text-sec)', marginTop: -2 }}>
+                                {selectedThread.other_participant.headline}
+                              </span>
+                            )}
+                          </div>
                         )}
                         <span className="msg-text">{m.message_text}</span>
                         <span className="msg-time">{fmtTime(m.timestamp)}</span>
@@ -624,6 +650,7 @@ onNavigateProfile, onNavigatePost, targetUserId, onClearTarget }: { onNavigatePr
             </>
           )}
         </div>
+      </div>
       </div>
     </section>
   )

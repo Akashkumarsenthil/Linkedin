@@ -155,11 +155,13 @@ async def threads_by_user(req: ThreadsByUser, db: Session = Depends(get_db)):
                 if m:
                     other_data["name"] = f"{m.first_name} {m.last_name}"
                     other_data["headline"] = m.headline
+                    other_data["photo_url"] = m.profile_photo_url
             elif other_tp.user_type == "recruiter":
                 r = db.query(Recruiter).filter(Recruiter.recruiter_id == other_tp.user_id).first()
                 if r:
                     other_data["name"] = f"{r.first_name} {r.last_name}"
                     other_data["headline"] = r.company_name
+                    other_data["photo_url"] = getattr(r, "profile_photo_url", None)
             data["other_participant"] = other_data
 
         if last_msg:

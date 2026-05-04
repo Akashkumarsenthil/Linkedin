@@ -11,7 +11,7 @@ from database import get_db
 from models.post import Post, PostLike, PostComment
 from models.member import Member
 from models.recruiter import Recruiter
-from auth import get_current_user, TokenPayload
+from auth import get_current_user, optional_current_user, TokenPayload
 from schemas.post import (
     PostCreate, PostFeedRequest, PostDelete, PostLikeRequest,
     PostResponse, PostListResponse,
@@ -42,7 +42,7 @@ def _hydrate_author(db: Session, author_id: int, author_type: str) -> dict:
     return {
         "name": f"{r.first_name} {r.last_name}".strip(),
         "headline": r.company_name or r.role or "Recruiter",
-        "photo_url": None,
+        "photo_url": getattr(r, "profile_photo_url", None),
         "location": None,
     }
 
@@ -79,34 +79,39 @@ async def create_post(
 async def list_feed(
     req: PostFeedRequest,
     db: Session = Depends(get_db),
-    current_user: TokenPayload = Depends(get_current_user),
+    current_user: TokenPayload = Depends(optional_current_user),
 ):
     """Return posts newest-first, filtered by connections and own posts."""
     q = db.query(Post)
 
-    # Get user's accepted connections (assuming member-to-member connections)
-    from models.connection import Connection
-    conns = db.query(Connection).filter(
-        (Connection.status == "accepted") &
-        ((Connection.requester_id == current_user.user_id) | (Connection.receiver_id == current_user.user_id))
-    ).all()
-    conn_ids = [c.receiver_id if c.requester_id == current_user.user_id else c.requester_id for c in conns]
-    
     # Filter logic: if author_id is provided, just filter by author_id (allow public profile viewing)
     if req.author_id is not None:
         q = q.filter(Post.author_id == req.author_id)
         if req.author_type:
             q = q.filter(Post.author_type == req.author_type)
-    else:
+    elif current_user:
         # Normal feed logic: own posts OR (if member) posts from accepted connections
         if current_user.user_type == "member":
-            q = q.filter(
-                ((Post.author_id == current_user.user_id) & (Post.author_type == current_user.user_type)) |
-                ((Post.author_id.in_(conn_ids)) & (Post.author_type == "member"))
-            )
+            from models.connection import Connection
+            conns = db.query(Connection).filter(
+                (Connection.status == "accepted") &
+                ((Connection.requester_id == current_user.user_id) | (Connection.receiver_id == current_user.user_id))
+            ).all()
+            conn_ids = [c.receiver_id if c.requester_id == current_user.user_id else c.requester_id for c in conns]
+            
+            if conn_ids:
+                q = q.filter(
+                    ((Post.author_id == current_user.user_id) & (Post.author_type == current_user.user_type)) |
+                    ((Post.author_id.in_(conn_ids)) & (Post.author_type == "member"))
+                )
+            else:
+                q = q.filter(Post.author_id == current_user.user_id, Post.author_type == current_user.user_type)
         else:
-            # Recruiters only see their own posts
-            q = q.filter(Post.author_id == current_user.user_id, Post.author_type == current_user.user_type)
+            # Recruiters see all posts for sourcing
+            pass
+    else:
+        # Guests see all posts
+        pass
 
     total = q.count()
     offset = (req.page - 1) * req.page_size
@@ -357,6 +362,7 @@ async def add_comment(
     data = comment.to_dict()
     data["author_name"] = author["name"]
     data["author_photo_url"] = author["photo_url"]
+    data["author_headline"] = author.get("headline")
 
     return PostCommentResponse(success=True, message="Comment added", data=data)
 
@@ -378,6 +384,7 @@ async def list_comments(
         item = c.to_dict()
         item["author_name"] = author["name"]
         item["author_photo_url"] = author["photo_url"]
+        item["author_headline"] = author.get("headline")
         result.append(item)
 
     return PostCommentResponse(success=True, message=f"Found {len(result)} comments", data={

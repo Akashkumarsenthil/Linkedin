@@ -53,7 +53,7 @@ export function NotificationsPanel({
   onNavigatePost,
 }: NotificationsPanelProps) {
   return (
-    <section className="panel premium-panel">
+    <section className="panel premium-panel" style={{ marginTop: 16 }}>
       <header className="premium-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 className="premium-title">Notifications</h2>
@@ -68,82 +68,84 @@ export function NotificationsPanel({
         </button>
       </header>
 
-      {notifications.length === 0 ? (
-        <div className="notif-empty">
-          <Icon name="bell" size={28} className="notif-empty-icon" />
-          <p><strong>No notifications yet.</strong></p>
-          <p className="muted">
-            When someone sends you a connection request, likes your post,
-            or shares something new, you’ll see it here.
-          </p>
-        </div>
-      ) : (
-        <ul className="notif-list">
-          {notifications.map((n) => {
-            const isAction = n.type === 'connection_request'
-            const initials =
-              (n.title || 'U')
-                .split(' ')
-                .map((p) => p[0])
-                .join('')
-                .slice(0, 2)
-                .toUpperCase()
-            return (
-              <li
-                key={n.id}
-                className={`notif-item${n.unread ? ' notif-item-unread' : ''}`}
-                style={{ cursor: n.post_id ? 'pointer' : 'default' }}
-                onClick={() => {
-                  if (n.post_id && onNavigatePost) onNavigatePost(n.post_id)
-                }}
-              >
-                <div 
-                  className="notif-avatar"
-                  style={{ cursor: n.actor_id ? 'pointer' : 'default' }}
-                  onClick={(e) => {
-                    if (n.actor_id && onNavigateProfile) {
-                      e.stopPropagation()
-                      onNavigateProfile(n.actor_id)
-                    }
+      <div style={{ padding: '0 24px 24px' }}>
+        {notifications.length === 0 ? (
+          <div className="notif-empty">
+            <Icon name="bell" size={28} className="notif-empty-icon" />
+            <p><strong>No notifications yet.</strong></p>
+            <p className="muted">
+              When someone sends you a connection request, likes your post,
+              or shares something new, you’ll see it here.
+            </p>
+          </div>
+        ) : (
+          <ul className="notif-list">
+            {notifications.map((n) => {
+              const isAction = n.type === 'connection_request'
+              const initials =
+                (n.title || 'U')
+                  .split(' ')
+                  .map((p) => p[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()
+              return (
+                <li
+                  key={n.id}
+                  className={`notif-item${n.unread ? ' notif-item-unread' : ''}`}
+                  style={{ cursor: n.post_id ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (n.post_id && onNavigatePost) onNavigatePost(n.post_id)
                   }}
                 >
-                  {n.actor_photo_url ? (
-                    <img src={n.actor_photo_url} alt="" />
-                  ) : (
-                    <span className="notif-avatar-fallback">{initials}</span>
-                  )}
-                  <span className={`notif-type notif-type-${n.type}`}>
-                    <Icon name={iconForType(n.type)} size={12} />
-                  </span>
-                </div>
-                <div className="notif-body">
-                  <p 
-                    className="notif-title" 
+                  <div 
+                    className="notif-avatar"
                     style={{ cursor: n.actor_id ? 'pointer' : 'default' }}
                     onClick={(e) => {
-                      if (n.actor_id && onNavigateProfile && !n.post_id) {
+                      if (n.actor_id && onNavigateProfile) {
                         e.stopPropagation()
                         onNavigateProfile(n.actor_id)
                       }
                     }}
-                  >{n.title}</p>
-                  {n.subtitle && <p className="notif-subtitle">{n.subtitle}</p>}
-                  <p className="notif-time">{formatRelative(n.created_at)}</p>
-                </div>
-                {isAction && (
-                  <button
-                    type="button"
-                    className="primary notif-action"
-                    onClick={onOpenConnections}
                   >
-                    Review
-                  </button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
+                    {n.actor_photo_url ? (
+                      <img src={n.actor_photo_url} alt="" />
+                    ) : (
+                      <span className="notif-avatar-fallback">{initials}</span>
+                    )}
+                    <span className={`notif-type notif-type-${n.type}`}>
+                      <Icon name={iconForType(n.type)} size={12} />
+                    </span>
+                  </div>
+                  <div className="notif-body">
+                    <p 
+                      className="notif-title" 
+                      style={{ cursor: n.actor_id ? 'pointer' : 'default' }}
+                      onClick={(e) => {
+                        if (n.actor_id && onNavigateProfile && !n.post_id) {
+                          e.stopPropagation()
+                          onNavigateProfile(n.actor_id)
+                        }
+                      }}
+                    >{n.title}</p>
+                    {n.subtitle && <p className="notif-subtitle">{n.subtitle}</p>}
+                    <p className="notif-time">{formatRelative(n.created_at)}</p>
+                  </div>
+                  {isAction && (
+                    <button
+                      type="button"
+                      className="primary notif-action"
+                      onClick={onOpenConnections}
+                    >
+                      Review
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }
