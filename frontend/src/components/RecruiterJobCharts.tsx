@@ -190,7 +190,7 @@ export function ClicksPerJobChart() {
     })()
   }, [])
 
-  const chartData = data.map(d => ({ ...d, label: shortTitle(d.title), count: d.clicks ?? 0 }))
+  const chartData = data.map(d => ({ ...d, label: shortTitle(d.title, 20), count: d.clicks ?? 0 }))
   const totalClicks = chartData.reduce((s, d) => s + d.count, 0)
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -227,7 +227,7 @@ export function ClicksPerJobChart() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={250} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
               <Bar dataKey="count" fill="url(#colorPurple)" radius={[0, 6, 6, 0]} barSize={16} />
             </BarChart>

@@ -27,9 +27,18 @@ router = APIRouter(tags=["Analytics Service"])
 async def get_dashboard_kpis(current_user: TokenPayload = Depends(require_recruiter)):
     db = SessionLocal()
     try:
-        active_jobs = db.query(sql_func.count(JobPosting.job_id)).scalar() or 0
-        total_applicants = db.query(sql_func.count(Application.application_id)).scalar() or 0
-        pending_reviews = db.query(sql_func.count(Application.application_id)).filter(Application.status.in_(['submitted', 'reviewing'])).scalar() or 0
+        active_jobs_q = db.query(sql_func.count(JobPosting.job_id))
+        total_apps_q = db.query(sql_func.count(Application.application_id))
+        pending_reviews_q = db.query(sql_func.count(Application.application_id)).filter(Application.status.in_(['submitted', 'reviewing']))
+        
+        if current_user.user_type == "recruiter":
+            active_jobs_q = active_jobs_q.filter(JobPosting.recruiter_id == current_user.user_id)
+            total_apps_q = total_apps_q.join(JobPosting, Application.job_id == JobPosting.job_id).filter(JobPosting.recruiter_id == current_user.user_id)
+            pending_reviews_q = pending_reviews_q.join(JobPosting, Application.job_id == JobPosting.job_id).filter(JobPosting.recruiter_id == current_user.user_id)
+
+        active_jobs = active_jobs_q.scalar() or 0
+        total_applicants = total_apps_q.scalar() or 0
+        pending_reviews = pending_reviews_q.scalar() or 0
         return AnalyticsResponse(
             success=True,
             message="KPIs fetched successfully",
@@ -93,7 +102,7 @@ async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(req
         cutoff = datetime.now() - timedelta(days=req.window_days)
 
         if req.metric == "applications":
-            results = (
+            q = (
                 db.query(
                     JobPosting.job_id,
                     JobPosting.title,
@@ -102,13 +111,13 @@ async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(req
                 )
                 .join(Application, Application.job_id == JobPosting.job_id)
                 .filter(Application.application_datetime >= cutoff)
-                .group_by(JobPosting.job_id)
-                .order_by(desc("count"))
-                .limit(req.limit)
-                .all()
             )
+            if current_user.user_type == "recruiter":
+                q = q.filter(JobPosting.recruiter_id == current_user.user_id)
+            results = q.group_by(JobPosting.job_id).order_by(desc("count")).limit(req.limit).all()
+
         elif req.metric == "views":
-            results = (
+            q = (
                 db.query(
                     JobPosting.job_id,
                     JobPosting.title,
@@ -116,12 +125,13 @@ async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(req
                     JobPosting.views_count.label("count"),
                 )
                 .filter(JobPosting.posted_datetime >= cutoff)
-                .order_by(desc(JobPosting.views_count))
-                .limit(req.limit)
-                .all()
             )
+            if current_user.user_type == "recruiter":
+                q = q.filter(JobPosting.recruiter_id == current_user.user_id)
+            results = q.order_by(desc(JobPosting.views_count)).limit(req.limit).all()
+
         elif req.metric == "saves":
-            results = (
+            q = (
                 db.query(
                     JobPosting.job_id,
                     JobPosting.title,
@@ -130,11 +140,10 @@ async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(req
                 )
                 .join(SavedJob, SavedJob.job_id == JobPosting.job_id)
                 .filter(SavedJob.saved_at >= cutoff)
-                .group_by(JobPosting.job_id)
-                .order_by(desc("count"))
-                .limit(req.limit)
-                .all()
             )
+            if current_user.user_type == "recruiter":
+                q = q.filter(JobPosting.recruiter_id == current_user.user_id)
+            results = q.group_by(JobPosting.job_id).order_by(desc("count")).limit(req.limit).all()
         else:
             return AnalyticsResponse(success=False, message=f"Unknown metric: {req.metric}")
 
@@ -153,16 +162,20 @@ async def top_jobs(req: TopJobsRequest, current_user: TokenPayload = Depends(req
 
 
 @router.post("/analytics/funnel", response_model=AnalyticsResponse, summary="Job application funnel")
-async def job_funnel(req: FunnelRequest):
+async def job_funnel(req: FunnelRequest, current_user: TokenPayload = Depends(require_recruiter)):
     """
     Get the view → save → apply funnel for a specific job posting.
     Data sourced from MongoDB event logs and MySQL records.
     """
     db = SessionLocal()
     try:
-        job = db.query(JobPosting).filter(JobPosting.job_id == req.job_id).first()
+        job_query = db.query(JobPosting).filter(JobPosting.job_id == req.job_id)
+        if current_user.user_type == "recruiter":
+            job_query = job_query.filter(JobPosting.recruiter_id == current_user.user_id)
+        job = job_query.first()
+        
         if not job:
-            return AnalyticsResponse(success=False, message=f"Job {req.job_id} not found")
+            return AnalyticsResponse(success=False, message=f"Job {req.job_id} not found or access denied")
 
         views = job.views_count or 0
         saves = db.query(SavedJob).filter(SavedJob.job_id == req.job_id).count()
@@ -191,6 +204,12 @@ async def geo_distribution(req: GeoRequest, current_user: TokenPayload = Depends
     """
     db = SessionLocal()
     try:
+        job_query = db.query(JobPosting).filter(JobPosting.job_id == req.job_id)
+        if current_user.user_type == "recruiter":
+            job_query = job_query.filter(JobPosting.recruiter_id == current_user.user_id)
+        if not job_query.first():
+            return AnalyticsResponse(success=False, message=f"Job {req.job_id} not found or access denied")
+
         results = (
             db.query(
                 Member.location_city,
@@ -303,7 +322,7 @@ async def top_jobs_monthly(req: TopJobsRequest, current_user: TokenPayload = Dep
         ).label("month")
 
         from models.recruiter import Recruiter
-        results = (
+        q = (
             db.query(
                 month_label,
                 JobPosting.job_id,
@@ -315,11 +334,10 @@ async def top_jobs_monthly(req: TopJobsRequest, current_user: TokenPayload = Dep
             .join(Application, Application.job_id == JobPosting.job_id)
             .outerjoin(Recruiter, JobPosting.recruiter_id == Recruiter.recruiter_id)
             .filter(Application.application_datetime >= cutoff)
-            .group_by(month_label, JobPosting.job_id)
-            .order_by(desc("count"))
-            .limit(req.limit)
-            .all()
         )
+        if current_user.user_type == "recruiter":
+            q = q.filter(JobPosting.recruiter_id == current_user.user_id)
+        results = q.group_by(month_label, JobPosting.job_id).order_by(desc("count")).limit(req.limit).all()
 
         data = [
             {
@@ -358,6 +376,12 @@ async def geo_monthly(req: GeoRequest, current_user: TokenPayload = Depends(requ
         month_label = sql_func.date_format(
             Application.application_datetime, "%Y-%m"
         ).label("month")
+
+        job_query = db.query(JobPosting).filter(JobPosting.job_id == req.job_id)
+        if current_user.user_type == "recruiter":
+            job_query = job_query.filter(JobPosting.recruiter_id == current_user.user_id)
+        if not job_query.first():
+            return AnalyticsResponse(success=False, message=f"Job {req.job_id} not found or access denied")
 
         results = (
             db.query(
@@ -412,7 +436,7 @@ async def least_applied_jobs(req: LeastAppliedRequest, current_user: TokenPayloa
         cutoff = datetime.now() - timedelta(days=req.window_days)
 
         from models.recruiter import Recruiter
-        results = (
+        q = (
             db.query(
                 JobPosting.job_id,
                 JobPosting.title,
@@ -426,11 +450,10 @@ async def least_applied_jobs(req: LeastAppliedRequest, current_user: TokenPayloa
                 JobPosting.status == "open",
                 JobPosting.posted_datetime >= cutoff,
             )
-            .group_by(JobPosting.job_id)
-            .order_by(asc("count"))
-            .limit(req.limit)
-            .all()
         )
+        if current_user.user_type == "recruiter":
+            q = q.filter(JobPosting.recruiter_id == current_user.user_id)
+        results = q.group_by(JobPosting.job_id).order_by(asc("count")).limit(req.limit).all()
 
         data = [
             {"job_id": r[0], "title": f"{r[3]} - {r[1]}" if r[3] else r[1], "location": r[2], "count": r[4]}
@@ -467,37 +490,42 @@ async def clicks_per_job(req: ClicksPerJobRequest, current_user: TokenPayload = 
     try:
         cutoff_date = (datetime.now() - timedelta(days=req.window_days)).strftime("%Y-%m-%d")
 
-        # ── Read from pre-aggregated collection ─────────────────────────────
-        pipeline = [
-            {"$match": {"date": {"$gte": cutoff_date}}},
-            {"$group": {"_id": "$job_id", "clicks": {"$sum": "$clicks"}}},
-            {"$sort": {"clicks": -1}},
-            {"$limit": req.limit},
-        ]
-        cursor = mongo_db.analytics_job_clicks_daily.aggregate(pipeline)
-        raw = await cursor.to_list(length=req.limit)
+        db = SessionLocal()
+        try:
+            match_stage = {"date": {"$gte": cutoff_date}}
+            fb_match = {"event_type": "job.viewed", "timestamp": {"$gte": (datetime.now() - timedelta(days=req.window_days)).isoformat()}}
+            
+            if current_user.user_type == "recruiter":
+                my_jobs = db.query(JobPosting.job_id).filter(JobPosting.recruiter_id == current_user.user_id).all()
+                my_job_ids = [str(r[0]) for r in my_jobs] + [r[0] for r in my_jobs]
+                match_stage["job_id"] = {"$in": my_job_ids}
+                fb_match["entity_id"] = {"$in": my_job_ids}
 
-        # ── Fallback: scan event_logs if pre-aggregated data not yet available
-        if not raw:
-            logger.info("analytics_job_clicks_daily is empty — falling back to event_logs scan")
-            cutoff_iso = (datetime.now() - timedelta(days=req.window_days)).isoformat()
-            fallback_pipeline = [
-                {"$match": {"event_type": "job.viewed", "timestamp": {"$gte": cutoff_iso}}},
-                {"$group": {"_id": "$entity_id", "clicks": {"$sum": 1}}},
+            pipeline = [
+                {"$match": match_stage},
+                {"$group": {"_id": "$job_id", "clicks": {"$sum": "$clicks"}}},
                 {"$sort": {"clicks": -1}},
                 {"$limit": req.limit},
             ]
-            fb_cursor = mongo_db.event_logs.aggregate(fallback_pipeline)
-            fb_raw = await fb_cursor.to_list(length=req.limit)
-            raw = [{"_id": r["_id"], "clicks": r["clicks"]} for r in fb_raw if r["_id"]]
+            cursor = mongo_db.analytics_job_clicks_daily.aggregate(pipeline)
+            raw = await cursor.to_list(length=req.limit)
 
-        job_ids = [int(r["_id"]) for r in raw if r["_id"]]
+            if not raw:
+                logger.info("analytics_job_clicks_daily is empty — falling back to event_logs scan")
+                fallback_pipeline = [
+                    {"$match": fb_match},
+                    {"$group": {"_id": "$entity_id", "clicks": {"$sum": 1}}},
+                    {"$sort": {"clicks": -1}},
+                    {"$limit": req.limit},
+                ]
+                fb_cursor = mongo_db.event_logs.aggregate(fallback_pipeline)
+                fb_raw = await fb_cursor.to_list(length=req.limit)
+                raw = [{"_id": r["_id"], "clicks": r["clicks"]} for r in fb_raw if r["_id"]]
 
-        # ── Enrich with job titles from MySQL ────────────────────────────────
-        titles: dict = {}
-        if job_ids:
-            db = SessionLocal()
-            try:
+            job_ids = [int(r["_id"]) for r in raw if r["_id"]]
+            
+            titles: dict = {}
+            if job_ids:
                 from models.recruiter import Recruiter
                 rows = (
                     db.query(JobPosting.job_id, JobPosting.title, Recruiter.company_name)
@@ -506,8 +534,8 @@ async def clicks_per_job(req: ClicksPerJobRequest, current_user: TokenPayload = 
                     .all()
                 )
                 titles = {r[0]: f"{r[2]} - {r[1]} (#{r[0]})" if r[2] else f"{r[1]} (#{r[0]})" for r in rows}
-            finally:
-                db.close()
+        finally:
+            db.close()
 
         data = [
             {
@@ -553,11 +581,13 @@ async def saves_trend(req: SavesTrendRequest, current_user: TokenPayload = Depen
     cutoff_date = (datetime.now() - timedelta(days=req.window_days)).strftime("%Y-%m-%d")
 
     # ── Read from pre-aggregated collection ─────────────────────────────────
-    cursor = mongo_db.analytics_saves_daily.find(
-        {"date": {"$gte": cutoff_date}},
-        sort=[("date", 1)],
-    )
-    daily_docs = await cursor.to_list(length=None)
+    daily_docs = []
+    if current_user.user_type == "admin":
+        cursor = mongo_db.analytics_saves_daily.find(
+            {"date": {"$gte": cutoff_date}},
+            sort=[("date", 1)],
+        )
+        daily_docs = await cursor.to_list(length=None)
 
     if daily_docs:
         if req.granularity == "week":
@@ -583,7 +613,7 @@ async def saves_trend(req: SavesTrendRequest, current_user: TokenPayload = Depen
         )
 
     # ── Fallback: MySQL GROUP BY when pre-aggregated data not yet available ──
-    logger.info("analytics_saves_daily is empty — falling back to MySQL saved_jobs scan")
+    logger.info("analytics_saves_daily is empty or filtered by recruiter — falling back to MySQL saved_jobs scan")
     db = SessionLocal()
     try:
         cutoff_dt = datetime.now() - timedelta(days=req.window_days)
@@ -595,13 +625,11 @@ async def saves_trend(req: SavesTrendRequest, current_user: TokenPayload = Depen
         else:
             period_label = sql_func.date(SavedJob.saved_at).label("period")
 
-        results = (
-            db.query(period_label, sql_func.count(SavedJob.id).label("count"))
-            .filter(SavedJob.saved_at >= cutoff_dt)
-            .group_by(period_label)
-            .order_by(period_label)
-            .all()
-        )
+        q = db.query(period_label, sql_func.count(SavedJob.id).label("count")).filter(SavedJob.saved_at >= cutoff_dt)
+        if current_user.user_type == "recruiter":
+            q = q.join(JobPosting, SavedJob.job_id == JobPosting.job_id).filter(JobPosting.recruiter_id == current_user.user_id)
+
+        results = q.group_by(period_label).order_by(period_label).all()
 
         data = [{"period": str(r[0]), "count": r[1]} for r in results]
 
