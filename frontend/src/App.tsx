@@ -84,7 +84,7 @@ const ALL_NAV: [Tab, string, string][] = [
   ['jobs',          'Jobs',          'jobs'],
   ['messages',      'Messages',      'messaging'],
   ['career',        'Career Coach',  'ai'],
-  ['analytics',     'Dashboard',     'analytics'],
+  ['analytics',     'Analytics',     'analytics'],
   ['ai',            'AI Recruiter',  'ai'],
   ['perf',          'Dashboard',     'analytics'],
   ['auth',          'Sign In',       'user'],
