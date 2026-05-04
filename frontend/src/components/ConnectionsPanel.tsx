@@ -212,10 +212,10 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
   // Not logged in
   if (!identity) {
     return (
-      <section className="panel">
-        <div className="panel-header">
+      <section className="panel notif-panel premium-panel">
+        <header className="notif-header premium-header">
           <h2 className="panel-title">Connections</h2>
-        </div>
+        </header>
         <div className="auth-prompt-card">
           <p className="auth-prompt-title">Sign in to manage your network</p>
           <p className="auth-prompt-sub">Connect with other professionals on the platform.</p>
@@ -231,12 +231,22 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
 
   // Allow both members and recruiters to access the connections section
   return (
-    <div className="page-grid-2" style={{ maxWidth: '1128px', margin: '0 auto', padding: '24px 0' }}>
+    <div className="connections-page-wrapper premium-panel" style={{ maxWidth: '1128px', margin: '0 auto' }}>
+      <div className="premium-header">
+        <div>
+          <h2 className="premium-title">My Network</h2>
+          <p className="premium-subtitle">Manage your connections and grow your professional circle.</p>
+        </div>
+      </div>
+      <div className="page-grid-2" style={{ padding: '20px' }}>
+
       {/* Left Rail */}
       <div className="left-rail">
-        <div className="li-card">
-          <div style={{ padding: '16px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '16px' }}>Manage my network</h2>
+        <div className="li-card premium-panel">
+          <header className="premium-header" style={{ padding: '12px 16px' }}>
+            <span className="premium-title" style={{ fontSize: 13 }}>Manage my network</span>
+          </header>
+          <div style={{ padding: '0 16px 12px' }}>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
               <li style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', color: 'var(--text-sec)', fontSize: '14px', cursor: 'pointer' }} onClick={() => document.getElementById('conns-section')?.scrollIntoView({ behavior: 'smooth' })}>
                 <span style={{ cursor: 'pointer' }}>Connections</span>
@@ -438,5 +448,6 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
 
       </div>
     </div>
+  </div>
   )
 }

@@ -6803,15 +6803,12 @@ button { cursor: pointer; outline-offset: 2px; }
   border-radius: var(--r);
   padding: 16px 24px;
 }
+/* Removed rj-toolbar overrides to allow premium design system to take effect */
 .rj-toolbar__left h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
+  /* Inherit from premium-title */
 }
 .rj-toolbar__left p {
-  color: var(--text-sec);
-  font-size: 14px;
+  /* Inherit from premium-subtitle */
 }
 .rj-post-btn {
   background: var(--li-blue-primary);
@@ -7282,4 +7279,22 @@ button { cursor: pointer; outline-offset: 2px; }
   font-size: 14px;
   color: var(--text-muted);
   font-style: italic;
+}
+
+.rj-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-height: 200px;
+  color: var(--text-sec);
+  font-size: 16px;
+  text-align: center;
+  padding: 40px;
+  width: 100%;
+}
+
+.rj-right .rj-empty {
+  height: 100%;
+  min-height: 400px;
 }

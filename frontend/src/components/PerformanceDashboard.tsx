@@ -381,11 +381,13 @@ export function PerformanceDashboard() {
     s === 'online' ? 'Online' : s === 'offline' ? 'Offline' : '…'
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2 className="panel-title">Performance Dashboard</h2>
-        <p className="panel-subtitle">System health · MySQL · Redis · Kafka pipeline · Benchmark results</p>
-      </div>
+    <section className="performance-dashboard page-fade premium-panel">
+      <header className="premium-header">
+        <div>
+          <h2 className="premium-title">AI Analytics Dashboard</h2>
+          <p className="premium-subtitle">System performance · Real-time metrics · Kafka pipeline analytics</p>
+        </div>
+      </header>
 
       {/* ── System Health ── */}
       <Card>

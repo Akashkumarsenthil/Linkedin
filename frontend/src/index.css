@@ -1105,10 +1105,40 @@ body {
   background-size: 20px 20px;
   border-radius: 4px;
   padding: 8px;
-  transition: background-color 0.2s, box-shadow 0.2s;
+  transition: all 0.3s ease;
 }
 
 .feed-activity-notes:focus {
-  background-color: #f8faff;
-  box-shadow: inset 0 0 0 1px #0a66c2;
+  background-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(10, 102, 194, 0.1);
+}
+
+/* Premium Panel Theme */
+.premium-panel {
+  background: white;
+  border: 1px solid var(--li-border);
+  border-top: 4px solid var(--li-link);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.premium-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--li-border);
+  background: linear-gradient(to bottom, #ffffff, #fafafa);
+}
+
+.premium-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--li-text-primary);
+  margin: 0;
+}
+
+.premium-subtitle {
+  font-size: 14px;
+  color: var(--li-text-sec);
+  margin-top: 4px;
 }
