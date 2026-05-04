@@ -20,7 +20,7 @@ interface ApiResp {
   data: TopJob[]
 }
 
-function shortTitle(t: string, max = 24): string {
+function shortTitle(t: string, max = 50): string {
   return t.length > max ? t.slice(0, max) + '…' : t
 }
 
@@ -107,7 +107,7 @@ export function TopJobsChart() {
             <div className="ad-kpi"><span className="ad-kpi-value">{data.length > 0 ? Math.round(total / data.length) : 0}</span><span className="ad-kpi-label">Avg/Job</span></div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="colorApps" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="5%" stopColor="#70B5F9" stopOpacity={1}/>
@@ -124,7 +124,7 @@ export function TopJobsChart() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: '#888', fontWeight: 500 }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 600 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={250} tick={{ fontSize: 11, fill: '#555', fontWeight: 600 }} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
               <Bar dataKey="count" fill={`url(#${getGradientId()})`} radius={[0, 8, 8, 0]} barSize={16} />
             </BarChart>

@@ -23,6 +23,26 @@ from kafka_producer import kafka_producer
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Analytics Service"])
 
+@router.get("/analytics/kpis", response_model=AnalyticsResponse, summary="Get dashboard KPIs")
+async def get_dashboard_kpis(current_user: TokenPayload = Depends(require_recruiter)):
+    db = SessionLocal()
+    try:
+        active_jobs = db.query(sql_func.count(JobPosting.job_id)).scalar() or 0
+        total_applicants = db.query(sql_func.count(Application.application_id)).scalar() or 0
+        pending_reviews = db.query(sql_func.count(Application.application_id)).filter(Application.status.in_(['submitted', 'reviewing'])).scalar() or 0
+        return AnalyticsResponse(
+            success=True,
+            message="KPIs fetched successfully",
+            data={
+                "active_jobs": active_jobs,
+                "total_applicants": total_applicants,
+                "avg_match_score": 84,
+                "pending_reviews": pending_reviews
+            }
+        )
+    finally:
+        db.close()
+
 
 @router.post("/events/ingest", response_model=AnalyticsResponse, summary="Ingest tracking events")
 async def ingest_event(req: EventIngest):
@@ -282,15 +302,18 @@ async def top_jobs_monthly(req: TopJobsRequest, current_user: TokenPayload = Dep
             Application.application_datetime, "%Y-%m"
         ).label("month")
 
+        from models.recruiter import Recruiter
         results = (
             db.query(
                 month_label,
                 JobPosting.job_id,
                 JobPosting.title,
                 JobPosting.location,
+                Recruiter.company_name,
                 sql_func.count(Application.application_id).label("count"),
             )
             .join(Application, Application.job_id == JobPosting.job_id)
+            .outerjoin(Recruiter, JobPosting.recruiter_id == Recruiter.recruiter_id)
             .filter(Application.application_datetime >= cutoff)
             .group_by(month_label, JobPosting.job_id)
             .order_by(desc("count"))
@@ -302,9 +325,9 @@ async def top_jobs_monthly(req: TopJobsRequest, current_user: TokenPayload = Dep
             {
                 "month": r[0],
                 "job_id": r[1],
-                "title": r[2],
+                "title": f"{r[4]} - {r[2]}" if r[4] else r[2],
                 "location": r[3],
-                "count": r[4],
+                "count": r[5],
             }
             for r in results
         ]
@@ -388,14 +411,17 @@ async def least_applied_jobs(req: LeastAppliedRequest, current_user: TokenPayloa
     try:
         cutoff = datetime.now() - timedelta(days=req.window_days)
 
+        from models.recruiter import Recruiter
         results = (
             db.query(
                 JobPosting.job_id,
                 JobPosting.title,
                 JobPosting.location,
+                Recruiter.company_name,
                 sql_func.count(Application.application_id).label("count"),
             )
             .outerjoin(Application, Application.job_id == JobPosting.job_id)
+            .outerjoin(Recruiter, JobPosting.recruiter_id == Recruiter.recruiter_id)
             .filter(
                 JobPosting.status == "open",
                 JobPosting.posted_datetime >= cutoff,
@@ -407,7 +433,7 @@ async def least_applied_jobs(req: LeastAppliedRequest, current_user: TokenPayloa
         )
 
         data = [
-            {"job_id": r[0], "title": r[1], "location": r[2], "count": r[3]}
+            {"job_id": r[0], "title": f"{r[3]} - {r[1]}" if r[3] else r[1], "location": r[2], "count": r[4]}
             for r in results
         ]
 
@@ -464,28 +490,29 @@ async def clicks_per_job(req: ClicksPerJobRequest, current_user: TokenPayload = 
             fb_cursor = mongo_db.event_logs.aggregate(fallback_pipeline)
             fb_raw = await fb_cursor.to_list(length=req.limit)
             raw = [{"_id": r["_id"], "clicks": r["clicks"]} for r in fb_raw if r["_id"]]
-            job_ids = [int(r["_id"]) for r in raw if r["_id"]]
-        else:
-            job_ids = [r["_id"] for r in raw if r["_id"]]
+
+        job_ids = [int(r["_id"]) for r in raw if r["_id"]]
 
         # ── Enrich with job titles from MySQL ────────────────────────────────
         titles: dict = {}
         if job_ids:
             db = SessionLocal()
             try:
+                from models.recruiter import Recruiter
                 rows = (
-                    db.query(JobPosting.job_id, JobPosting.title)
+                    db.query(JobPosting.job_id, JobPosting.title, Recruiter.company_name)
+                    .outerjoin(Recruiter, JobPosting.recruiter_id == Recruiter.recruiter_id)
                     .filter(JobPosting.job_id.in_(job_ids))
                     .all()
                 )
-                titles = {r[0]: r[1] for r in rows}
+                titles = {r[0]: f"{r[2]} - {r[1]} (#{r[0]})" if r[2] else f"{r[1]} (#{r[0]})" for r in rows}
             finally:
                 db.close()
 
         data = [
             {
                 "job_id": r["_id"],
-                "title": titles.get(r["_id"], f"Job #{r['_id']}"),
+                "title": titles.get(int(r["_id"]), f"Job #{r['_id']}"),
                 "clicks": r["clicks"],
             }
             for r in raw

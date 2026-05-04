@@ -26,7 +26,7 @@ interface ApiResp {
   data: JobRow[]
 }
 
-function shortTitle(t: string, max = 22): string {
+function shortTitle(t: string, max = 50): string {
   return t.length > max ? t.slice(0, max) + '…' : t
 }
 
@@ -88,7 +88,7 @@ export function TopMonthlyChart() {
             <div className="ad-kpi"><span className="ad-kpi-value">{data.length}</span><span className="ad-kpi-label">Jobs</span></div>
           </div>
           <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="colorBlue" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="5%" stopColor="#4395fb" stopOpacity={1}/>
@@ -97,7 +97,7 @@ export function TopMonthlyChart() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={200} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={280} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
               <Bar dataKey="count" fill="url(#colorBlue)" radius={[0, 6, 6, 0]} barSize={16} />
             </BarChart>
@@ -150,7 +150,7 @@ export function LeastAppliedChart() {
         <p className="ad-empty">No open jobs found.</p>
       ) : (
         <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
+          <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
             <defs>
               <linearGradient id="colorRed" x1="0" y1="0" x2="1" y2="0">
                 <stop offset="5%" stopColor="#f87171" stopOpacity={1}/>
@@ -159,7 +159,7 @@ export function LeastAppliedChart() {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
             <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} allowDecimals={false} axisLine={false} tickLine={false} />
-            <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="label" width={250} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
             <Bar dataKey="count" fill="url(#colorRed)" radius={[0, 6, 6, 0]} barSize={16} />
           </BarChart>
@@ -218,7 +218,7 @@ export function ClicksPerJobChart() {
             <div className="ad-kpi"><span className="ad-kpi-value">{data.length > 0 ? Math.round(totalClicks / data.length) : 0}</span><span className="ad-kpi-label">Avg/Job</span></div>
           </div>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 28, top: 4, bottom: 4 }}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 50, top: 4, bottom: 4 }}>
               <defs>
                 <linearGradient id="colorPurple" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="5%" stopColor="#a855f7" stopOpacity={1}/>
@@ -227,7 +227,7 @@ export function ClicksPerJobChart() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,.04)" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: '#888' }} axisLine={false} tickLine={false} />
-              <YAxis type="category" dataKey="label" width={170} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="label" width={250} tick={{ fontSize: 11, fill: '#555', fontWeight: 500 }} axisLine={false} tickLine={false} />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
               <Bar dataKey="count" fill="url(#colorPurple)" radius={[0, 6, 6, 0]} barSize={16} />
             </BarChart>
