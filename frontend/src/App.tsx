@@ -424,11 +424,17 @@ function App() {
                   title={label}
                 >
                   <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <Icon name={icon} size={20} className="nav-icon-svg" />
-                    {id === 'messages' && unreadMsgCount > 0 && tab !== 'messages' && (
-                      <span className="nav-bell-badge" style={{ top: -4, right: -4, background: '#cc1016' }}>
-                        {unreadMsgCount > 9 ? '9+' : unreadMsgCount}
+                    {id === 'messages' ? (
+                      <span className="nav-bell-wrap">
+                        <Icon name={icon} size={20} className="nav-icon-svg" />
+                        {unreadMsgCount > 0 && tab !== 'messages' && (
+                          <span className="nav-bell-badge" style={{ top: -4, right: -4, background: '#cc1016' }}>
+                            {unreadMsgCount > 9 ? '9+' : unreadMsgCount}
+                          </span>
+                        )}
                       </span>
+                    ) : (
+                      <Icon name={icon} size={20} className="nav-icon-svg" />
                     )}
                   </div>
                   <span className="nav-label">{label}</span>
