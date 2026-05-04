@@ -307,7 +307,7 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                         <button type="button" className="ghost-btn" onClick={() => rejectConn(c.connection_id)} disabled={arLoading} style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-sec)', padding: '6px 12px' }}>
                           Ignore
                         </button>
-                        <button type="button" className="secondary-btn" onClick={() => acceptConn(c.connection_id)} disabled={arLoading} style={{ fontSize: '16px', fontWeight: 600, padding: '6px 16px', borderRadius: '24px' }}>
+                        <button type="button" className="primary" onClick={() => acceptConn(c.connection_id)} disabled={arLoading}>
                           Accept
                         </button>
                       </div>
@@ -325,18 +325,17 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
             <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text)', marginBottom: '8px' }}>Grow your network</h2>
             <p className="hint" style={{ marginTop: 0, fontSize: '14px', marginBottom: '16px' }}>Find people you know by searching for their name.</p>
             
-            <div className="search-input-wrap" style={{ position: 'relative', display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <input
-                type="text"
-                value={toName}
-                onChange={e => { setToName(e.target.value); if(!e.target.value) setToId('') }}
-                placeholder="Search by name..."
-                className="search-bar-input"
-                style={{ flex: 1, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '14px' }}
-              />
-              <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading || !toId} style={{ borderRadius: '24px', padding: '6px 16px', fontSize: '16px' }}>
-                {reqLoading ? 'Sending...' : 'Connect'}
-              </button>
+              <div className="search-input-wrap" style={{ position: 'relative', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={toName}
+                  onChange={e => { setToName(e.target.value); if(!e.target.value) setToId('') }}
+                  placeholder="Search by name..."
+                  className="search-bar-input"
+                />
+                <button type="button" className="primary" onClick={sendRequest} disabled={reqLoading || !toId}>
+                  {reqLoading ? 'Sending...' : 'Connect'}
+                </button>
               
               {toResults.length > 0 && !toId && (
                 <div className="search-dropdown panel" style={{ position: 'absolute', top: '100%', left: 0, right: '100px', zIndex: 10, background: '#fff', border: '1px solid var(--border)', borderRadius: '0 0 4px 4px', boxShadow: 'var(--sh-drop)' }}>
@@ -372,7 +371,6 @@ export function ConnectionsPanel({ onNavigateProfile }: { onNavigateProfile?: (i
                 value={connsFilter}
                 onChange={e => setConnsFilter(e.target.value)}
                 className="search-bar-input"
-                style={{ padding: '4px 8px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '14px' }}
               />
               <button type="button" className="ghost-btn" onClick={() => loadConnections(myId!)} disabled={connsLoading} style={{ fontSize: '14px' }}>
                 {connsLoading ? 'Loading...' : 'Refresh'}
