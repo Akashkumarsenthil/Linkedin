@@ -1125,6 +1125,22 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
 }
 
 function AnalyticsPanel() {
+  const [kpis, setKpis] = useState({ active_jobs: '-', total_applicants: '-', avg_match_score: '-', pending_reviews: '-' })
+
+  useEffect(() => {
+    apiGet('/analytics/kpis').then(res => {
+      if (res.success && res.data) {
+        const d = res.data
+        setKpis({
+          active_jobs: d.active_jobs,
+          total_applicants: d.total_applicants > 1000 ? (d.total_applicants / 1000).toFixed(1) + 'k' : d.total_applicants,
+          avg_match_score: d.avg_match_score,
+          pending_reviews: d.pending_reviews
+        })
+      }
+    })
+  }, [])
+
   return (
     <section className="panel analytics-dashboard premium-panel">
       <header className="premium-header">
@@ -1139,19 +1155,19 @@ function AnalyticsPanel() {
       <div className="ad-kpi-row">
         <div className="ad-kpi">
           <span className="ad-kpi-label">Active Jobs</span>
-          <span className="ad-kpi-value">24</span>
+          <span className="ad-kpi-value">{kpis.active_jobs}</span>
         </div>
         <div className="ad-kpi">
           <span className="ad-kpi-label">Total Applicants</span>
-          <span className="ad-kpi-value">1.2k</span>
+          <span className="ad-kpi-value">{kpis.total_applicants}</span>
         </div>
         <div className="ad-kpi">
           <span className="ad-kpi-label">Avg. Match Score</span>
-          <span className="ad-kpi-value">84%</span>
+          <span className="ad-kpi-value">{kpis.avg_match_score}%</span>
         </div>
         <div className="ad-kpi danger">
           <span className="ad-kpi-label">Pending Reviews</span>
-          <span className="ad-kpi-value">12</span>
+          <span className="ad-kpi-value">{kpis.pending_reviews}</span>
         </div>
       </div>
 
