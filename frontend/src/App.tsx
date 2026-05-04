@@ -125,7 +125,6 @@ function App() {
     analytics: '/analytics',
     career: '/career-coach',
     messages: '/messaging',
-    connections: '/connections',
     notifications: '/notifications',
     ai: '/ai-recruiter',
     auth: '/auth',
@@ -541,13 +540,13 @@ function App() {
               onClearTarget={() => setTargetMessagingId(null)}
             />
           )}
-          {tab === 'connections' && <ConnectionsPanel onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}
+
           {tab === 'notifications' && (
             <NotificationsPanel
               notifications={notifications}
               unreadCount={unreadCount}
               onRefresh={loadNotifications}
-              onOpenConnections={() => setTab('connections')}
+              onOpenConnections={() => setTab('members')}
               onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
               onNavigatePost={(id) => { setViewPostId(id); setPostSource('notifications'); setTab('post') }}
             />
@@ -870,6 +869,15 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
           }
         })
         .catch(() => { })
+      
+      apiPost<any>('/connections/sent', { user_id: user.user_id, page: 1, page_size: 100 })
+        .then(res => {
+          if (res.success && res.data) {
+            const sentIds = res.data.map((c: any) => c.receiver_id)
+            setPendingConnections(sentIds)
+          }
+        })
+        .catch(() => { })
     }
   }, [])
 
@@ -970,10 +978,14 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
               <li key={String(m.member_id)} className="member-card">
                 <div
                   className="member-avatar"
-                  style={{ background: AVATAR_COLORS[colorIndex], cursor: 'pointer' }}
+                  style={{ cursor: 'pointer', ...(m.profile_photo_url ? {} : { background: AVATAR_COLORS[colorIndex] }) }}
                   onClick={() => onNavigateProfile(Number(m.member_id))}
                 >
-                  {initials}
+                  {m.profile_photo_url ? (
+                    <img src={String(m.profile_photo_url)} alt="" />
+                  ) : (
+                    initials
+                  )}
                 </div>
                 <div className="member-card-body">
                   <h3
@@ -1006,9 +1018,30 @@ function MembersPanel({ onNavigateProfile, role }: { onNavigateProfile: (id: num
                           Message
                         </button>
                       ) : pendingConnections.includes(Number(m.member_id)) ? (
-                        <button type="button" className="btn-pending" style={{ width: '100%', justifyContent: 'center', cursor: 'default' }}>
-                          Pending
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                          <button type="button" className="btn-pending" style={{ flex: 1, justifyContent: 'center', cursor: 'default' }}>
+                            Pending
+                          </button>
+                          <button 
+                            type="button" 
+                            className="ghost-btn" 
+                            style={{ flex: 1, justifyContent: 'center', padding: '6px 8px', fontSize: '14px', color: '#d11124', fontWeight: 600 }}
+                            onClick={() => {
+                                const user = parseStoredUser()
+                                if (!user || user.user_type !== 'member') return
+                                apiPost<any>('/connections/remove', {
+                                  user_id: user.user_id,
+                                  other_id: Number(m.member_id)
+                                }).then(res => {
+                                  if (res.success) {
+                                    setPendingConnections(prev => prev.filter(id => id !== Number(m.member_id)))
+                                  }
+                                })
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       ) : (
                         <button
                           type="button"
