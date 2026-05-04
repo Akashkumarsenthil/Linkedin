@@ -164,6 +164,7 @@ function App() {
   const [initialAiJobId, setInitialAiJobId] = useState<number | null>(null)
   const [unreadMsgCount, setUnreadMsgCount] = useState<number>(0)
   const [targetMessagingId, setTargetMessagingId] = useState<number | null>(null)
+  const [targetMessagingType, setTargetMessagingType] = useState<string | null>(null)
   const tabRef = useRef(tab)
   tabRef.current = tab
 
@@ -552,7 +553,8 @@ function App() {
               onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
               onNavigatePost={(id) => { setViewPostId(id); setPostSource('messages'); setTab('post') }}
               targetUserId={targetMessagingId}
-              onClearTarget={() => setTargetMessagingId(null)}
+              targetUserType={targetMessagingType}
+              onClearTarget={() => { setTargetMessagingId(null); setTargetMessagingType(null) }}
             />
           )}
 
@@ -564,6 +566,7 @@ function App() {
               onOpenConnections={() => setTab('members')}
               onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }}
               onNavigatePost={(id) => { setViewPostId(id); setPostSource('notifications'); setTab('post') }}
+              onNavigateMessage={(actorId, actorType) => { setTargetMessagingId(actorId); setTargetMessagingType(actorType || 'member'); setTab('messages') }}
             />
           )}
           {tab === 'ai'          && <AiDashboard initialJobId={initialAiJobId} onNavigateProfile={(id) => { setViewProfileId(id); setTab('profile') }} />}

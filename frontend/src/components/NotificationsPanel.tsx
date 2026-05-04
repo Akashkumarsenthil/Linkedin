@@ -21,6 +21,7 @@ interface NotificationsPanelProps {
   onOpenConnections: () => void
   onNavigateProfile?: (id: number) => void
   onNavigatePost?: (id: number) => void
+  onNavigateMessage?: (actorId: number, actorType?: string | null) => void
 }
 
 function iconForType(type: string): string {
@@ -47,6 +48,19 @@ function formatRelative(iso?: string | null): string {
   return d.toLocaleDateString()
 }
 
+function formatSubtitle(subtitle?: string | null): string | null {
+  if (!subtitle) return null;
+  if (subtitle.startsWith('{"type":"shared_post"')) {
+    try {
+      const parsed = JSON.parse(subtitle);
+      return `Shared you a post by ${parsed.author_name || 'user'}`;
+    } catch {
+      return subtitle;
+    }
+  }
+  return subtitle;
+}
+
 export function NotificationsPanel({
   notifications,
   unreadCount,
@@ -54,13 +68,16 @@ export function NotificationsPanel({
   onOpenConnections,
   onNavigateProfile,
   onNavigatePost,
+  onNavigateMessage,
 }: NotificationsPanelProps) {
   const params = new URLSearchParams(window.location.search)
   const initialFilter = params.get('section') === 'profile-views' ? 'views' : 'all'
-  const [filter, setFilter] = useState<'all' | 'views'>(initialFilter)
+  const [filter, setFilter] = useState<'all' | 'views' | 'messages'>(initialFilter as any)
 
   const filteredNotifications = filter === 'views' 
     ? notifications.filter(n => n.type === 'profile_view')
+    : filter === 'messages'
+    ? notifications.filter(n => n.type === 'new_message')
     : notifications
 
   return (
@@ -99,14 +116,23 @@ export function NotificationsPanel({
             <Icon name="eye" size={16} />
             Profile views
           </button>
+          <button 
+            type="button" 
+            className={`pill-btn ${filter === 'messages' ? 'active' : ''}`}
+            onClick={() => setFilter('messages')}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="messaging" size={16} />
+            Messages
+          </button>
         </div>
 
         {filteredNotifications.length === 0 ? (
           <div className="notif-empty">
             <Icon name="bell" size={28} className="notif-empty-icon" />
-            <p><strong>No {filter === 'views' ? 'profile views' : 'notifications'} yet.</strong></p>
+            <p><strong>No {filter === 'views' ? 'profile views' : filter === 'messages' ? 'messages' : 'notifications'} yet.</strong></p>
             <p className="muted">
-              {filter === 'views' ? "When someone views your profile, it will appear here." : "When someone sends you a connection request, likes your post, or shares something new, you’ll see it here."}
+              {filter === 'views' ? "When someone views your profile, it will appear here." : filter === 'messages' ? "When you receive a new message, it will appear here." : "When someone sends you a connection request, likes your post, or shares something new, you’ll see it here."}
             </p>
           </div>
         ) : (
@@ -124,9 +150,13 @@ export function NotificationsPanel({
                 <li
                   key={n.id}
                   className={`notif-item${n.unread ? ' notif-item-unread' : ''}`}
-                  style={{ cursor: n.post_id ? 'pointer' : 'default' }}
+                  style={{ cursor: (n.post_id || n.type === 'new_message') ? 'pointer' : 'default' }}
                   onClick={() => {
-                    if (n.post_id && onNavigatePost) onNavigatePost(n.post_id)
+                    if (n.type === 'new_message' && n.actor_id && onNavigateMessage) {
+                      onNavigateMessage(n.actor_id, n.actor_type)
+                    } else if (n.post_id && onNavigatePost) {
+                      onNavigatePost(n.post_id)
+                    }
                   }}
                 >
                   <div 
@@ -159,7 +189,7 @@ export function NotificationsPanel({
                         }
                       }}
                     >{n.title}</p>
-                    {n.subtitle && n.type !== 'profile_view' && <p className="notif-subtitle">{n.subtitle}</p>}
+                    {n.subtitle && n.type !== 'profile_view' && <p className="notif-subtitle">{formatSubtitle(n.subtitle)}</p>}
                     <p className="notif-time">{formatRelative(n.created_at)}</p>
                   </div>
                   {isAction && (
