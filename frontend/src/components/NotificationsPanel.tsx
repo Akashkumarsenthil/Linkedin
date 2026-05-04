@@ -58,6 +58,9 @@ function formatSubtitle(subtitle?: string | null): string | null {
       return subtitle;
     }
   }
+  if (subtitle.startsWith('{"type":"attachment"')) {
+    return "Shared an attachment";
+  }
   return subtitle;
 }
 

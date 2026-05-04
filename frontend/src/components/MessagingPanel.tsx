@@ -531,7 +531,10 @@ export function MessagingPanel({
                             const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
                             return isMe ? "You shared a post" : `${t.other_participant?.name || 'Someone'} shared a post`;
                           }
-                          if (shared?.type === 'attachment') return `📎 ${shared.filename}`;
+                          if (shared?.type === 'attachment') {
+                            const isMe = t.last_message.sender_id === identity?.user_id && t.last_message.sender_type === identity?.user_type;
+                            return isMe ? "You shared an attachment" : `${t.other_participant?.name || 'Someone'} shared an attachment`;
+                          }
                           return t.last_message.message_text.slice(0, 45) + (t.last_message.message_text.length > 45 ? '…' : '');
                         })()}
                       </span>
