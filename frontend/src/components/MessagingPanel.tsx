@@ -31,15 +31,22 @@ interface ThreadData {
 
 type UserType = 'member' | 'recruiter'
 
+function parseUtcDate(d: string) {
+  if (!d) return new Date();
+  let clean = d.trim().replace(' ', 'T');
+  if (!clean.endsWith('Z')) clean += 'Z';
+  return new Date(clean);
+}
+
 function fmtDate(d: string) {
-  const dt = new Date(d)
+  const dt = parseUtcDate(d)
   const now = new Date()
   if (dt.toDateString() === now.toDateString()) return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
 function fmtTime(d: string) {
-  return new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return parseUtcDate(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function tryParseSharedPost(text: string) {
@@ -52,7 +59,10 @@ function tryParseSharedPost(text: string) {
 function SharedPostLoader({ sharedPost, onNavigatePost }: { sharedPost: any, onNavigatePost?: (postId: number) => void }) {
   const [postData, setPostData] = useState<any>(null)
   useEffect(() => {
-    apiPost<{ data: any }>('/posts/get', { post_id: sharedPost.postId || sharedPost.post_id }).then(r => setPostData(r.data)).catch(() => { })
+    const id = sharedPost.postId || sharedPost.post_id;
+    if (id) {
+      apiGet<{ data: any }>(`/posts/${id}`).then(r => setPostData(r.data)).catch(() => { })
+    }
   }, [sharedPost.postId, sharedPost.post_id])
 
   if (!postData) return <div className="hint" style={{ padding: '12px', border: '1px solid #eee', borderRadius: '8px' }}>Loading shared post...</div>
@@ -552,7 +562,7 @@ export function MessagingPanel({
                               )}
                             </div>
                           )}
-                          <span className="msg-text">{m.message_text}</span>
+                          <span className="msg-text" style={{ display: 'block', marginBottom: '8px' }}>{m.message_text}</span>
                           <span className="msg-time">{fmtTime(m.timestamp)}</span>
                         </div>
                       </div>
@@ -566,8 +576,8 @@ export function MessagingPanel({
                     <textarea
                       className="msg-input"
                       placeholder="Write a message..."
-                      rows={1}
-                      style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', padding: '4px 0', fontSize: '14px', outline: 'none' }}
+                      rows={3}
+                      style={{ flex: 1, border: 'none', background: 'transparent', resize: 'none', padding: '8px 16px', fontSize: '14px', outline: 'none' }}
                       value={msgText}
                       onChange={e => setMsgText(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
