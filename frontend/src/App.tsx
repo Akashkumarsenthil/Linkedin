@@ -61,7 +61,7 @@ const TAB_VISIBILITY: Record<Tab, Array<'guest' | 'member' | 'recruiter' | 'admi
   jobs:          ['guest', 'member', 'recruiter', 'admin'],
   'saved-jobs':  ['member'],
   'my-jobs':     ['member'],
-  members:       ['guest', 'member', 'admin'],
+  members:       ['guest', 'member', 'recruiter', 'admin'],
   analytics:     ['recruiter', 'admin'],
   career:        ['member', 'recruiter'],                   // admin-irrelevant
   messages:      ['member', 'recruiter'],                   // admin-irrelevant
