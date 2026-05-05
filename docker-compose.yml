@@ -15,9 +15,9 @@ x-backend-common: &backend-common
     MYSQL_DATABASE: team_mysql_db
     MONGO_HOST: 3.80.47.57
     MONGO_PORT: 27017
-    MONGO_USER: teammongo
-    MONGO_PASSWORD: ChangeThisMongoPass123!
-    MONGO_DATABASE: team_mongodb
+    MONGO_USER: mongo_user
+    MONGO_PASSWORD: mongo_pass
+    MONGO_DATABASE: linkedin
     MONGO_AUTH_SOURCE: admin
     REDIS_HOST: redis
     KAFKA_BOOTSTRAP_SERVERS: kafka:9092
