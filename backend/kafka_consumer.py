@@ -290,12 +290,20 @@ async def handle_application_submitted(event: dict):
 
 async def handle_application_withdrawn(event: dict):
     """
-    Log withdraw to MongoDB only.
+    Log withdraw to MongoDB and decrement the daily analytics counter.
 
-    applicants_count is decremented in the HTTP handler when the row is deleted;
-    do not adjust SQL here.
+    applicants_count on the SQL row is decremented in the HTTP handler when the
+    row is deleted; this handler keeps the MongoDB analytics aggregate in sync.
     """
+    from datetime import date
+
     await mongo_db.event_logs.insert_one(event)
+
+    today_str = str(date.today())
+    await mongo_db.analytics_applications_daily.update_one(
+        {"date": today_str},
+        {"$inc": {"count": -1}},
+    )
 
 
 async def handle_connection_requested(event: dict):
@@ -513,6 +521,26 @@ async def handle_ai_requested(event: dict):
     await enqueue_task(task_id, job_id, top_n)
 
 
+async def handle_application_status_changed(event: dict):
+    """Log application.statusChanged to MongoDB event_logs."""
+    await mongo_db.event_logs.insert_one(event)
+
+
+async def handle_job_created(event: dict):
+    """Log job.created to MongoDB event_logs."""
+    await mongo_db.event_logs.insert_one(event)
+
+
+async def handle_job_closed(event: dict):
+    """Log job.closed to MongoDB event_logs."""
+    await mongo_db.event_logs.insert_one(event)
+
+
+async def handle_ai_result(event: dict):
+    """Log ai.results step events to MongoDB event_logs."""
+    await mongo_db.event_logs.insert_one(event)
+
+
 # Singleton consumer
 kafka_consumer = KafkaEventConsumer()
 
@@ -521,8 +549,12 @@ kafka_consumer.register_handler("job.viewed", handle_job_viewed)
 kafka_consumer.register_handler("job.saved", handle_job_saved)
 kafka_consumer.register_handler("application.submitted", handle_application_submitted)
 kafka_consumer.register_handler("application.withdrawn", handle_application_withdrawn)
+kafka_consumer.register_handler("application.statusChanged", handle_application_status_changed)
+kafka_consumer.register_handler("job.created", handle_job_created)
+kafka_consumer.register_handler("job.closed", handle_job_closed)
 kafka_consumer.register_handler("message.sent", handle_message_sent)
 kafka_consumer.register_handler("connection.requested", handle_connection_requested)
 kafka_consumer.register_handler("connection.accepted", handle_connection_accepted)
 kafka_consumer.register_handler("profile.viewed", handle_profile_viewed)
 kafka_consumer.register_handler("ai.requested", handle_ai_requested)
+kafka_consumer.register_handler("ai.result", handle_ai_result)

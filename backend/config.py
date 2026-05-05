@@ -7,6 +7,7 @@ import os
 from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 from typing import Optional
 
 
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     # ─── App ────────────────────────────────────────
     APP_NAME: str = "LinkedIn Agentic AI Platform"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     # ─── MySQL ──────────────────────────────────────
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
@@ -69,6 +70,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+    # ─── Ollama ─────────────────────────────────────
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2")
+
     # ─── Auth / JWT ─────────────────────────────────────────────────
     # Accepts JWT_SECRET_KEY (preferred) or legacy JWT_SECRET env var.
     JWT_SECRET: str = os.getenv("JWT_SECRET_KEY", os.getenv("JWT_SECRET", "linkedin-demo-secret-change-in-prod"))
@@ -79,9 +84,7 @@ class Settings(BaseSettings):
     def JWT_EXPIRE_HOURS(self) -> int:
         return self.JWT_EXPIRE_MINUTES // 60
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

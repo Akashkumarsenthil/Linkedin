@@ -10,12 +10,12 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, desc, text, update
 
-from database import get_db, SessionLocal
+from database import get_db
 from database import mongo_db
 from models.job import JobPosting, SavedJob
 from models.recruiter import Recruiter
-from models.failed_kafka_event import FailedKafkaEvent
 from auth import require_recruiter, require_member, TokenPayload
+from routers.kafka_utils import log_failed_kafka_event as _log_failed_kafka_event
 from schemas.job import (
     JobCreate, JobGet, JobUpdate, JobSearch, JobClose, JobByRecruiter,
     SaveJobRequest, UnsaveJobRequest, SavedJobsByMemberRequest, JobResponse, JobListResponse,
@@ -25,30 +25,6 @@ from kafka_producer import kafka_producer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["Job Service"])
-
-
-def _log_failed_kafka_event(
-    topic: str, event_type: str, entity_id: str, actor_id: str, payload: dict, error: Exception
-) -> None:
-    """Persist a failed Kafka publish so it is not silently lost (dual-write fallback)."""
-    try:
-        fke = FailedKafkaEvent(
-            topic=topic,
-            event_type=event_type,
-            entity_id=str(entity_id),
-            actor_id=str(actor_id),
-            payload=json.dumps(payload, default=str),
-            error_message=str(error)[:500],
-        )
-        db = SessionLocal()
-        try:
-            db.add(fke)
-            db.commit()
-            logger.warning(f"Kafka publish failed for {event_type} → recorded in failed_kafka_events (id={fke.id})")
-        finally:
-            db.close()
-    except Exception as fb_err:
-        logger.error(f"Could not write to failed_kafka_events: {fb_err}")
 
 
 # ── Cursor helpers ───────────────────────────────────────────────────────────

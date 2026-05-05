@@ -160,7 +160,7 @@ function StepTimeline({ steps }: { steps: { step: string; status: string; timest
 
 type PipelineDecision = 'interview' | 'selected' | 'rejected' | null
 
-function ShortlistCard({ entry, jobId, onNavigateProfile }: { entry: ShortlistEntry; jobId?: number; onNavigateProfile?: (id: number) => void }) {
+function ShortlistCard({ entry, jobId, onNavigateProfile, isAdmin }: { entry: ShortlistEntry; jobId?: number; onNavigateProfile?: (id: number) => void; isAdmin?: boolean }) {
   const [expanded, setExpanded]   = useState(false)
   const [decision, setDecision]   = useState<PipelineDecision>(null)
   const [deciding, setDeciding]   = useState(false)
@@ -357,33 +357,35 @@ function ShortlistCard({ entry, jobId, onNavigateProfile }: { entry: ShortlistEn
         </div>
       )}
 
-      {/* Pipeline action buttons */}
-      <div className="li-pipeline-actions">
-        <button
-          className={`li-pipeline-btn interview${decision === 'interview' ? ' active' : ''}`}
-          onClick={() => handleDecision('interview')}
-          disabled={deciding}
-          title="Move to interview stage"
-        >
-          {decision === 'interview' ? '✓ Interview' : 'Interview'}
-        </button>
-        <button
-          className={`li-pipeline-btn selected${decision === 'selected' ? ' active' : ''}`}
-          onClick={() => handleDecision('selected')}
-          disabled={deciding}
-          title="Mark as selected / offer"
-        >
-          {decision === 'selected' ? '✓ Selected' : 'Select'}
-        </button>
-        <button
-          className={`li-pipeline-btn rejected${decision === 'rejected' ? ' active' : ''}`}
-          onClick={() => handleDecision('rejected')}
-          disabled={deciding}
-          title="Reject this candidate"
-        >
-          {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
-        </button>
-      </div>
+      {/* Pipeline action buttons — hidden for admin (read-only view) */}
+      {!isAdmin && (
+        <div className="li-pipeline-actions">
+          <button
+            className={`li-pipeline-btn interview${decision === 'interview' ? ' active' : ''}`}
+            onClick={() => handleDecision('interview')}
+            disabled={deciding}
+            title="Move to interview stage"
+          >
+            {decision === 'interview' ? '✓ Interview' : 'Interview'}
+          </button>
+          <button
+            className={`li-pipeline-btn selected${decision === 'selected' ? ' active' : ''}`}
+            onClick={() => handleDecision('selected')}
+            disabled={deciding}
+            title="Mark as selected / offer"
+          >
+            {decision === 'selected' ? '✓ Selected' : 'Select'}
+          </button>
+          <button
+            className={`li-pipeline-btn rejected${decision === 'rejected' ? ' active' : ''}`}
+            onClick={() => handleDecision('rejected')}
+            disabled={deciding}
+            title="Reject this candidate"
+          >
+            {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -599,6 +601,8 @@ function ResumeView({ data }: { data: Record<string, unknown> }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?: number | null; onNavigateProfile?: (id: number) => void } = {}) {
+  const isAdmin = parseStoredUser()?.user_type === 'admin'
+
   // ── task list state ──────────────────────────────────────────────
   const [tasks, setTasks] = useState<TaskSummary[]>([])
   const [tasksLoading, setTasksLoading] = useState(false)
@@ -984,7 +988,7 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
                     </p>
                     <div className="candidate-grid">
                       {result.shortlist.map((entry, i) => (
-                        <ShortlistCard key={i} entry={entry} jobId={result.job?.job_id} onNavigateProfile={onNavigateProfile} />
+                        <ShortlistCard key={i} entry={entry} jobId={result.job?.job_id} onNavigateProfile={onNavigateProfile} isAdmin={isAdmin} />
                       ))}
                     </div>
                   </div>
@@ -1002,11 +1006,11 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
                   </div>
                 )}
 
-                {/* Approval controls */}
+                {/* Approval controls — admin sees status only, cannot approve/reject */}
                 {(canApprove || approvalMsg) && (
                   <div className="ai-section">
                     <p className="ai-section-label">Recruiter decision</p>
-                    {canApprove && (
+                    {canApprove && !isAdmin && (
                       <div className="approval-box">
                         <p className="approval-prompt">
                           Review the shortlist and outreach drafts above, then approve or reject.
@@ -1040,6 +1044,11 @@ export function AiDashboard({ initialJobId, onNavigateProfile }: { initialJobId?
                           </button>
                         </div>
                       </div>
+                    )}
+                    {canApprove && isAdmin && (
+                      <p className="approval-result" style={{ color: 'var(--text-muted)' }}>
+                        Awaiting recruiter approval — admin view is read-only.
+                      </p>
                     )}
                     {approvalMsg && (
                       <p className="approval-result">{approvalMsg}</p>

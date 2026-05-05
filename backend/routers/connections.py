@@ -12,6 +12,7 @@ from models.connection import Connection
 from models.member import Member
 from models.recruiter import Recruiter
 from auth import get_current_user, TokenPayload
+from routers.kafka_utils import log_failed_kafka_event as _log_failed_kafka_event
 from schemas.connection import (
     ConnectionRequest, ConnectionAccept, ConnectionReject, ConnectionRemove,
     ConnectionList, MutualConnections, ConnectionResponse, ConnectionListResponse,
@@ -115,7 +116,14 @@ async def send_connection_request(
             idempotency_key=f"conn_request:{req.requester_id}:{req.receiver_id}",
         )
     except Exception as e:
-        logger.warning(f"Kafka publish failed for connection.requested (conn_id={connection.connection_id}): {e}")
+        _log_failed_kafka_event(
+            topic="connection.requested",
+            event_type="connection.requested",
+            entity_id=str(connection.connection_id),
+            actor_id=str(req.requester_id),
+            payload={"receiver_id": req.receiver_id},
+            error=e,
+        )
 
     return ConnectionResponse(success=True, message="Connection request sent", data=connection.to_dict())
 
@@ -167,7 +175,14 @@ async def accept_connection(
             idempotency_key=f"conn_accept:{req.connection_id}",
         )
     except Exception as e:
-        logger.warning(f"Kafka publish failed for connection.accepted (conn_id={req.connection_id}): {e}")
+        _log_failed_kafka_event(
+            topic="connection.accepted",
+            event_type="connection.accepted",
+            entity_id=str(req.connection_id),
+            actor_id=str(conn.receiver_id),
+            payload={"requester_id": conn.requester_id},
+            error=e,
+        )
 
     return ConnectionResponse(success=True, message="Connection accepted", data=conn.to_dict())
 

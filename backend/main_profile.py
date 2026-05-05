@@ -8,6 +8,7 @@ from config import settings
 from kafka_producer import kafka_producer
 from routers import members, recruiters, auth_router, notifications
 from database import engine, Base, create_mongo_indexes
+from cache import cache
 import models.user_credentials
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
@@ -39,4 +40,5 @@ async def health():
         "mongo": "ok",
         "redis": "ok",
         "kafka": "ok",
+        "cache_stats": cache.stats(),
     }

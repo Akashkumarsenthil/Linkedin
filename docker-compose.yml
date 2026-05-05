@@ -52,6 +52,7 @@ services:
 
   mongodb:
     image: mongo:7
+    platform: linux/arm64
     container_name: linkedin-mongodb
     restart: unless-stopped
     env_file: .env

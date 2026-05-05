@@ -13,6 +13,7 @@ from models.message import Thread, ThreadParticipant, Message
 from models.member import Member
 from models.recruiter import Recruiter
 from auth import get_current_user, TokenPayload
+from routers.kafka_utils import log_failed_kafka_event as _log_failed_kafka_event
 from schemas.message import (
     ThreadOpen, ThreadGet, ThreadsByUser, MessageSend, MessageList,
     MessageResponse, MessageListResponse,
@@ -240,7 +241,14 @@ async def send_message(
             idempotency_key=f"msg_sent:{message.message_id}",
         )
     except Exception as e:
-        logger.warning(f"Kafka publish failed for message.sent (message_id={message.message_id}): {e}")
+        _log_failed_kafka_event(
+            topic="message.sent",
+            event_type="message.sent",
+            entity_id=str(req.thread_id),
+            actor_id=str(req.sender_id),
+            payload={"message_id": message.message_id, "sender_type": req.sender_type},
+            error=e,
+        )
 
     return MessageResponse(success=True, message="Message sent successfully", data=message.to_dict())
 
