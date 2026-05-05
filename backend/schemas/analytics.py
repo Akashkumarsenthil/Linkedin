@@ -2,16 +2,25 @@
 Analytics Pydantic Schemas
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any
 
 
 class EventIngest(BaseModel):
     event_type: str = Field(..., description="Type: job.viewed, job.saved, application.submitted, etc.")
-    actor_id: str = Field(..., description="Member or recruiter ID performing the action")
+    actor_id: Optional[str] = Field(None, description="Member or recruiter ID performing the action")
+    user_id: Optional[str] = Field(None, description="Alias for actor_id (accepted from frontend)")
     entity_type: str = Field(..., description="Entity type: job, application, thread, connection")
     entity_id: str = Field(..., description="Entity ID")
     payload: Optional[Dict[str, Any]] = Field(None, description="Additional event data")
+
+    @model_validator(mode="after")
+    def resolve_actor_id(self) -> "EventIngest":
+        if not self.actor_id and self.user_id:
+            self.actor_id = self.user_id
+        if not self.actor_id:
+            raise ValueError("actor_id or user_id is required")
+        return self
 
     model_config = {
         "json_schema_extra": {

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white" />
   <img src="https://img.shields.io/badge/MongoDB-7.0-47A248?style=for-the-badge&logo=mongodb&logoColor=white" />
@@ -55,7 +55,7 @@ This is a LinkedIn-style professional networking platform built as a distributed
 - Live analytics charts: top jobs, application funnel, geo distribution, member dashboards
 - A React demo console that exercises all of the above
 
-The system is built as a distributed microservices architecture. Each service is independent, with its own entry point and containerized environment, coordinated via an Nginx API Gateway and communicating asynchronously through Kafka.
+The system is built as a **modular monolith deployed as containerised services**. All seven FastAPI services share a single Python codebase, the same database models, and the same MySQL/MongoDB/Redis connections. They are separated at the entry-point and Docker container boundary, coordinated via an Nginx API Gateway, and communicate asynchronously through Kafka for analytics and AI side effects.
 
 ---
 
@@ -118,7 +118,7 @@ The system is built as a distributed microservices architecture. Each service is
 
 | Component | Version | Purpose |
 |-----------|---------|---------|
-| Python | 3.11 | Runtime |
+| Python | 3.13 | Runtime |
 | FastAPI | 0.115 | Async REST framework; auto-generates Swagger and ReDoc |
 | SQLAlchemy | 2.x | ORM for MySQL with connection pooling |
 | Pydantic | v2 | Request validation and OpenAPI schema generation |
@@ -236,9 +236,9 @@ Linkedin/
     └── openapi.json                # Static OpenAPI 3.x spec
 ```
 
-### Microservices overview
+### Services overview
 
-The system is split into 7 functional microservices, each running its own FastAPI instance and (where applicable) its own Kafka consumer thread.
+The system is split into 7 functional services, each running its own FastAPI instance and (where applicable) its own Kafka consumer thread. All services share a single Python codebase and database connections — this is a modular monolith, not true microservices.
 
 | Service | Internal Port | Entry Point | Routes | Key Responsibility |
 |---------|---------------|-------------|--------|---------------------|
@@ -642,7 +642,7 @@ Every Kafka message follows this structure:
 | `job.viewed` | `POST /jobs/get` | Increments `views_count` in MySQL |
 | `job.saved` | `POST /jobs/save` | Logged to MongoDB |
 | `job.closed` | `POST /jobs/close` | Logged to MongoDB |
-| `application.submitted` | `POST /applications/submit` | Increments `applicants_count` in MySQL |
+| `application.submitted` | `POST /applications/submit` | Upserts `analytics_applications_daily` in MongoDB (`applicants_count` is incremented by the HTTP handler at commit time, not by this consumer) |
 | `application.statusChanged` | `POST /applications/updateStatus` | Logged to MongoDB |
 | `message.sent` | `POST /messages/send` | Logged to MongoDB |
 | `connection.requested` | `POST /connections/request` | Logged to MongoDB |
@@ -667,6 +667,17 @@ The broker runs in KRaft mode (no Zookeeper). Two listeners are configured:
 |----------|---------|---------|
 | `PLAINTEXT` | `kafka:9092` | Backend container (inter-container) |
 | `EXTERNAL` | `localhost:9094` | Local development (outside Docker) |
+
+### Why Kafka is behind the API layer
+
+Kafka is used as an **asynchronous side-effect bus**, not as the primary communication channel. The ordering is always:
+
+```
+Browser → HTTP → FastAPI handler (synchronous: MySQL write + HTTP response)
+                               → Kafka publish (fire-and-forget: analytics / AI)
+```
+
+The browser never knows Kafka exists. If a publish fails, the `FailedKafkaEvent` fallback in all five publishing routers writes the event to MySQL so nothing is silently lost. The consumer drives analytics aggregates and AI workflows; MySQL is always the source of truth.
 
 ---
 
@@ -893,7 +904,7 @@ Then run:
 POST /analytics/jobs/top  { "metric": "applications", "limit": 5, "window_days": 365 }
 ```
 
-Show that job #1's application count increased — this is driven by the Kafka `application.submitted` consumer updating MySQL asynchronously.
+Show that job #1 appears in the top jobs list — the `applicants_count` is incremented synchronously by the HTTP handler at submit time; the Kafka `application.submitted` consumer updates the MongoDB analytics aggregate (`analytics_applications_daily`) asynchronously.
 
 ---
 

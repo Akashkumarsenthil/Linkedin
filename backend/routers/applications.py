@@ -3,7 +3,6 @@ Application Service — Job Application APIs
 Handles submit, status management, and recruiter notes with proper error handling.
 """
 
-import json
 import logging
 from datetime import datetime, timezone
 
@@ -11,14 +10,14 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, update, text
 
-from database import get_db, SessionLocal
+from database import get_db
 from database import mongo_db
 from models.application import Application
 from models.job import JobPosting
 from models.member import Member
 from models.recruiter import Recruiter
-from models.failed_kafka_event import FailedKafkaEvent
 from auth import require_member, require_recruiter, TokenPayload
+from routers.kafka_utils import log_failed_kafka_event as _log_failed_kafka_event
 from schemas.application import (
     ApplicationSubmit, ApplicationGet, ApplicationWithdraw, ApplicationByJob, ApplicationByMember,
     ApplicationUpdateStatus, ApplicationAddNote,
@@ -31,45 +30,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/applications", tags=["Application Service"])
 
 VALID_STATUSES = {"submitted", "reviewing", "rejected", "interview", "offer"}
-
-
-def _log_failed_kafka_event(
-    db: Session,
-    topic: str,
-    event_type: str,
-    entity_id: str,
-    actor_id: str,
-    payload: dict,
-    error: Exception,
-) -> None:
-    """
-    Persist a failed Kafka publish to the fallback table so the event is not silently lost.
-
-    This is the minimal dual-write safety net for a student project.  In production
-    this would be an Outbox pattern with a dedicated retry worker.  Here it at least
-    ensures the grader/demo can see that the system detected and recorded the failure
-    rather than ignoring it.
-    """
-    try:
-        fke = FailedKafkaEvent(
-            topic=topic,
-            event_type=event_type,
-            entity_id=str(entity_id),
-            actor_id=str(actor_id),
-            payload=json.dumps(payload, default=str),
-            error_message=str(error)[:500],
-        )
-        # Use a fresh session so the fallback write is independent of the caller's session
-        fallback_db = SessionLocal()
-        try:
-            fallback_db.add(fke)
-            fallback_db.commit()
-            logger.warning(f"Kafka publish failed for {event_type} → recorded in failed_kafka_events (id={fke.id})")
-        finally:
-            fallback_db.close()
-    except Exception as fb_err:
-        # Log but never let the fallback write fail the HTTP request
-        logger.error(f"Could not write to failed_kafka_events: {fb_err}")
 
 
 @router.post("/submit", response_model=ApplicationResponse, summary="Submit a job application")
@@ -189,7 +149,7 @@ async def submit_application(
         logger.warning(f"Kafka publish failed for application.submitted: {e}")
         # Dual-write fallback — record the event so it is not silently lost
         _log_failed_kafka_event(
-            db, "application.submitted", "application.submitted",
+            "application.submitted", "application.submitted",
             str(application.application_id), str(req.member_id), kafka_payload, e,
         )
 

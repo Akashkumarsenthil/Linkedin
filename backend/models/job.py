@@ -2,6 +2,8 @@
 Job Posting SQLAlchemy Model
 """
 
+import json as _json
+
 from sqlalchemy import Column, Integer, String, Text, JSON, DECIMAL, TIMESTAMP, Enum
 from sqlalchemy.sql import func
 from database import Base
@@ -40,7 +42,7 @@ class JobPosting(Base):
             "employment_type": self.employment_type,
             "location": self.location,
             "work_mode": self.work_mode,
-            "skills_required": self.skills_required,
+            "skills_required": _json.loads(self.skills_required) if isinstance(self.skills_required, str) else (self.skills_required or []),
             "salary_min": float(self.salary_min) if self.salary_min else None,
             "salary_max": float(self.salary_max) if self.salary_max else None,
             "posted_datetime": str(self.posted_datetime) if self.posted_datetime else None,

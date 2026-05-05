@@ -25,7 +25,7 @@ export function clearStoredToken(): void {
 
 // Decode JWT payload from localStorage without a network call.
 // Returns null if absent, malformed, or expired.
-export function parseStoredUser(): { user_id: number; user_type: 'member' | 'recruiter'; email: string } | null {
+export function parseStoredUser(): { user_id: number; user_type: 'member' | 'recruiter' | 'admin'; email: string } | null {
   const token = getStoredToken()
   if (!token) return null
   try {
@@ -35,7 +35,7 @@ export function parseStoredUser(): { user_id: number; user_type: 'member' | 'rec
     const payload = JSON.parse(atob(b64))
     if (typeof payload.user_id !== 'number' || !payload.user_type) return null
     if (payload.exp && payload.exp < Date.now() / 1000) return null
-    return { user_id: payload.user_id, user_type: payload.user_type as 'member' | 'recruiter', email: payload.sub ?? '' }
+    return { user_id: payload.user_id, user_type: payload.user_type as 'member' | 'recruiter' | 'admin', email: payload.sub ?? '' }
   } catch {
     return null
   }

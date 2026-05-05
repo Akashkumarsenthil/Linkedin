@@ -3,12 +3,12 @@ AI Service Router — REST + WebSocket endpoints for Agentic AI workflows.
 """
 
 import logging
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, File, UploadFile, Form, HTTPException
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, File, UploadFile, Form, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 
-from auth import require_recruiter, TokenPayload
+from auth import require_recruiter, TokenPayload, _decode
 from agents.hiring_assistant import (
     start_task, get_task_status, approve_task,
     ws_connections, active_tasks, get_queue_stats,
@@ -324,7 +324,7 @@ async def career_coach_pdf(
 
 # ─── PDF Helpers ──────────────────────────────────────────────────────────────
 @router.post("/tasks/list", response_model=AIResponse, summary="List all AI tasks")
-async def list_tasks():
+async def list_tasks(current_user: TokenPayload = Depends(require_recruiter)):
     """List all active and recent AI tasks from MongoDB."""
     from database import mongo_db
     from datetime import datetime, timezone, timedelta
@@ -360,8 +360,18 @@ async def queue_status(current_user: TokenPayload = Depends(require_recruiter)):
 # ─── WebSocket for Real-time Updates ───────────────────────────
 
 @router.websocket("/ws/{task_id}")
-async def websocket_task_updates(websocket: WebSocket, task_id: str):
+async def websocket_task_updates(
+    websocket: WebSocket,
+    task_id: str,
+    token: str = Query(..., description="JWT bearer token"),
+):
     """WebSocket endpoint to stream real-time AI task updates to the UI."""
+    try:
+        _decode(token)
+    except Exception:
+        await websocket.close(code=4401)
+        return
+
     await websocket.accept()
 
     if task_id not in ws_connections:
@@ -447,7 +457,11 @@ async def career_coach(req: CareerCoachRequest):
                 if not required_skills and job.skills_required:
                     skills = job.skills_required
                     if isinstance(skills, str):
-                        required_skills = [s.strip() for s in skills.split(",") if s.strip()]
+                        try:
+                            parsed = json.loads(skills)
+                            required_skills = [str(s).strip() for s in parsed if str(s).strip()] if isinstance(parsed, list) else [s.strip() for s in skills.split(",") if s.strip()]
+                        except (json.JSONDecodeError, ValueError):
+                            required_skills = [s.strip() for s in skills.split(",") if s.strip()]
                     elif isinstance(skills, list):
                         required_skills = skills
     finally:

@@ -16,6 +16,7 @@ from database import get_db
 from models.member import Member
 from models.user_credentials import UserCredentials
 from auth import require_member, TokenPayload
+from routers.kafka_utils import log_failed_kafka_event as _log_failed_kafka_event
 import auth
 from schemas.member import (
     MemberGet, MemberUpdate, MemberDelete, MemberSearch,
@@ -88,8 +89,15 @@ async def get_member(
                 entity_id=str(req.member_id),
                 payload={"actor_type": actor_type},
             )
-        except Exception:
-            pass
+        except Exception as e:
+            _log_failed_kafka_event(
+                topic="profile.viewed",
+                event_type="profile.viewed",
+                entity_id=str(req.member_id),
+                actor_id=actor_id,
+                payload={"actor_type": actor_type},
+                error=e,
+            )
 
     data = member.to_dict()
     cache.set(cache_key, data, ttl=300)

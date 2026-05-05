@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from kafka_producer import kafka_producer
-from kafka_consumer import kafka_consumer
+from kafka_consumer import KafkaEventConsumer
 from routers import ai_service
 from agents.hiring_assistant import rehydrate_tasks, run_dispatcher
 from database import create_mongo_indexes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
 logger = logging.getLogger("ai-service")
+
+kafka_consumer = KafkaEventConsumer(group_id="linkedin-ai-service")
 
 AI_KAFKA_TOPICS = [
     {"name": "ai.requests", "partitions": 1, "replication": 1},
