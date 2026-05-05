@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     def JWT_EXPIRE_HOURS(self) -> int:
         return self.JWT_EXPIRE_MINUTES // 60
 
-    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = ConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()
