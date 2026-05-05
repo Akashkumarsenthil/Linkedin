@@ -7037,11 +7037,26 @@ button { cursor: pointer; outline-offset: 2px; }
   background: var(--li-blue-hover);
 }
 
-.jobs-page__layout {
+.recruiter-jobs-page .jobs-page__layout {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
   align-items: start;
+  overflow: visible; /* allow sticky sidebar; parent clip doesn't apply here */
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  min-height: unset;
+}
+
+/* Right panel: scrollable within the viewport */
+.recruiter-jobs-page .jobs-page__right {
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100vh - var(--nav-h) - 32px);
+  position: sticky;
+  top: calc(var(--nav-h) + 16px);
+  align-self: start;
 }
 
 .rj-left {
@@ -7050,7 +7065,13 @@ button { cursor: pointer; outline-offset: 2px; }
   border-radius: var(--r);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Sticky sidebar: stays in viewport and scrolls independently */
+  position: sticky;
+  top: calc(var(--nav-h) + 16px);
+  max-height: calc(100vh - var(--nav-h) - 32px);
+  align-self: start;
 }
 .rj-filters {
   padding: 16px;
@@ -7074,7 +7095,6 @@ button { cursor: pointer; outline-offset: 2px; }
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 600px;
   overflow-y: auto;
 }
 .rj-job-item {
@@ -7127,8 +7147,13 @@ button { cursor: pointer; outline-offset: 2px; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 500px;
+  max-height: calc(100vh - var(--nav-h) - 32px);
+  position: sticky;
+  top: calc(var(--nav-h) + 16px);
+  align-self: start;
 }
 .rj-detail__header {
   padding: 24px;

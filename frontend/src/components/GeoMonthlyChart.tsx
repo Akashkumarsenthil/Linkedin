@@ -2,31 +2,46 @@
  * GeoMonthlyChart — city-wise applications per month for a selected job.
  */
 import { useState, useEffect } from 'react'
-import { apiPost } from '../api'
+import { apiPost, parseStoredUser } from '../api'
 
 interface GeoMonthRow { month: string; city: string; state: string; count: number }
 interface ApiResp { success: boolean; message: string; data: GeoMonthRow[] }
+interface JobOption { job_id: number; title: string }
 
 export function GeoMonthlyChart() {
-  const [jobId, setJobId]     = useState('1')
+  const [jobs, setJobs]       = useState<JobOption[]>([])
+  const [jobId, setJobId]     = useState<number | null>(null)
   const [data, setData]       = useState<GeoMonthRow[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [err, setErr]         = useState<string | null>(null)
 
-  const load = async (id?: string) => {
-    const numId = parseInt(id ?? jobId, 10)
-    if (!numId || numId < 1) { setErr('Enter a valid job ID'); return }
-    setLoading(true); setErr(null)
-    try {
-      const r = await apiPost<ApiResp>('/analytics/geo/monthly', { job_id: numId, window_days: 365 })
-      if (!r.success) throw new Error(r.message)
-      setData(r.data ?? [])
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Request failed')
-    } finally { setLoading(false) }
-  }
+  useEffect(() => {
+    const user = parseStoredUser()
+    if (!user) return
+    apiPost<{ success: boolean; data: JobOption[] }>('/jobs/byRecruiter', {
+      recruiter_id: user.user_id,
+      page_size: 100,
+    }).then(res => {
+      const list = res.data ?? []
+      setJobs(list)
+      if (list.length > 0) setJobId(list[0].job_id)
+    }).catch(() => {})
+  }, [])
 
-  useEffect(() => { load('1') }, [])
+  useEffect(() => {
+    if (jobId == null) return
+    const load = async () => {
+      setLoading(true); setErr(null)
+      try {
+        const r = await apiPost<ApiResp>('/analytics/geo/monthly', { job_id: jobId, window_days: 365 })
+        if (!r.success) throw new Error(r.message)
+        setData(r.data ?? [])
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Request failed')
+      } finally { setLoading(false) }
+    }
+    void load()
+  }, [jobId])
 
   const months = [...new Set(data.map(d => d.month))].sort()
   const total  = data.reduce((s, d) => s + d.count, 0)
@@ -36,12 +51,17 @@ export function GeoMonthlyChart() {
       <h3 className="ad-card-title">City Applications by Month</h3>
 
       <div className="ad-form-row">
-        <input className="ad-input" type="number" value={jobId} min={1} placeholder="Job ID"
-          onChange={e => setJobId(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && load()} />
-        <button type="button" className="ad-btn" onClick={() => load()} disabled={loading}>
-          {loading ? '...' : 'Go'}
-        </button>
+        <select
+          className="ad-input"
+          value={jobId ?? ''}
+          onChange={e => setJobId(Number(e.target.value))}
+          disabled={jobs.length === 0}
+        >
+          {jobs.length === 0 && <option value="">No jobs found</option>}
+          {jobs.map(j => (
+            <option key={j.job_id} value={j.job_id}>{j.title} (#{j.job_id})</option>
+          ))}
+        </select>
       </div>
 
       {err && <p className="ad-error">{err}</p>}
